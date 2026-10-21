@@ -1,0 +1,51 @@
+@import "tailwindcss";
+
+@theme {
+  --color-ink-950: #07090c;
+  --color-ink-900: #0c1016;
+  --color-ink-800: #141a23;
+  --color-ink-700: #1e2733;
+  --color-mist-400: #8a97a8;
+  --color-mist-200: #c9d3df;
+  --color-signal-400: #4ade80;
+  --color-warn-400: #fbbf24;
+  --color-danger-400: #f87171;
+  --font-sans:
+    "Inter", "Hiragino Kaku Gothic ProN", "Yu Gothic", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "Cascadia Code", ui-monospace, monospace;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background:
+    radial-gradient(
+      1200px 600px at 15% -10%,
+      rgba(74, 222, 128, 0.08),
+      transparent 60%
+    ),
+    radial-gradient(
+      900px 500px at 100% 0%,
+      rgba(96, 165, 250, 0.07),
+      transparent 55%
+    ),
+    var(--color-ink-950);
+  color: var(--color-mist-200);
+}
+
+::selection {
+  background: rgba(74, 222, 128, 0.25);
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  height: 8px;
+  width: 8px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: var(--color-ink-700);
+  border-radius: 999px;
+}

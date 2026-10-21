@@ -1,0 +1,8 @@
+node_modules
+.next
+dist
+coverage
+pnpm-lock.yaml
+apps/api/drizzle
+apps/api/data
+spike/forwarding-test.json

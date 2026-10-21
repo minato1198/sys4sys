@@ -1,0 +1,24 @@
+{
+  "name": "@sys4sys/agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "scan": "tsx src/cli.ts",
+    "dev": "tsx src/cli.ts --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@sys4sys/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  }
+}

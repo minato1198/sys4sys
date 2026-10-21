@@ -1,0 +1,1417 @@
+openapi: 3.1.0
+info:
+  title: sys4sys API
+  version: 0.1.0
+  description: |
+    バックエンド運用管理システム（ポート・ログ・監視・AI レポート）の API。
+
+    - 認証はセッション Cookie（`sys4sys_session`）。`/auth/login` 以外は認証必須。
+    - ロールは `admin` / `operator` / `viewer`。各操作の必要ロールを description に記載。
+    - 破壊的操作（kill / restart / 設定変更）は監査ログに記録する。
+    - エラーは RFC 7807（application/problem+json）。
+servers:
+  - url: http://127.0.0.1:8787/api
+    description: ローカル開発
+tags:
+  - name: auth
+  - name: users
+  - name: hosts
+  - name: ports
+  - name: services
+  - name: logs
+  - name: incidents
+  - name: approvals
+  - name: reports
+  - name: settings
+  - name: audit
+security:
+  - cookieAuth: []
+
+paths:
+  /health:
+    get:
+      tags: [auth]
+      summary: ヘルスチェック
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, version, uptimeSec]
+                properties:
+                  status: { type: string, enum: [ok, degraded] }
+                  version: { type: string }
+                  uptimeSec: { type: integer }
+
+  /auth/login:
+    post:
+      tags: [auth]
+      summary: ログイン
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LoginRequest" }
+      responses:
+        "200":
+          description: ログイン成功。セッション Cookie を設定
+          headers:
+            Set-Cookie:
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429":
+          description: 試行回数超過
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+
+  /auth/logout:
+    post:
+      tags: [auth]
+      summary: ログアウト
+      responses:
+        "204": { description: ログアウト済み }
+
+  /auth/me:
+    get:
+      tags: [auth]
+      summary: 現在のユーザー
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /users:
+    get:
+      tags: [users]
+      summary: ユーザー一覧（admin のみ）
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/User" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [users]
+      summary: ユーザー作成（admin のみ）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UserCreate" }
+      responses:
+        "201":
+          description: 作成済み
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /users/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    patch:
+      tags: [users]
+      summary: ユーザー更新（admin のみ）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UserUpdate" }
+      responses:
+        "200":
+          description: 更新済み
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /hosts:
+    get:
+      tags: [hosts]
+      summary: 実行ホスト一覧（Windows / WSL distro）
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Host" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /hosts/wsl/detect:
+    post:
+      tags: [hosts]
+      summary: WSL ディストロを検出（admin のみ、登録はしない）
+      responses:
+        "200":
+          description: 検出結果
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/WslDistro" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /ports:
+    get:
+      tags: [ports]
+      summary: 待受ポート一覧
+      parameters:
+        - name: scope
+          in: query
+          schema: { type: string, enum: [windows, wsl] }
+        - name: protocol
+          in: query
+          schema: { type: string, enum: [tcp, udp] }
+        - name: port
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 65535 }
+        - name: serviceId
+          in: query
+          schema: { type: string }
+        - name: q
+          in: query
+          description: プロセス名・コマンドラインの部分一致
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, scannedAt]
+                properties:
+                  scannedAt: { type: string, format: date-time }
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Port" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /ports/history:
+    get:
+      tags: [ports]
+      summary: ポート利用履歴
+      parameters:
+        - name: scope
+          in: query
+          required: true
+          schema: { type: string, enum: [windows, wsl] }
+        - name: port
+          in: query
+          required: true
+          schema: { type: integer, minimum: 1, maximum: 65535 }
+        - name: from
+          in: query
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          schema: { type: string, format: date-time }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/PortHistoryEntry" }
+
+  /ports/reserve:
+    post:
+      tags: [ports]
+      summary: ポート予約（operator 以上）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReservationCreate" }
+      responses:
+        "201":
+          description: 予約済み
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Reservation" }
+        "409":
+          description: 既に予約済み、または使用中
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+
+  /ports/reserve/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    delete:
+      tags: [ports]
+      summary: 予約解除（operator 以上）
+      responses:
+        "204": { description: 解除済み }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /ports/{port}/kill:
+    parameters:
+      - name: port
+        in: path
+        required: true
+        schema: { type: integer, minimum: 1, maximum: 65535 }
+    post:
+      tags: [ports]
+      summary: ポートを掴んでいるプロセスを停止（operator 以上）
+      description: |
+        誤操作防止のため、取得した確認トークンを必須とする。
+        監査ログに実行者・対象 PID・シグナルを記録する。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/KillRequest" }
+      responses:
+        "202":
+          description: 停止処理を受け付け
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Action" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /services:
+    get:
+      tags: [services]
+      summary: サービス一覧
+      parameters:
+        - name: hostId
+          in: query
+          schema: { type: string }
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [stopped, starting, running, degraded, restarting, failed]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Service" }
+    post:
+      tags: [services]
+      summary: サービス登録（admin のみ）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ServiceCreate" }
+      responses:
+        "201":
+          description: 作成済み
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Service" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /services/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [services]
+      summary: サービス詳細
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Service" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [services]
+      summary: サービス更新（admin のみ）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ServiceUpdate" }
+      responses:
+        "200":
+          description: 更新済み
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Service" }
+    delete:
+      tags: [services]
+      summary: サービス削除（admin のみ）
+      description: 履歴保持のため論理削除（is_active=false）。
+      responses:
+        "204": { description: 削除済み }
+
+  /services/{id}/start:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      tags: [services]
+      summary: 起動（operator 以上）
+      responses:
+        "202":
+          description: 起動処理を受け付け
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Action" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /services/{id}/stop:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      tags: [services]
+      summary: 停止（operator 以上）
+      responses:
+        "202":
+          description: 停止処理を受け付け
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Action" }
+
+  /services/{id}/restart:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      tags: [services]
+      summary: 再起動（operator 以上）
+      responses:
+        "202":
+          description: 再起動処理を受け付け
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Action" }
+
+  /services/{id}/health:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [services]
+      summary: ヘルスチェック結果
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HealthResult" }
+
+  /logs:
+    get:
+      tags: [logs]
+      summary: ログ検索
+      parameters:
+        - name: hostId
+          in: query
+          schema: { type: string }
+        - name: serviceId
+          in: query
+          schema: { type: string }
+        - name: level
+          in: query
+          schema: { type: string, enum: [debug, info, warn, error, fatal] }
+        - name: q
+          in: query
+          description: 全文検索
+          schema: { type: string }
+        - name: from
+          in: query
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          schema: { type: string, format: date-time }
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LogEventPage" }
+
+  /logs/stream:
+    get:
+      tags: [logs]
+      summary: ログのライブ tail（SSE）
+      description: |
+        `text/event-stream`。イベント名は `log`、データは LogEvent の JSON。
+        再接続用に `Last-Event-ID` を受け付ける。
+      parameters:
+        - name: hostId
+          in: query
+          schema: { type: string }
+        - name: serviceId
+          in: query
+          schema: { type: string }
+        - name: level
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: SSE ストリーム
+          content:
+            text/event-stream:
+              schema:
+                type: string
+
+  /logs/sources:
+    get:
+      tags: [logs]
+      summary: ログソース一覧
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/LogSource" }
+    post:
+      tags: [logs]
+      summary: ログソース追加（admin のみ）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LogSourceCreate" }
+      responses:
+        "201":
+          description: 作成済み
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LogSource" }
+
+  /incidents:
+    get:
+      tags: [incidents]
+      summary: インシデント一覧
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [open, acked, approval, resolved]
+        - name: severity
+          in: query
+          schema: { type: string, enum: [info, warning, error, critical] }
+        - name: serviceId
+          in: query
+          schema: { type: string }
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Incident" }
+
+  /incidents/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [incidents]
+      summary: インシデント詳細（タイムライン・AI 分析を含む）
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IncidentDetail" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /incidents/{id}/ack:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      tags: [incidents]
+      summary: 確認済みにする（operator 以上）
+      responses:
+        "200":
+          description: 更新済み
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Incident" }
+
+  /incidents/{id}/resolve:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      tags: [incidents]
+      summary: 解決済みにする（operator 以上）
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                note: { type: string }
+      responses:
+        "200":
+          description: 更新済み
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Incident" }
+
+  /incidents/{id}/analyze:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      tags: [incidents]
+      summary: AI 分析を再実行（operator 以上）
+      responses:
+        "202":
+          description: 分析ジョブを受け付け
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AiAnalysis" }
+        "503":
+          description: AI プロバイダに接続できない
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+
+  /approvals:
+    get:
+      tags: [approvals]
+      summary: 承認待ち一覧
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string, enum: [pending, approved, rejected, expired] }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Approval" }
+
+  /approvals/{id}/approve:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      tags: [approvals]
+      summary: 再起動を承認（operator 以上）
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ApprovalDecision" }
+      responses:
+        "202":
+          description: 承認し、アクションを開始
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Action" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /approvals/{id}/reject:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      tags: [approvals]
+      summary: 再起動を却下（operator 以上）
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ApprovalDecision" }
+      responses:
+        "200":
+          description: 却下済み
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Approval" }
+
+  /reports:
+    get:
+      tags: [reports]
+      summary: レポート一覧
+      parameters:
+        - name: incidentId
+          in: query
+          schema: { type: string }
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Report" }
+
+  /reports/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [reports]
+      summary: レポート詳細
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Report" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /reports/{id}/export:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [reports]
+      summary: レポートをダウンロード
+      parameters:
+        - name: format
+          in: query
+          schema: { type: string, enum: [md, json], default: md }
+      responses:
+        "200":
+          description: ファイル
+          content:
+            text/markdown:
+              schema: { type: string }
+            application/json:
+              schema: { type: object }
+
+  /reports/{id}/send:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      tags: [reports]
+      summary: レポートをメール再送（operator 以上）
+      responses:
+        "202":
+          description: 送信を受け付け
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReportDelivery" }
+
+  /policies:
+    get:
+      tags: [settings]
+      summary: ポリシー一覧
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Policy" }
+
+  /policies/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    put:
+      tags: [settings]
+      summary: ポリシー更新（admin のみ）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Policy" }
+      responses:
+        "200":
+          description: 更新済み
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Policy" }
+
+  /settings/mail:
+    get:
+      tags: [settings]
+      summary: メール設定（admin のみ、秘密値はマスク）
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MailSettings" }
+    put:
+      tags: [settings]
+      summary: メール設定の更新（admin のみ）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MailSettings" }
+      responses:
+        "200":
+          description: 更新済み
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MailSettings" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /settings/mail/test:
+    post:
+      tags: [settings]
+      summary: テストメール送信（admin のみ）
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [to]
+              properties:
+                to: { type: string, format: email }
+      responses:
+        "200":
+          description: 送信結果
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MailTestResult" }
+
+  /settings/ai:
+    get:
+      tags: [settings]
+      summary: AI 設定（admin のみ、API キーはマスク）
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AiSettings" }
+    put:
+      tags: [settings]
+      summary: AI 設定の更新（admin のみ）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AiSettings" }
+      responses:
+        "200":
+          description: 更新済み
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AiSettings" }
+
+  /ai/test:
+    post:
+      tags: [settings]
+      summary: AI 接続テスト（admin のみ）
+      responses:
+        "200":
+          description: 接続結果
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AiTestResult" }
+        "503":
+          description: 接続失敗
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+
+  /audit-logs:
+    get:
+      tags: [audit]
+      summary: 監査ログ（admin のみ）
+      parameters:
+        - name: actorUserId
+          in: query
+          schema: { type: string }
+        - name: action
+          in: query
+          schema: { type: string }
+        - name: from
+          in: query
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          schema: { type: string, format: date-time }
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/AuditLog" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: sys4sys_session
+
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 500, default: 100 }
+    Cursor:
+      name: cursor
+      in: query
+      description: 前回レスポンスの nextCursor
+      schema: { type: string }
+
+  responses:
+    Unauthorized:
+      description: 未認証
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    Forbidden:
+      description: 権限不足
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    NotFound:
+      description: 見つからない
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    Conflict:
+      description: 状態の競合
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    ValidationError:
+      description: 入力エラー
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+
+  schemas:
+    Problem:
+      type: object
+      required: [type, title, status, detail]
+      properties:
+        type: { type: string, format: uri-reference }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              path: { type: string }
+              message: { type: string }
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, minLength: 8 }
+
+    User:
+      type: object
+      required: [id, email, name, role, isActive]
+      properties:
+        id: { type: string }
+        email: { type: string, format: email }
+        name: { type: string }
+        role: { type: string, enum: [admin, operator, viewer] }
+        isActive: { type: boolean }
+        lastLoginAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+
+    UserCreate:
+      type: object
+      required: [email, name, password, role]
+      properties:
+        email: { type: string, format: email }
+        name: { type: string, minLength: 1 }
+        password: { type: string, minLength: 12 }
+        role: { type: string, enum: [admin, operator, viewer] }
+
+    UserUpdate:
+      type: object
+      properties:
+        name: { type: string }
+        role: { type: string, enum: [admin, operator, viewer] }
+        isActive: { type: boolean }
+        password: { type: string, minLength: 12 }
+
+    Host:
+      type: object
+      required: [id, kind, name, enabled]
+      properties:
+        id: { type: string }
+        kind: { type: string, enum: [windows, wsl] }
+        name: { type: string }
+        distro: { type: string, nullable: true }
+        defaultUser: { type: string, nullable: true }
+        enabled: { type: boolean }
+        state: { type: string, enum: [running, stopped, unknown] }
+
+    WslDistro:
+      type: object
+      required: [name, state, version, isDefault]
+      properties:
+        name: { type: string }
+        state: { type: string, enum: [Running, Stopped, Installing, Unknown] }
+        version: { type: integer }
+        isDefault: { type: boolean }
+
+    Port:
+      type: object
+      required: [id, scope, protocol, address, port]
+      properties:
+        id: { type: string }
+        scope: { type: string, enum: [windows, wsl] }
+        pidScope:
+          {
+            type: string,
+            nullable: true,
+            description: WSL で PID を観測した distro,
+          }
+        seenIn:
+          type: array
+          items: { type: string }
+        protocol: { type: string, enum: [tcp, udp] }
+        address: { type: string }
+        port: { type: integer }
+        pid: { type: integer, nullable: true }
+        process: { type: string, nullable: true }
+        processPath: { type: string, nullable: true }
+        commandLine: { type: string, nullable: true }
+        serviceId: { type: string, nullable: true }
+        likelyWslForward: { type: boolean }
+        firstSeen: { type: string, format: date-time }
+        lastSeen: { type: string, format: date-time }
+
+    PortHistoryEntry:
+      type: object
+      required: [port, scope, openedAt]
+      properties:
+        port: { type: integer }
+        scope: { type: string, enum: [windows, wsl] }
+        protocol: { type: string, enum: [tcp, udp] }
+        pid: { type: integer, nullable: true }
+        process: { type: string, nullable: true }
+        serviceId: { type: string, nullable: true }
+        openedAt: { type: string, format: date-time }
+        closedAt: { type: string, format: date-time, nullable: true }
+        releasedBy: { type: string, nullable: true }
+
+    ReservationCreate:
+      type: object
+      required: [scope, port, protocol, serviceId]
+      properties:
+        scope: { type: string, enum: [windows, wsl] }
+        port: { type: integer, minimum: 1, maximum: 65535 }
+        protocol: { type: string, enum: [tcp, udp] }
+        serviceId: { type: string }
+        note: { type: string }
+
+    Reservation:
+      allOf:
+        - $ref: "#/components/schemas/ReservationCreate"
+        - type: object
+          required: [id, createdAt]
+          properties:
+            id: { type: string }
+            createdAt: { type: string, format: date-time }
+
+    KillRequest:
+      type: object
+      required: [scope, pidScope, confirmToken]
+      properties:
+        scope: { type: string, enum: [windows, wsl] }
+        pidScope: { type: string, nullable: true }
+        confirmToken:
+          {
+            type: string,
+            description: "POST /ports/{port}/kill の事前取得トークン",
+          }
+        signal: { type: string, enum: [TERM, KILL], default: TERM }
+        force: { type: boolean, default: false }
+
+    Service:
+      type: object
+      required: [id, hostId, name, status, autoRestartPhase]
+      properties:
+        id: { type: string }
+        hostId: { type: string }
+        name: { type: string }
+        command:
+          type: array
+          items: { type: string }
+        cwd: { type: string }
+        env:
+          type: object
+          additionalProperties: { type: string }
+        expectedPorts:
+          type: array
+          items: { type: integer }
+        healthCheck: { $ref: "#/components/schemas/HealthCheck" }
+        dependsOn:
+          type: array
+          items: { type: string }
+        autoStart: { type: boolean }
+        autoRestartPhase: { type: string, enum: [observe, approve, auto] }
+        status:
+          type: string
+          enum: [stopped, starting, running, degraded, restarting, failed]
+        lastCheckedAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    ServiceCreate:
+      type: object
+      required: [hostId, name, command]
+      properties:
+        hostId: { type: string }
+        name: { type: string }
+        command:
+          type: array
+          items: { type: string }
+          minItems: 1
+        cwd: { type: string }
+        env:
+          type: object
+          additionalProperties: { type: string }
+        expectedPorts:
+          type: array
+          items: { type: integer }
+        healthCheck: { $ref: "#/components/schemas/HealthCheck" }
+        dependsOn:
+          type: array
+          items: { type: string }
+        autoStart: { type: boolean, default: false }
+        autoRestartPhase:
+          { type: string, enum: [observe, approve, auto], default: observe }
+
+    ServiceUpdate:
+      type: object
+      properties:
+        name: { type: string }
+        command:
+          type: array
+          items: { type: string }
+        cwd: { type: string }
+        env:
+          type: object
+          additionalProperties: { type: string }
+        expectedPorts:
+          type: array
+          items: { type: integer }
+        healthCheck: { $ref: "#/components/schemas/HealthCheck" }
+        dependsOn:
+          type: array
+          items: { type: string }
+        autoStart: { type: boolean }
+        autoRestartPhase: { type: string, enum: [observe, approve, auto] }
+
+    HealthCheck:
+      type: object
+      required: [type]
+      properties:
+        type: { type: string, enum: [http, tcp, process, command] }
+        url: { type: string, description: "type=http" }
+        port: { type: integer, description: "type=tcp" }
+        command:
+          type: array
+          items: { type: string }
+          description: "type=command"
+        intervalSec: { type: integer, default: 10 }
+        timeoutSec: { type: integer, default: 3 }
+        failures: { type: integer, default: 3 }
+
+    HealthResult:
+      type: object
+      required: [serviceId, status, checkedAt]
+      properties:
+        serviceId: { type: string }
+        status: { type: string, enum: [healthy, unhealthy, unknown] }
+        latencyMs: { type: integer }
+        checkedAt: { type: string, format: date-time }
+        detail: { type: string }
+
+    LogEvent:
+      type: object
+      required: [id, ts, level, message]
+      properties:
+        id: { type: string }
+        hostId: { type: string }
+        serviceId: { type: string }
+        ts: { type: string, format: date-time }
+        level: { type: string, enum: [debug, info, warn, error, fatal] }
+        stream: { type: string, enum: [stdout, stderr, file, eventlog] }
+        message: { type: string }
+        fields:
+          type: object
+          additionalProperties: true
+        fingerprint: { type: string }
+
+    LogEventPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/LogEvent" }
+        nextCursor: { type: string, nullable: true }
+
+    LogSource:
+      type: object
+      required: [id, hostId, type, enabled]
+      properties:
+        id: { type: string }
+        hostId: { type: string }
+        serviceId: { type: string, nullable: true }
+        type: { type: string, enum: [file, stdout, wsl_file, eventlog] }
+        config:
+          type: object
+          additionalProperties: true
+        enabled: { type: boolean }
+
+    LogSourceCreate:
+      type: object
+      required: [hostId, type, config]
+      properties:
+        hostId: { type: string }
+        serviceId: { type: string, nullable: true }
+        type: { type: string, enum: [file, stdout, wsl_file, eventlog] }
+        config:
+          type: object
+          additionalProperties: true
+        enabled: { type: boolean, default: true }
+
+    Incident:
+      type: object
+      required: [id, serviceId, title, severity, status, startedAt]
+      properties:
+        id: { type: string }
+        serviceId: { type: string }
+        fingerprint: { type: string }
+        title: { type: string }
+        severity: { type: string, enum: [info, warning, error, critical] }
+        status: { type: string, enum: [open, acked, approval, resolved] }
+        startedAt: { type: string, format: date-time }
+        resolvedAt: { type: string, format: date-time, nullable: true }
+        detectedBy: { type: string, enum: [rule, health, process, ai] }
+        restartAttempts: { type: integer }
+        summary: { type: string }
+
+    IncidentDetail:
+      allOf:
+        - $ref: "#/components/schemas/Incident"
+        - type: object
+          properties:
+            events:
+              type: array
+              items: { $ref: "#/components/schemas/IncidentEvent" }
+            analysis: { $ref: "#/components/schemas/AiAnalysis" }
+            report: { $ref: "#/components/schemas/Report" }
+            actions:
+              type: array
+              items: { $ref: "#/components/schemas/Action" }
+            approval: { $ref: "#/components/schemas/Approval" }
+
+    IncidentEvent:
+      type: object
+      required: [id, ts, type]
+      properties:
+        id: { type: string }
+        ts: { type: string, format: date-time }
+        type: { type: string }
+        payload:
+          type: object
+          additionalProperties: true
+
+    Approval:
+      type: object
+      required: [id, incidentId, status, requestedAt]
+      properties:
+        id: { type: string }
+        incidentId: { type: string }
+        requestedAction: { type: object, additionalProperties: true }
+        status: { type: string, enum: [pending, approved, rejected, expired] }
+        requestedAt: { type: string, format: date-time }
+        decidedBy: { type: string, nullable: true }
+        decidedAt: { type: string, format: date-time, nullable: true }
+        note: { type: string, nullable: true }
+
+    ApprovalDecision:
+      type: object
+      properties:
+        note: { type: string }
+
+    Action:
+      type: object
+      required: [id, type, status]
+      properties:
+        id: { type: string }
+        incidentId: { type: string, nullable: true }
+        serviceId: { type: string }
+        type: { type: string, enum: [start, stop, restart, kill] }
+        status: { type: string, enum: [pending, running, succeeded, failed] }
+        requestedBy: { type: string, nullable: true }
+        approvedBy: { type: string, nullable: true }
+        policyId: { type: string, nullable: true }
+        startedAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time, nullable: true }
+        error: { type: string, nullable: true }
+
+    AiAnalysis:
+      type: object
+      required: [id, incidentId, provider, model, result, createdAt]
+      properties:
+        id: { type: string }
+        incidentId: { type: string }
+        provider: { type: string }
+        model: { type: string }
+        promptVersion: { type: string }
+        inputTokens: { type: integer }
+        outputTokens: { type: integer }
+        result:
+          type: object
+          required: [severity, category, summary, confidence]
+          properties:
+            severity: { type: string, enum: [info, warning, error, critical] }
+            category: { type: string }
+            summary: { type: string }
+            rootCauseHypothesis: { type: string }
+            evidence:
+              type: array
+              items:
+                type: object
+                properties:
+                  logId: { type: string }
+                  quote: { type: string }
+            recommendedActions:
+              type: array
+              items:
+                type: object
+                additionalProperties: true
+            confidence: { type: number, minimum: 0, maximum: 1 }
+            needsHuman: { type: boolean }
+        confidence: { type: number }
+        latencyMs: { type: integer }
+        createdAt: { type: string, format: date-time }
+
+    Report:
+      type: object
+      required: [id, incidentId, format, body, createdAt]
+      properties:
+        id: { type: string }
+        incidentId: { type: string }
+        format: { type: string, enum: [markdown, json] }
+        body: { type: string }
+        createdAt: { type: string, format: date-time }
+
+    ReportDelivery:
+      type: object
+      required: [id, reportId, channel, status]
+      properties:
+        id: { type: string }
+        reportId: { type: string }
+        channel: { type: string, enum: [email] }
+        to: { type: string }
+        status: { type: string, enum: [sent, failed] }
+        error: { type: string, nullable: true }
+        sentAt: { type: string, format: date-time, nullable: true }
+
+    Policy:
+      type: object
+      required: [id, name, enabled]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        scope:
+          type: object
+          additionalProperties: true
+        rules:
+          type: object
+          additionalProperties: true
+        enabled: { type: boolean }
+        priority: { type: integer }
+
+    MailSettings:
+      type: object
+      required: [host, port, from, secure, recipients]
+      properties:
+        host: { type: string }
+        port: { type: integer }
+        secure: { type: boolean }
+        username: { type: string }
+        password:
+          { type: string, description: "書き込み時のみ。取得時はマスク" }
+        from: { type: string, format: email }
+        recipients:
+          type: array
+          items: { type: string, format: email }
+        mode: { type: string, enum: [immediate, digest5m], default: immediate }
+
+    MailTestResult:
+      type: object
+      required: [ok]
+      properties:
+        ok: { type: boolean }
+        message: { type: string }
+
+    AiSettings:
+      type: object
+      required: [baseUrl, model]
+      properties:
+        baseUrl: { type: string, format: uri }
+        model: { type: string }
+        apiKey: { type: string, description: "書き込み時のみ。取得時はマスク" }
+        maxInputTokens: { type: integer, default: 8000 }
+        temperature: { type: number, default: 0.2 }
+        timeoutSec: { type: integer, default: 60 }
+        dailyRequestLimit: { type: integer, default: 200 }
+        sendLogsExternally: { type: boolean, default: false }
+
+    AiTestResult:
+      type: object
+      required: [ok, models]
+      properties:
+        ok: { type: boolean }
+        models:
+          type: array
+          items: { type: string }
+        latencyMs: { type: integer }
+        message: { type: string }
+
+    AuditLog:
+      type: object
+      required: [id, action, target, ts]
+      properties:
+        id: { type: string }
+        actorUserId: { type: string, nullable: true }
+        actorLabel: { type: string }
+        action: { type: string }
+        target: { type: string }
+        before:
+          type: object
+          additionalProperties: true
+        after:
+          type: object
+          additionalProperties: true
+        reason: { type: string }
+        ip: { type: string }
+        ts: { type: string, format: date-time }

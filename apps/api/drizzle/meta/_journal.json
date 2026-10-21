@@ -1,0 +1,13 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1792589391647,
+      "tag": "0000_flippant_wild_pack",
+      "breakpoints": true
+    }
+  ]
+}
