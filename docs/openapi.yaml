@@ -5,7 +5,7 @@ info:
   description: |
     バックエンド運用管理システム（ポート・ログ・監視・AI レポート）の API。
 
-    - 認証はセッション Cookie（`sys4sys_session`）。`/auth/login` 以外は認証必須。
+    - 認証はセッション Cookie（`sys4sys_session`）。`/health`、`/auth/login`、`/auth/logout` 以外は認証必須。
     - ロールは `admin` / `operator` / `viewer`。各操作の必要ロールを description に記載。
     - 破壊的操作（kill / restart / 設定変更）は監査ログに記録する。
     - エラーは RFC 7807（application/problem+json）。
@@ -64,7 +64,7 @@ paths:
               schema: { type: string }
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/User" }
+              schema: { $ref: "#/components/schemas/AuthUser" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "429":
           description: 試行回数超過
@@ -76,6 +76,7 @@ paths:
     post:
       tags: [auth]
       summary: ログアウト
+      security: []
       responses:
         "204": { description: ログアウト済み }
 
@@ -88,8 +89,22 @@ paths:
           description: OK
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/User" }
+              schema: { $ref: "#/components/schemas/AuthUser" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /auth/change-password:
+    post:
+      tags: [auth]
+      summary: パスワード変更
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ChangePasswordRequest" }
+      responses:
+        "204": { description: 変更済み。現在のセッション以外は無効化される }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/ValidationError" }
 
   /users:
     get:
@@ -924,6 +939,22 @@ components:
       properties:
         email: { type: string, format: email }
         password: { type: string, minLength: 8 }
+
+    ChangePasswordRequest:
+      type: object
+      required: [currentPassword, newPassword]
+      properties:
+        currentPassword: { type: string, minLength: 8 }
+        newPassword: { type: string, minLength: 12 }
+
+    AuthUser:
+      type: object
+      required: [id, email, name, role]
+      properties:
+        id: { type: string }
+        email: { type: string, format: email }
+        name: { type: string }
+        role: { type: string, enum: [admin, operator, viewer] }
 
     User:
       type: object

@@ -4,7 +4,7 @@
 
 - 版: v0.3（追加ヒアリング反映）
 - 作成日: 2026-10-21 / 更新日: 2026-10-21
-- ステータス: M0 完了・M1 実装中（モノレポ基盤・ポートスキャンまで）
+- ステータス: M1 実装中（認証・ポート一覧まで完了。残りは予約・競合検出）
 
 ---
 
@@ -340,22 +340,22 @@ ai:
 
 ## 5. 技術選定
 
-| 層             | 選定                                                | 理由                                                           |
-| -------------- | --------------------------------------------------- | -------------------------------------------------------------- |
-| 言語           | TypeScript（Node.js 22 LTS）                        | フロントと型を共有、エコシステムが広い                         |
-| パッケージ管理 | pnpm workspace                                      | モノレポの依存管理が軽い                                       |
-| API            | Fastify                                             | 軽量・高速・JSON Schema バリデーション                         |
-| DB             | SQLite（better-sqlite3）→ PostgreSQL                | 単一マシンで zero-config 開始                                  |
-| ORM            | Drizzle ORM                                         | 型安全、マイグレーションが軽い                                 |
-| 認証           | better-auth（メール + パスワード / DB セッション）  | チーム利用に必要な機能が揃う。代替は Argon2id + 自前セッション |
-| UI             | Next.js (App Router) + Tailwind + shadcn/ui         | ダッシュボード構築が速い                                       |
-| リアルタイム   | SSE                                                 | ログ tail に十分、実装が単純                                   |
-| スケジューラ   | node-cron + DB ジョブテーブル                       | Redis 不要で開始                                               |
-| ログ収集       | `fs.watch` + `readline`、`wsl.exe` 経由の `tail -F` | 追加依存を最小化                                               |
-| AI             | `openai` SDK（`baseURL` 差し替え）                  | OpenAI 互換なら LM Studio / Ollama / vLLM すべて対応           |
-| メール         | nodemailer（任意の SMTP + STARTTLS/TLS）            | プロバイダ未定のため汎用実装。設定画面 + 接続テスト            |
-| テスト         | Vitest + Playwright                                 | 単体・E2E                                                      |
-| 起動           | `pnpm dev`（concurrently）+ セットアップスクリプト  | 手動起動方針に合わせる                                         |
+| 層             | 選定                                                | 理由                                                             |
+| -------------- | --------------------------------------------------- | ---------------------------------------------------------------- |
+| 言語           | TypeScript（Node.js 22+）                           | フロントと型を共有、エコシステムが広い                           |
+| パッケージ管理 | pnpm workspace                                      | モノレポの依存管理が軽い                                         |
+| API            | Fastify                                             | 軽量・高速・JSON Schema バリデーション                           |
+| DB             | SQLite（better-sqlite3）→ PostgreSQL                | 単一マシンで zero-config 開始                                    |
+| ORM            | Drizzle ORM                                         | 型安全、マイグレーションが軽い                                   |
+| 認証           | Argon2id（hash-wasm）+ DB セッション                | 既存 ER に直結。ロール・監査・レート制限を自前で制御（ADR 0001） |
+| UI             | Next.js (App Router) + Tailwind + shadcn/ui         | ダッシュボード構築が速い                                         |
+| リアルタイム   | SSE                                                 | ログ tail に十分、実装が単純                                     |
+| スケジューラ   | node-cron + DB ジョブテーブル                       | Redis 不要で開始                                                 |
+| ログ収集       | `fs.watch` + `readline`、`wsl.exe` 経由の `tail -F` | 追加依存を最小化                                                 |
+| AI             | `openai` SDK（`baseURL` 差し替え）                  | OpenAI 互換なら LM Studio / Ollama / vLLM すべて対応             |
+| メール         | nodemailer（任意の SMTP + STARTTLS/TLS）            | プロバイダ未定のため汎用実装。設定画面 + 接続テスト              |
+| テスト         | Vitest + Playwright                                 | 単体・E2E                                                        |
+| 起動           | `pnpm dev`（concurrently）+ セットアップスクリプト  | 手動起動方針に合わせる                                           |
 
 ---
 
@@ -566,7 +566,7 @@ GET    /api/audit-logs                 admin のみ
 - [x] M0: ER 図と OpenAPI 定義を作る → `docs/ER.md`, `docs/openapi.yaml`
 - [x] M1: モノレポ初期化（`apps/api`, `apps/web`, `apps/agent`, `packages/*`）
 - [x] M1: DB マイグレーション基盤（Drizzle + SQLite、18 テーブル）
-- [ ] M1: 認証・ロール・セッション
+- [x] M1: 認証・ロール・セッション（Argon2id / DB セッション / レート制限 / 監査）→ `docs/adr/0001-auth.md`
 - [x] M1: スパイク（Windows + WSL ポートスキャン）→ `docs/spike/portscan-findings.md`
 - [x] M1: HostAdapter（Windows）+ ポートスキャナ
 - [x] M1: HostAdapter（WSL）+ ディストロ検出
@@ -667,7 +667,8 @@ sys4sys/
 
 ## 14. 次のアクション
 
-1. ~~M0 の残り成果物~~: 完了。ER 図（`docs/ER.md`）と OpenAPI（`docs/openapi.yaml`、41 paths / 36 schemas）。
+1. ~~M0 の残り成果物~~: 完了。ER 図（`docs/ER.md`）と OpenAPI（`docs/openapi.yaml`）。
 2. ~~M1 スパイク~~: 完了。結果は `docs/spike/portscan-findings.md`（WSL の共有ネットワーク・停止中 distro の暗黙起動を確認）。
-3. ~~モノレポ初期化・DB・ポートスキャン・一覧 UI~~: 完了。次は **認証 → ポート予約・競合検出** の順で M1 を進める。
-4. SMTP / LLM / WSL の実値は、設定画面ができた時点（M1〜M2）で入力する。
+3. ~~モノレポ初期化・DB・ポートスキャン・一覧 UI~~: 完了。
+4. ~~認証・ロール・セッション~~: 完了（`docs/adr/0001-auth.md`）。次は **ポート予約・競合検出** を実装する。
+5. SMTP / LLM / WSL の実値は、設定画面ができた時点（M1〜M2）で入力する。

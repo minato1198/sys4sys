@@ -22,6 +22,13 @@ interface PortsResponse {
   items: PortItem[];
 }
 
+interface AuthUser {
+  id: string;
+  email: string;
+  name: string;
+  role: "admin" | "operator" | "viewer";
+}
+
 function StatCard({
   label,
   value,
@@ -80,10 +87,15 @@ export default function DashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("");
+  const [user, setUser] = useState<AuthUser | null>(null);
 
   const load = useCallback(async () => {
     try {
       const response = await fetch("/api/ports", { cache: "no-store" });
+      if (response.status === 401) {
+        window.location.href = "/login";
+        return;
+      }
       if (!response.ok) throw new Error(`API ${response.status}`);
       const json = (await response.json()) as PortsResponse;
       setData(json);
@@ -96,10 +108,41 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+
+    void fetch("/api/auth/me", { cache: "no-store" })
+      .then(async (response) => {
+        if (response.status === 401) {
+          window.location.href = "/login";
+          return null;
+        }
+        if (!response.ok) throw new Error(`auth ${response.status}`);
+        return (await response.json()) as AuthUser;
+      })
+      .then((me) => {
+        if (!cancelled && me) setUser(me);
+      })
+      .catch((cause) => {
+        if (!cancelled) {
+          setError(cause instanceof Error ? cause.message : String(cause));
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     void load();
     const timer = setInterval(() => void load(), 10_000);
     return () => clearInterval(timer);
   }, [load]);
+
+  async function logout() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    window.location.href = "/login";
+  }
 
   const items = useMemo(() => {
     const needle = filter.trim().toLowerCase();
@@ -144,7 +187,7 @@ export default function DashboardPage() {
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <span className="flex items-center gap-2 text-xs text-mist-400">
             <span
               className={`size-1.5 rounded-full ${error ? "bg-danger-400" : "bg-signal-400"} ${
@@ -160,6 +203,23 @@ export default function DashboardPage() {
           >
             再スキャン
           </button>
+          <div className="flex items-center gap-2 rounded-md border border-ink-700 bg-ink-800/60 px-3 py-1.5">
+            <div className="text-right">
+              <div className="text-xs text-mist-200">
+                {user?.email ?? "認証確認中…"}
+              </div>
+              <div className="text-[9px] font-medium uppercase tracking-[0.14em] text-mist-400">
+                {user?.role ?? ""}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => void logout()}
+              className="rounded border border-ink-700 px-2 py-1 text-[11px] text-mist-400 transition hover:border-danger-400/40 hover:text-danger-400"
+            >
+              ログアウト
+            </button>
+          </div>
         </div>
       </header>
 
@@ -288,7 +348,7 @@ export default function DashboardPage() {
 
       <footer className="mt-8 flex flex-wrap items-center justify-between gap-2 text-[11px] text-mist-400">
         <span>sys4sys v0.1 — ports / logs / incidents / AI reports</span>
-        <span className="font-mono">M1: foundation + port management</span>
+        <span className="font-mono">M1: auth + port management</span>
       </footer>
     </main>
   );

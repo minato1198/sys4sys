@@ -10,7 +10,7 @@
     "smoke": "tsx src/smoke.ts",
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "tsx src/db/migrate.ts",
+    "db:migrate": "tsx src/db/migrate-cli.ts",
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
@@ -21,6 +21,7 @@
     "dotenv": "^17.2.3",
     "drizzle-orm": "^0.44.7",
     "fastify": "^5.6.1",
+    "hash-wasm": "^4.12.0",
     "zod": "^4.1.12"
   },
   "devDependencies": {

@@ -23,8 +23,7 @@
 ```powershell
 pnpm install
 Copy-Item .env.example .env
-pnpm db:generate
-pnpm db:migrate
+# .env の ADMIN_PASSWORD を 12 文字以上で設定（推奨）
 pnpm dev
 ```
 
@@ -32,7 +31,19 @@ pnpm dev
 - Web: http://127.0.0.1:3000
 - ポートスキャン単体: `pnpm scan` / `pnpm scan --json`
 
-> `pnpm db:generate` は初回のみ、または `apps/api/src/db/schema.ts` を変更したときに実行します。
+> 起動時に未適用のマイグレーションを自動適用します。`pnpm db:generate` は `apps/api/src/db/schema.ts` を変更したときだけ実行してください。
+
+## 認証
+
+- メール + パスワード（Argon2id、`hash-wasm`）
+- セッション Cookie: `sys4sys_session`（HttpOnly / SameSite=Lax / 既定 168 時間）
+- 初回起動時に `users` が空なら管理者を 1 人作成
+  - `ADMIN_EMAIL` / `ADMIN_PASSWORD` を `.env` に設定（本番では `ADMIN_PASSWORD` 必須）
+  - 開発時に `ADMIN_PASSWORD` が空ならランダム生成し、起動ログに一度だけ表示
+- ログイン試行制限: `LOGIN_MAX_ATTEMPTS` 回 / `LOGIN_WINDOW_MINUTES` 分（既定 5 回 / 15 分）
+- パスワード変更時は現在のセッション以外を無効化
+
+認証方式の詳細は [docs/adr/0001-auth.md](./docs/adr/0001-auth.md) を参照。
 
 ## 構成
 
@@ -61,9 +72,13 @@ sys4sys/
 - [x] M0: ER 図・OpenAPI 定義
 - [x] M1 スパイク: Windows + WSL ポートスキャン（[結果](./docs/spike/portscan-findings.md)）
 - [x] モノレポ初期化（pnpm workspace / Fastify / Next.js / Drizzle）
-- [ ] M1: 認証・ロール
+- [x] M1: 認証・ロール・セッション
 - [ ] M1: ポート予約・競合検出
 - [ ] M2: サービス管理・ログ収集
+
+## 認証の設計
+
+[ADR 0001](./docs/adr/0001-auth.md) を参照。better-auth ではなく、既存の `users` / `sessions` スキーマに直結する自前実装を採用しています。
 
 ## スパイクで判明した重要事項
 
@@ -74,13 +89,14 @@ sys4sys/
 
 ## スクリプト
 
-| コマンド           | 内容                         |
-| ------------------ | ---------------------------- |
-| `pnpm dev`         | API + Web を同時起動         |
-| `pnpm dev:api`     | API のみ                     |
-| `pnpm dev:web`     | Web のみ                     |
-| `pnpm scan`        | ポートスキャン（CLI）        |
-| `pnpm typecheck`   | 全パッケージの型チェック     |
-| `pnpm test`        | テスト（policy など）        |
-| `pnpm db:generate` | Drizzle マイグレーション生成 |
-| `pnpm db:migrate`  | マイグレーション適用         |
+| コマンド                           | 内容                         |
+| ---------------------------------- | ---------------------------- |
+| `pnpm dev`                         | API + Web を同時起動         |
+| `pnpm dev:api`                     | API のみ                     |
+| `pnpm dev:web`                     | Web のみ                     |
+| `pnpm scan`                        | ポートスキャン（CLI）        |
+| `pnpm typecheck`                   | 全パッケージの型チェック     |
+| `pnpm test`                        | テスト（policy / auth）      |
+| `pnpm db:generate`                 | Drizzle マイグレーション生成 |
+| `pnpm db:migrate`                  | マイグレーション適用         |
+| `pnpm --filter @sys4sys/api smoke` | 認証込み API スモーク        |

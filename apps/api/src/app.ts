@@ -1,11 +1,17 @@
 import Fastify, { type FastifyError } from "fastify";
 import cookie from "@fastify/cookie";
 import { ZodError } from "zod";
+import { ensureAdminUser } from "./auth/bootstrap.js";
+import { cleanupExpiredSessions } from "./auth/session.js";
 import { config } from "./config.js";
+import { migrateDb } from "./db/migrate.js";
+import { authRoutes } from "./routes/auth.js";
 import { healthRoutes } from "./routes/health.js";
 import { portRoutes } from "./routes/ports.js";
 
 export async function buildApp() {
+  migrateDb();
+
   const app = Fastify({
     logger: {
       level: process.env.LOG_LEVEL ?? "info",
@@ -20,6 +26,43 @@ export async function buildApp() {
   });
 
   await app.register(cookie, { secret: config.SESSION_SECRET });
+
+  // 空ボディの POST（ログアウトなど）を許可する。Fastify の既定 JSON パーサは
+  // Content-Type: application/json + 空ボディを 400 にするため。
+  app.addContentTypeParser(
+    "application/json",
+    { parseAs: "string" },
+    (_request, body, done) => {
+      const text = (
+        typeof body === "string" ? body : body.toString("utf8")
+      ).trim();
+      if (text.length === 0) {
+        done(null, {});
+        return;
+      }
+      try {
+        done(null, JSON.parse(text));
+      } catch (error) {
+        done(error as Error);
+      }
+    },
+  );
+
+  const bootstrap = await ensureAdminUser();
+  if (bootstrap.created) {
+    if (bootstrap.generatedPassword) {
+      app.log.warn(
+        { email: bootstrap.email, password: bootstrap.generatedPassword },
+        "initial admin user created; set ADMIN_PASSWORD or change it after login",
+      );
+    } else {
+      app.log.info(
+        { email: bootstrap.email },
+        "initial admin user created from ADMIN_PASSWORD",
+      );
+    }
+  }
+  await cleanupExpiredSessions();
 
   app.setErrorHandler((error: FastifyError, request, reply) => {
     if (error instanceof ZodError) {
@@ -71,6 +114,7 @@ export async function buildApp() {
   app.get("/", async () => ({ name: "sys4sys-api", version: "0.1.0" }));
 
   await app.register(healthRoutes, { prefix: "/api" });
+  await app.register(authRoutes, { prefix: "/api" });
   await app.register(portRoutes, { prefix: "/api" });
 
   return app;

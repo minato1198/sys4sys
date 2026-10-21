@@ -9,6 +9,19 @@ const envSchema = z.object({
     .string()
     .min(16)
     .default("dev-only-session-secret-change-me"),
+  SESSION_TTL_HOURS: z.coerce.number().int().min(1).max(8760).default(168),
+  COOKIE_SECURE: z
+    .string()
+    .default("false")
+    .transform((value) => value === "true"),
+  LOGIN_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(100).default(5),
+  LOGIN_WINDOW_MINUTES: z.coerce.number().int().min(1).max(1440).default(15),
+
+  ADMIN_EMAIL: z.string().email().default("admin@sys4sys.local"),
+  ADMIN_PASSWORD: z.preprocess(
+    (value) => (value === "" ? undefined : value),
+    z.string().min(12).optional(),
+  ),
 
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().int().default(587),

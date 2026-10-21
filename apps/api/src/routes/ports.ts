@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { scanPorts } from "@sys4sys/agent";
 import { z } from "zod";
+import { requireAuth } from "../auth/guard.js";
 
 const querySchema = z.object({
   scope: z.enum(["all", "windows", "wsl"]).default("all"),
@@ -11,7 +12,7 @@ const querySchema = z.object({
 });
 
 export async function portRoutes(app: FastifyInstance): Promise<void> {
-  app.get("/ports", async (request) => {
+  app.get("/ports", { preHandler: requireAuth }, async (request) => {
     const query = querySchema.parse(request.query);
     const scan = await scanPorts({ scope: query.scope });
 

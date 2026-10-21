@@ -218,6 +218,9 @@ importers:
       fastify:
         specifier: ^5.6.1
         version: 5.12.7
+      hash-wasm:
+        specifier: ^4.12.0
+        version: 4.12.0
       zod:
         specifier: ^4.1.12
         version: 4.6.7
@@ -1652,6 +1655,9 @@ packages:
 
   graceful-fs@4.2.11:
     resolution: {integrity: sha512-RbJ5/jmFcNNCcDV5o9eTnBLJ/HszWV0P73bc+Ff4nS/rJj+YaS6IGyiOL0VoBYX+l1Wrl3k63h/KrH+nhJ0XvQ==}
+
+  hash-wasm@4.12.0:
+    resolution: {integrity: sha512-+/2B2rYLb48I/evdOIhP+K/DD2ca2fgBjp6O+GBEnCDk2e4rpeXIK8GvIyRPjTezgmWn9gmKwkQjjx6BtqDHVQ==}
 
   help-me@5.0.0:
     resolution: {integrity: sha512-7xgomUX6ADmcYzFik0HzAxh/73YlKR9bmFzf51CZwR+b6YtzU2m0u49hQCqV6SvlqIqsaxovfwdvbnsw3b/zpg==}
@@ -3103,6 +3109,8 @@ snapshots:
   github-from-package@0.0.0: {}
 
   graceful-fs@4.2.11: {}
+
+  hash-wasm@4.12.0: {}
 
   help-me@5.0.0: {}
 
