@@ -1,10 +1,8 @@
-/**
- * Windows の待受ポート + プロセス情報を JSON で出力する。
- * - Get-NetTCPConnection / Get-NetUDPEndpoint は CIM インスタンスを返すため、
- *   必要なプロパティだけを射影する（そのまま ConvertTo-Json すると巨大になる）。
- * - PowerShell 7.6 では New-Object List[object] が失敗するため配列を使う。
- * - 進捗ストリームの CLIXML 出力を抑止する。
- */
+# Windows の待受ポート + プロセス情報を JSON で出力する。
+# - Get-NetTCPConnection / Get-NetUDPEndpoint は CIM インスタンスを返すため、
+#   必要なプロパティだけを射影する（そのまま ConvertTo-Json すると巨大になる）。
+# - PowerShell 7.6 では New-Object List[object] が失敗するため配列を使う。
+# - 進捗ストリームの CLIXML 出力を抑止する。
 $ErrorActionPreference = 'SilentlyContinue'
 $ProgressPreference = 'SilentlyContinue'
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
@@ -22,9 +20,11 @@ foreach ($c in Get-NetTCPConnection -State Listen) {
     address     = $c.LocalAddress
     port        = [int]$c.LocalPort
     pid         = [int]$c.OwningProcess
+    ppid        = if ($p) { [int]$p.ParentProcessId } else { $null }
     process     = $p.Name
     path        = $p.ExecutablePath
     commandLine = $p.CommandLine
+    startedAt   = if ($p -and $p.CreationDate) { ([datetime]$p.CreationDate).ToUniversalTime().ToString('o') } else { $null }
   }
 }
 
@@ -35,9 +35,11 @@ foreach ($u in Get-NetUDPEndpoint) {
     address     = $u.LocalAddress
     port        = [int]$u.LocalPort
     pid         = [int]$u.OwningProcess
+    ppid        = if ($p) { [int]$p.ParentProcessId } else { $null }
     process     = $p.Name
     path        = $p.ExecutablePath
     commandLine = $p.CommandLine
+    startedAt   = if ($p -and $p.CreationDate) { ([datetime]$p.CreationDate).ToUniversalTime().ToString('o') } else { $null }
   }
 }
 

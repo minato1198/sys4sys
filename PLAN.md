@@ -4,7 +4,7 @@
 
 - 版: v0.3（追加ヒアリング反映）
 - 作成日: 2026-10-21 / 更新日: 2026-10-21
-- ステータス: M1 実装中（認証・ポート一覧まで完了。残りは予約・競合検出）
+- ステータス: M1 完了（認証・ポート一覧・予約/競合・履歴・停止・ホスト/ユーザー管理・CSRF・UI・スモーク）
 
 ---
 
@@ -565,13 +565,19 @@ GET    /api/audit-logs                 admin のみ
 - [ ] M0: セットアップ値の決定（SMTP / LLM / WSL）※ M1 と並行可
 - [x] M0: ER 図と OpenAPI 定義を作る → `docs/ER.md`, `docs/openapi.yaml`
 - [x] M1: モノレポ初期化（`apps/api`, `apps/web`, `apps/agent`, `packages/*`）
-- [x] M1: DB マイグレーション基盤（Drizzle + SQLite、18 テーブル）
+- [x] M1: DB マイグレーション基盤（Drizzle + SQLite、19 テーブル）
 - [x] M1: 認証・ロール・セッション（Argon2id / DB セッション / レート制限 / 監査）→ `docs/adr/0001-auth.md`
 - [x] M1: スパイク（Windows + WSL ポートスキャン）→ `docs/spike/portscan-findings.md`
 - [x] M1: HostAdapter（Windows）+ ポートスキャナ
 - [x] M1: HostAdapter（WSL）+ ディストロ検出
 - [x] M1: ポート一覧 UI（Next.js ダッシュボード）
-- [ ] M1: ポート予約 + 競合検出
+- [x] M1: ポート予約 + 競合検出（protocol + port / Windows-WSL 横断）
+- [x] M1: ポート履歴（opened/closed、停止実行者）
+- [x] M1: プロセス詳細（PPID / 開始時刻 / 実行パス / コマンドライン）+ kill（確認トークン / operator 以上 / 監査）
+- [x] M1: ホスト管理（Windows 自動 seed / WSL 検出・登録・有効化）
+- [x] M1: ユーザー管理（admin 限定 / 最後の管理者保護 / パスワード再設定でセッション無効化）
+- [x] M1: CSRF 対策（Origin / Sec-Fetch-Site / `ALLOWED_ORIGINS`）
+- [x] M1: スモークテスト（予約・競合・kill・ロール・ホスト・CSRF・パスワードローテーション）
 - [ ] M2: サービス CRUD とプロセス起動/停止
 - [ ] M2: ヘルスチェック（HTTP/TCP/process）
 - [ ] M2: ログ取り込み（file / stdout / WSL tail）
@@ -670,5 +676,6 @@ sys4sys/
 1. ~~M0 の残り成果物~~: 完了。ER 図（`docs/ER.md`）と OpenAPI（`docs/openapi.yaml`）。
 2. ~~M1 スパイク~~: 完了。結果は `docs/spike/portscan-findings.md`（WSL の共有ネットワーク・停止中 distro の暗黙起動を確認）。
 3. ~~モノレポ初期化・DB・ポートスキャン・一覧 UI~~: 完了。
-4. ~~認証・ロール・セッション~~: 完了（`docs/adr/0001-auth.md`）。次は **ポート予約・競合検出** を実装する。
-5. SMTP / LLM / WSL の実値は、設定画面ができた時点（M1〜M2）で入力する。
+4. ~~認証・ロール・セッション~~: 完了（`docs/adr/0001-auth.md`）。
+5. ~~M1 ポート予約・競合検出・履歴・プロセス停止・ホスト/ユーザー管理・CSRF・UI・テスト~~: 完了。次は **M2 サービス管理（CRUD / 起動停止 / ヘルスチェック / ログ）** に進む。
+6. SMTP / LLM / WSL の実値は、設定画面ができた時点（M2）で入力する。

@@ -105,9 +105,11 @@ export const ports = sqliteTable(
     address: text("address").notNull(),
     port: integer("port").notNull(),
     pid: integer("pid"),
+    ppid: integer("ppid"),
     processName: text("process_name"),
     processPath: text("process_path"),
     commandLine: text("command_line"),
+    startedAt: timestamp("started_at"),
     serviceId: text("service_id"),
     firstSeen: timestamp("first_seen").notNull(),
     lastSeen: timestamp("last_seen").notNull(),
@@ -124,6 +126,36 @@ export const ports = sqliteTable(
   ],
 );
 
+export const portHistory = sqliteTable(
+  "port_history",
+  {
+    id: text("id").primaryKey(),
+    scope: text("scope", { enum: ["windows", "wsl"] }).notNull(),
+    pidHostId: text("pid_host_id"),
+    protocol: text("protocol", { enum: ["tcp", "udp"] }).notNull(),
+    address: text("address").notNull(),
+    port: integer("port").notNull(),
+    pid: integer("pid"),
+    ppid: integer("ppid"),
+    processName: text("process_name"),
+    processPath: text("process_path"),
+    commandLine: text("command_line"),
+    startedAt: timestamp("started_at"),
+    serviceId: text("service_id"),
+    openedAt: timestamp("opened_at").notNull(),
+    closedAt: timestamp("closed_at"),
+    releasedBy: text("released_by"),
+  },
+  (table) => [
+    index("port_history_scope_port_opened_idx").on(
+      table.scope,
+      table.port,
+      table.openedAt,
+    ),
+    index("port_history_closed_at_idx").on(table.closedAt),
+  ],
+);
+
 export const portReservations = sqliteTable(
   "port_reservations",
   {
@@ -136,11 +168,7 @@ export const portReservations = sqliteTable(
     createdAt: timestamp("created_at").notNull(),
   },
   (table) => [
-    uniqueIndex("port_reservations_endpoint_uq").on(
-      table.scope,
-      table.protocol,
-      table.port,
-    ),
+    uniqueIndex("port_reservations_endpoint_uq").on(table.protocol, table.port),
   ],
 );
 

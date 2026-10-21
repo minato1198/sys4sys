@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  hostKindSchema,
   logLevelSchema,
   portScopeSchema,
   protocolSchema,
@@ -55,6 +56,44 @@ export const reservationCreateSchema = z.object({
   note: z.string().max(500).optional(),
 });
 export type ReservationCreateInput = z.infer<typeof reservationCreateSchema>;
+
+export const portHistoryQuerySchema = z.object({
+  scope: portScopeSchema,
+  port: z.coerce.number().int().min(1).max(65535),
+  protocol: protocolSchema.optional(),
+  from: z.string().datetime().optional(),
+  to: z.string().datetime().optional(),
+  limit: z.coerce.number().int().min(1).max(500).default(100),
+});
+export type PortHistoryQuery = z.infer<typeof portHistoryQuerySchema>;
+
+export const killTokenQuerySchema = z.object({
+  scope: portScopeSchema,
+  pidScope: z.string().optional(),
+  pid: z.coerce.number().int().min(1).optional(),
+});
+export type KillTokenQuery = z.infer<typeof killTokenQuerySchema>;
+
+export const hostCreateSchema = z
+  .object({
+    kind: hostKindSchema,
+    name: z.string().min(1).max(100),
+    distro: z.string().min(1).max(100).optional(),
+    defaultUser: z.string().min(1).max(100).optional(),
+    enabled: z.boolean().default(true),
+  })
+  .refine((value) => value.kind !== "wsl" || Boolean(value.distro), {
+    message: "WSL ホストには distro が必要です",
+    path: ["distro"],
+  });
+export type HostCreateInput = z.infer<typeof hostCreateSchema>;
+
+export const hostUpdateSchema = z.object({
+  name: z.string().min(1).max(100).optional(),
+  defaultUser: z.string().max(100).nullable().optional(),
+  enabled: z.boolean().optional(),
+});
+export type HostUpdateInput = z.infer<typeof hostUpdateSchema>;
 
 export const killRequestSchema = z.object({
   scope: portScopeSchema,

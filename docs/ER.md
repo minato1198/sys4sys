@@ -87,12 +87,33 @@ erDiagram
         text address
         integer port
         integer pid
+        integer ppid
         text process_name
         text process_path
         text command_line
+        datetime started_at
         text service_id FK "nullable"
         datetime first_seen
         datetime last_seen
+    }
+
+    port_history {
+        text id PK
+        text scope "windows | wsl"
+        text pid_host_id FK "nullable"
+        text protocol "tcp | udp"
+        text address
+        integer port
+        integer pid
+        integer ppid
+        text process_name
+        text process_path
+        text command_line
+        datetime started_at
+        text service_id FK "nullable"
+        datetime opened_at
+        datetime closed_at "nullable"
+        text released_by "nullable"
     }
 
     port_reservations {
@@ -283,7 +304,8 @@ WSL 3.x では distro 間でネットワーク名前空間が共有されるた�
 | `hosts`             | `(kind, distro)` UNIQUE（WSL）、`kind` CHECK                 |
 | `services`          | `(host_id, name)` UNIQUE                                     |
 | `ports`             | `(scope, protocol, address, port)` UNIQUE、`port` INDEX      |
-| `port_reservations` | `(scope, port, protocol)` UNIQUE                             |
+| `port_history`      | `(scope, port, opened_at)` INDEX、`closed_at` INDEX          |
+| `port_reservations` | `(protocol, port)` UNIQUE（Windows / WSL 横断）              |
 | `log_events`        | `(host_id, service_id, ts)` INDEX、`(fingerprint, ts)` INDEX |
 | `incidents`         | `(fingerprint, started_at)` INDEX、`status` INDEX            |
 | `approvals`         | `status` INDEX、`incident_id` INDEX                          |

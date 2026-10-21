@@ -16,6 +16,11 @@ const envSchema = z.object({
     .transform((value) => value === "true"),
   LOGIN_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(100).default(5),
   LOGIN_WINDOW_MINUTES: z.coerce.number().int().min(1).max(1440).default(15),
+  ALLOWED_ORIGINS: z
+    .string()
+    .default(
+      "http://127.0.0.1:3000,http://localhost:3000,http://127.0.0.1:8787,http://localhost:8787",
+    ),
 
   ADMIN_EMAIL: z.string().email().default("admin@sys4sys.local"),
   ADMIN_PASSWORD: z.preprocess(

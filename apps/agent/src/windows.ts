@@ -11,9 +11,11 @@ interface RawWindowsPort {
   address?: string;
   port?: number;
   pid?: number;
+  ppid?: number | null;
   process?: string | null;
   path?: string | null;
   commandLine?: string | null;
+  startedAt?: string | null;
 }
 
 export interface WindowsScanResult {
@@ -59,9 +61,11 @@ export async function scanWindows(): Promise<WindowsScanResult> {
           address: r.address ?? "",
           port: r.port as number,
           pid: typeof r.pid === "number" ? r.pid : null,
+          ppid: typeof r.ppid === "number" ? r.ppid : null,
           process: r.process ?? null,
           processPath: r.path ?? null,
           commandLine: r.commandLine ?? null,
+          startedAt: r.startedAt ?? null,
         }));
 
       return { rows, elapsedMs: performance.now() - started, shell };

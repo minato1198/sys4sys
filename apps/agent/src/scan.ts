@@ -37,8 +37,11 @@ function mergeWslRows(rows: PortRow[]): PortRow[] {
     // PID を観測できた distro の情報を優先する
     if (!existing.pidScope && row.pidScope) {
       existing.pid = row.pid;
+      existing.ppid = row.ppid;
       existing.process = row.process;
+      existing.processPath = row.processPath;
       existing.commandLine = row.commandLine;
+      existing.startedAt = row.startedAt;
       existing.pidScope = row.pidScope;
     }
 

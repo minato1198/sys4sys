@@ -19,9 +19,11 @@ export const portRowSchema = z.object({
   address: z.string(),
   port: z.number().int().min(1).max(65535),
   pid: z.number().int().nullable(),
+  ppid: z.number().int().nullable().optional(),
   process: z.string().nullable(),
   processPath: z.string().nullable().optional(),
   commandLine: z.string().nullable(),
+  startedAt: z.string().datetime().nullable().optional(),
   likelyWslForward: z.boolean().optional(),
 });
 export type PortRow = z.infer<typeof portRowSchema>;

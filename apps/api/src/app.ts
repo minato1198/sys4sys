@@ -5,9 +5,12 @@ import { ensureAdminUser } from "./auth/bootstrap.js";
 import { cleanupExpiredSessions } from "./auth/session.js";
 import { config } from "./config.js";
 import { migrateDb } from "./db/migrate.js";
+import { ensureDefaultHosts } from "./hosts/bootstrap.js";
 import { authRoutes } from "./routes/auth.js";
 import { healthRoutes } from "./routes/health.js";
+import { hostRoutes } from "./routes/hosts.js";
 import { portRoutes } from "./routes/ports.js";
+import { userRoutes } from "./routes/users.js";
 
 export async function buildApp() {
   migrateDb();
@@ -48,7 +51,43 @@ export async function buildApp() {
     },
   );
 
+  const allowedOrigins = new Set(
+    config.ALLOWED_ORIGINS.split(",")
+      .map((origin) => origin.trim())
+      .filter(Boolean),
+  );
+
+  app.addHook("onRequest", async (request, reply) => {
+    if (!["POST", "PUT", "PATCH", "DELETE"].includes(request.method)) {
+      return;
+    }
+
+    const fetchSite = request.headers["sec-fetch-site"];
+    if (fetchSite === "cross-site") {
+      return reply.code(403).type("application/problem+json").send({
+        type: "about:blank",
+        title: "Forbidden",
+        status: 403,
+        detail: "クロスサイトリクエストは許可されていません",
+      });
+    }
+
+    const origin = request.headers.origin;
+    if (origin && !allowedOrigins.has(origin)) {
+      return reply.code(403).type("application/problem+json").send({
+        type: "about:blank",
+        title: "Forbidden",
+        status: 403,
+        detail: "許可されていない Origin からのリクエストです",
+      });
+    }
+  });
+
   const bootstrap = await ensureAdminUser();
+  const hostsCreated = await ensureDefaultHosts();
+  if (hostsCreated) {
+    app.log.info("default Windows host registered");
+  }
   if (bootstrap.created) {
     if (bootstrap.generatedPassword) {
       app.log.warn(
@@ -116,6 +155,8 @@ export async function buildApp() {
   await app.register(healthRoutes, { prefix: "/api" });
   await app.register(authRoutes, { prefix: "/api" });
   await app.register(portRoutes, { prefix: "/api" });
+  await app.register(hostRoutes, { prefix: "/api" });
+  await app.register(userRoutes, { prefix: "/api" });
 
   return app;
 }

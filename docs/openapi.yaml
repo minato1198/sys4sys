@@ -169,6 +169,41 @@ paths:
                 type: array
                 items: { $ref: "#/components/schemas/Host" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [hosts]
+      summary: ホスト登録（admin のみ）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/HostCreate" }
+      responses:
+        "201":
+          description: 登録済み
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Host" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /hosts/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    patch:
+      tags: [hosts]
+      summary: ホスト更新（admin のみ）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/HostUpdate" }
+      responses:
+        "200":
+          description: 更新済み
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Host" }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /hosts/wsl/detect:
     post:
@@ -191,7 +226,8 @@ paths:
       parameters:
         - name: scope
           in: query
-          schema: { type: string, enum: [windows, wsl] }
+          schema: { type: string, enum: [all, windows, wsl], default: all }
+          description: all は Windows + WSL をまとめてスキャン
         - name: protocol
           in: query
           schema: { type: string, enum: [tcp, udp] }
@@ -218,6 +254,18 @@ paths:
                   items:
                     type: array
                     items: { $ref: "#/components/schemas/Port" }
+                  reservations:
+                    type: array
+                    items: { $ref: "#/components/schemas/Reservation" }
+                  conflicts:
+                    type: array
+                    items: { $ref: "#/components/schemas/Reservation" }
+                  skipped:
+                    type: array
+                    items: { $ref: "#/components/schemas/SkippedDistro" }
+                  distros:
+                    type: array
+                    items: { $ref: "#/components/schemas/WslDistro" }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
   /ports/history:
@@ -233,12 +281,18 @@ paths:
           in: query
           required: true
           schema: { type: integer, minimum: 1, maximum: 65535 }
+        - name: protocol
+          in: query
+          schema: { type: string, enum: [tcp, udp] }
         - name: from
           in: query
           schema: { type: string, format: date-time }
         - name: to
           in: query
           schema: { type: string, format: date-time }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 500, default: 100 }
       responses:
         "200":
           description: OK
@@ -279,6 +333,35 @@ paths:
         "204": { description: 解除済み }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /ports/{port}/kill-token:
+    parameters:
+      - name: port
+        in: path
+        required: true
+        schema: { type: integer, minimum: 1, maximum: 65535 }
+    get:
+      tags: [ports]
+      summary: kill 用の短寿命確認トークンを取得（operator 以上）
+      parameters:
+        - name: scope
+          in: query
+          required: true
+          schema: { type: string, enum: [windows, wsl] }
+        - name: pid
+          in: query
+          schema: { type: integer }
+        - name: pidScope
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: 確認トークン
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/KillToken" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
   /ports/{port}/kill:
     parameters:
       - name: port
@@ -290,6 +373,7 @@ paths:
       summary: ポートを掴んでいるプロセスを停止（operator 以上）
       description: |
         誤操作防止のため、取得した確認トークンを必須とする。
+        トークンは短寿命で、対象 scope / pidScope / port / pid に紐づく。
         監査ログに実行者・対象 PID・シグナルを記録する。
       requestBody:
         required: true
@@ -302,6 +386,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Action" }
+        "400": { $ref: "#/components/responses/ValidationError" }
         "409": { $ref: "#/components/responses/Conflict" }
 
   /services:
@@ -987,7 +1072,7 @@ components:
 
     Host:
       type: object
-      required: [id, kind, name, enabled]
+      required: [id, kind, name, enabled, state]
       properties:
         id: { type: string }
         kind: { type: string, enum: [windows, wsl] }
@@ -996,6 +1081,24 @@ components:
         defaultUser: { type: string, nullable: true }
         enabled: { type: boolean }
         state: { type: string, enum: [running, stopped, unknown] }
+        distroState: { type: string, nullable: true }
+
+    HostCreate:
+      type: object
+      required: [kind, name]
+      properties:
+        kind: { type: string, enum: [windows, wsl] }
+        name: { type: string, minLength: 1 }
+        distro: { type: string, description: "kind=wsl のとき必須" }
+        defaultUser: { type: string }
+        enabled: { type: boolean, default: true }
+
+    HostUpdate:
+      type: object
+      properties:
+        name: { type: string, minLength: 1 }
+        defaultUser: { type: string, nullable: true }
+        enabled: { type: boolean }
 
     WslDistro:
       type: object
@@ -1005,6 +1108,14 @@ components:
         state: { type: string, enum: [Running, Stopped, Installing, Unknown] }
         version: { type: integer }
         isDefault: { type: boolean }
+        registered: { type: boolean }
+
+    SkippedDistro:
+      type: object
+      required: [distro, error]
+      properties:
+        distro: { type: string }
+        error: { type: string }
 
     Port:
       type: object
@@ -1025,23 +1136,48 @@ components:
         address: { type: string }
         port: { type: integer }
         pid: { type: integer, nullable: true }
+        ppid: { type: integer, nullable: true }
         process: { type: string, nullable: true }
         processPath: { type: string, nullable: true }
         commandLine: { type: string, nullable: true }
+        startedAt:
+          {
+            type: string,
+            format: date-time,
+            nullable: true,
+            description: プロセス開始時刻,
+          }
         serviceId: { type: string, nullable: true }
         likelyWslForward: { type: boolean }
-        firstSeen: { type: string, format: date-time }
-        lastSeen: { type: string, format: date-time }
+        firstSeen: { type: string, format: date-time, nullable: true }
+        lastSeen: { type: string, format: date-time, nullable: true }
+        reservation:
+          allOf:
+            - $ref: "#/components/schemas/Reservation"
+          nullable: true
+        conflict:
+          {
+            type: boolean,
+            description: このエンドポイントに予約があり、実リスナーが存在する,
+          }
+        status: { type: string, enum: [in_use, conflict] }
 
     PortHistoryEntry:
       type: object
-      required: [port, scope, openedAt]
+      required: [id, port, scope, openedAt]
       properties:
+        id: { type: string }
         port: { type: integer }
         scope: { type: string, enum: [windows, wsl] }
+        pidScope: { type: string, nullable: true }
         protocol: { type: string, enum: [tcp, udp] }
+        address: { type: string }
         pid: { type: integer, nullable: true }
+        ppid: { type: integer, nullable: true }
         process: { type: string, nullable: true }
+        processPath: { type: string, nullable: true }
+        commandLine: { type: string, nullable: true }
+        startedAt: { type: string, format: date-time, nullable: true }
         serviceId: { type: string, nullable: true }
         openedAt: { type: string, format: date-time }
         closedAt: { type: string, format: date-time, nullable: true }
@@ -1061,14 +1197,34 @@ components:
       allOf:
         - $ref: "#/components/schemas/ReservationCreate"
         - type: object
-          required: [id, createdAt]
+          required: [id, createdAt, status, inUse]
           properties:
             id: { type: string }
             createdAt: { type: string, format: date-time }
+            note: { type: string, nullable: true }
+            status: { type: string, enum: [reserved, conflict] }
+            inUse:
+              {
+                type: boolean,
+                description: 同じ protocol + port に実リスナーが存在する,
+              }
+
+    KillToken:
+      type: object
+      required: [token, expiresAt, scope, pidScope, port, pid, startedAt]
+      properties:
+        token: { type: string }
+        expiresAt: { type: string, format: date-time }
+        scope: { type: string, enum: [windows, wsl] }
+        pidScope: { type: string, nullable: true }
+        port: { type: integer }
+        pid: { type: integer }
+        startedAt: { type: string, format: date-time, nullable: true }
+        process: { type: string, nullable: true }
 
     KillRequest:
       type: object
-      required: [scope, pidScope, confirmToken]
+      required: [scope, confirmToken]
       properties:
         scope: { type: string, enum: [windows, wsl] }
         pidScope: { type: string, nullable: true }

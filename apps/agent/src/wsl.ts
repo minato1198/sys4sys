@@ -43,6 +43,7 @@ export async function listDistroStates(): Promise<WslDistro[]> {
 interface WslProc {
   ppid: number;
   commandLine: string;
+  startedAt: Date | null;
 }
 
 export interface WslScanResult {
@@ -54,16 +55,21 @@ export async function scanWslDistro(distro: string): Promise<WslScanResult> {
   const started = performance.now();
   const [ssOut, psOut] = await Promise.all([
     wsl(["-d", distro, "--", "ss", "-H", "-tulpn"]),
-    wsl(["-d", distro, "--", "ps", "-eo", "pid=,ppid=,args="]),
+    wsl(["-d", distro, "--", "ps", "-eo", "pid=,ppid=,etimes=,args="]),
   ]);
 
+  const now = Date.now();
   const procs = new Map<number, WslProc>();
   for (const line of psOut.split(/\r?\n/)) {
-    const match = line.match(/^\s*(\d+)\s+(\d+)\s+(.*)$/);
+    const match = line.match(/^\s*(\d+)\s+(\d+)\s+(\d+)\s+(.*)$/);
     if (!match) continue;
+    const elapsedSec = Number(match[3]);
     procs.set(Number(match[1]), {
       ppid: Number(match[2]),
-      commandLine: (match[3] ?? "").trim(),
+      commandLine: (match[4] ?? "").trim(),
+      startedAt: Number.isFinite(elapsedSec)
+        ? new Date(now - elapsedSec * 1000)
+        : null,
     });
   }
 
@@ -97,10 +103,12 @@ export async function scanWslDistro(distro: string): Promise<WslScanResult> {
       address,
       port,
       pid,
+      ppid: proc?.ppid ?? null,
       process: processMatch
         ? (processMatch[1] ?? null)
         : (proc?.commandLine.split(/\s+/)[0] ?? null),
       commandLine: proc?.commandLine ?? null,
+      startedAt: proc?.startedAt?.toISOString() ?? null,
     });
   }
 

@@ -42,8 +42,22 @@ pnpm dev
   - 開発時に `ADMIN_PASSWORD` が空ならランダム生成し、起動ログに一度だけ表示
 - ログイン試行制限: `LOGIN_MAX_ATTEMPTS` 回 / `LOGIN_WINDOW_MINUTES` 分（既定 5 回 / 15 分）
 - パスワード変更時は現在のセッション以外を無効化
+- 変更系リクエストは `Origin` / `Sec-Fetch-Site` を検証（`ALLOWED_ORIGINS`、既定は localhost:3000 / 8787）
+- ユーザー管理は admin のみ。最後の有効な admin は降格・無効化できない
+- パスワード再設定時は対象ユーザーの全セッションを無効化
 
 認証方式の詳細は [docs/adr/0001-auth.md](./docs/adr/0001-auth.md) を参照。
+
+## ポート管理（M1）
+
+- Windows / WSL を 10 秒ごとにスキャンして 1 つの一覧に表示（WSL は distro 間でネットワーク共有）
+- **ポート予約**: `protocol + port` 単位。Windows / WSL をまたいで一意
+- **競合検出**: 予約済みエンドポイントに実リスナーが現れたら `conflict` として強調
+- **履歴**: 観測された opened / closed を `port_history` に保存。停止操作の実行者も記録
+- **プロセス詳細**: PID / PPID / 開始時刻 / 実行パス / コマンドライン / WSL distro
+- **停止**: operator 以上。短寿命 HMAC 確認トークン + 監査ログ。PID 4 以下と API 自身は拒否
+- **ホスト管理**: Windows は起動時に自動登録、WSL は検出 → 明示登録 → 有効化
+- **ユーザー管理**: admin / operator / viewer、有効化・無効化、ロール変更、パスワード再設定
 
 ## 構成
 
@@ -73,7 +87,8 @@ sys4sys/
 - [x] M1 スパイク: Windows + WSL ポートスキャン（[結果](./docs/spike/portscan-findings.md)）
 - [x] モノレポ初期化（pnpm workspace / Fastify / Next.js / Drizzle）
 - [x] M1: 認証・ロール・セッション
-- [ ] M1: ポート予約・競合検出
+- [x] M1: ポート一覧・予約・競合検出・履歴・プロセス詳細・停止
+- [x] M1: ホスト管理・ユーザー管理・CSRF・M1 スモーク
 - [ ] M2: サービス管理・ログ収集
 
 ## 認証の設計
@@ -89,14 +104,28 @@ sys4sys/
 
 ## スクリプト
 
-| コマンド                           | 内容                         |
-| ---------------------------------- | ---------------------------- |
-| `pnpm dev`                         | API + Web を同時起動         |
-| `pnpm dev:api`                     | API のみ                     |
-| `pnpm dev:web`                     | Web のみ                     |
-| `pnpm scan`                        | ポートスキャン（CLI）        |
-| `pnpm typecheck`                   | 全パッケージの型チェック     |
-| `pnpm test`                        | テスト（policy / auth）      |
-| `pnpm db:generate`                 | Drizzle マイグレーション生成 |
-| `pnpm db:migrate`                  | マイグレーション適用         |
-| `pnpm --filter @sys4sys/api smoke` | 認証込み API スモーク        |
+| コマンド                           | 内容                                                            |
+| ---------------------------------- | --------------------------------------------------------------- |
+| `pnpm dev`                         | API + Web を同時起動                                            |
+| `pnpm dev:api`                     | API のみ                                                        |
+| `pnpm dev:web`                     | Web のみ                                                        |
+| `pnpm scan`                        | ポートスキャン（CLI）                                           |
+| `pnpm typecheck`                   | 全パッケージの型チェック                                        |
+| `pnpm test`                        | テスト（policy / auth / 予約 / kill トークン）                  |
+| `pnpm db:generate`                 | Drizzle マイグレーション生成                                    |
+| `pnpm db:migrate`                  | マイグレーション適用                                            |
+| `pnpm --filter @sys4sys/api smoke` | M1 統合スモーク（認証・予約・競合・kill・ロール・ホスト・CSRF） |
+
+### スモークテスト
+
+スモークは実際に一時ポートでリスナーを起動し、予約 → 競合検出 → 確認トークン → kill → 履歴まで検証します。開発 DB を汚さないよう、一時 DB を指定して実行してください。
+
+```powershell
+Remove-Item -Force apps/api/data/smoke-m1.db* -ErrorAction SilentlyContinue
+$env:DATABASE_URL='./data/smoke-m1.db'
+$env:ADMIN_PASSWORD='SmokeTest-Password-123!'
+$env:LOG_LEVEL='warn'
+pnpm --filter @sys4sys/api smoke
+```
+
+`ADMIN_PASSWORD` を設定しない場合、認証以降のチェックはスキップされます。
