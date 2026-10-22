@@ -1,12 +1,11 @@
 import { lt } from "drizzle-orm";
-import { config } from "../config.js";
 import { db } from "../db/index.js";
 import { logEvents } from "../db/schema.js";
+import { getLogRetentionDays } from "../settings/retention.js";
 
 export async function cleanupLogs(): Promise<number> {
-  const cutoff = new Date(
-    Date.now() - config.LOG_RETENTION_DAYS * 24 * 60 * 60 * 1000,
-  );
+  const retentionDays = await getLogRetentionDays();
+  const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
   const result = await db
     .delete(logEvents)
     .where(lt(logEvents.ts, cutoff))

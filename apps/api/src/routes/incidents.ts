@@ -2,6 +2,8 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import { incidentActionSchema, incidentQuerySchema } from "@sys4sys/shared";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
+import { getLatestAnalysisReport } from "../ai/analysis.js";
+import { serializedAnalysis, serializedReport } from "../ai/serialize.js";
 import { writeAudit } from "../audit.js";
 import { requireAuth, requireRole } from "../auth/guard.js";
 import { db } from "../db/index.js";
@@ -148,7 +150,13 @@ function handleIncidentError(reply: FastifyReply, error: unknown) {
 
 async function detailForId(id: string) {
   const context = await getIncidentContext(id);
-  return context ? contextResponse(context) : null;
+  if (!context) return null;
+  const latest = await getLatestAnalysisReport(id);
+  return {
+    ...contextResponse(context),
+    analysis: latest.analysis ? serializedAnalysis(latest.analysis) : null,
+    report: latest.report ? serializedReport(latest.report) : null,
+  };
 }
 
 export async function incidentRoutes(app: FastifyInstance): Promise<void> {

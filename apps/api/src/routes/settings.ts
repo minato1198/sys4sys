@@ -1,14 +1,19 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
-import { mailSettingsSchema } from "@sys4sys/shared";
+import { mailSettingsSchema, retentionSettingsSchema } from "@sys4sys/shared";
 import { z } from "zod";
 import { writeAudit } from "../audit.js";
 import { requireRole } from "../auth/guard.js";
+import { createDatabaseBackup } from "../db/backup.js";
 import {
   getMailSettingsView,
   MailNotConfiguredError,
   saveMailSettings,
   testMailSettings,
 } from "../settings/mail.js";
+import {
+  getRetentionSettings,
+  saveRetentionSettings,
+} from "../settings/retention.js";
 
 const mailUpdateSchema = mailSettingsSchema.extend({
   clearPassword: z.boolean().optional(),
@@ -91,6 +96,64 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
           502,
           "Bad Gateway",
           `テストメールを送信できませんでした: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    },
+  );
+
+  app.get(
+    "/settings/retention",
+    { preHandler: requireRole("admin") },
+    async () => getRetentionSettings(),
+  );
+
+  app.put(
+    "/settings/retention",
+    { preHandler: requireRole("admin") },
+    async (request, reply) => {
+      const body = retentionSettingsSchema.parse(request.body);
+      const user = request.authUser;
+      if (!user) return reply.code(401).send();
+      const before = await getRetentionSettings();
+      const view = await saveRetentionSettings(body);
+      await writeAudit({
+        actorUserId: user.id,
+        actorLabel: user.email,
+        action: "settings.retention.update",
+        target: "settings:retention",
+        before: { logDays: before.logDays },
+        after: { logDays: view.logDays },
+        ip: request.ip,
+      });
+      return view;
+    },
+  );
+
+  app.post(
+    "/admin/backup",
+    { preHandler: requireRole("admin") },
+    async (request, reply) => {
+      const user = request.authUser;
+      if (!user) return reply.code(401).send();
+      try {
+        const result = await createDatabaseBackup();
+        await writeAudit({
+          actorUserId: user.id,
+          actorLabel: user.email,
+          action: "system.backup.create",
+          target: "database",
+          after: { path: result.path, sizeBytes: result.sizeBytes },
+          ip: request.ip,
+        });
+        return result;
+      } catch (error) {
+        return problem(
+          reply,
+          500,
+          "Internal Server Error",
+          `データベースのバックアップに失敗しました: ${
             error instanceof Error ? error.message : String(error)
           }`,
         );

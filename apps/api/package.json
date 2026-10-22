@@ -11,11 +11,13 @@
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/db/migrate-cli.ts",
+    "db:backup": "tsx src/db/backup-cli.ts",
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",
     "@sys4sys/agent": "workspace:*",
+    "@sys4sys/ai": "workspace:*",
     "@sys4sys/mail": "workspace:*",
     "@sys4sys/policy": "workspace:*",
     "@sys4sys/shared": "workspace:*",

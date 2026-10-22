@@ -80,10 +80,48 @@ interface IncidentAction {
   error: string | null;
 }
 
+interface AiAnalysis {
+  id: string;
+  incidentId: string;
+  provider: string;
+  model: string;
+  promptVersion: string;
+  inputTokens: number;
+  outputTokens: number;
+  confidence: number;
+  latencyMs: number;
+  createdAt: string;
+  result: {
+    severity: IncidentSeverity;
+    category: string;
+    summary: string;
+    rootCauseHypothesis: string;
+    evidence: Array<{ logId: string | null; quote: string }>;
+    recommendedActions: Array<{
+      type: string;
+      target: string | null;
+      detail: string | null;
+      risk: string;
+    }>;
+    confidence: number;
+    needsHuman: boolean;
+  };
+}
+
+interface ReportView {
+  id: string;
+  incidentId: string;
+  format: "markdown" | "json";
+  body: string;
+  createdAt: string;
+}
+
 interface IncidentDetail extends Incident {
   events: IncidentEvent[];
   approvals: Approval[];
   actions: IncidentAction[];
+  analysis: AiAnalysis | null;
+  report: ReportView | null;
 }
 
 interface IncidentList {
@@ -180,6 +218,7 @@ export default function IncidentsPage() {
   const [detail, setDetail] = useState<IncidentDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [note, setNote] = useState("");
@@ -303,6 +342,38 @@ export default function IncidentsPage() {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function analyze() {
+    if (!selectedId) return;
+    setAnalyzing(true);
+    setMessage(null);
+    setError(null);
+    try {
+      const response = await fetch(
+        `/api/incidents/${encodeURIComponent(selectedId)}/analyze`,
+        { method: "POST" },
+      );
+      if (!response.ok) {
+        const problem = (await response
+          .json()
+          .catch(() => null)) as Problem | null;
+        throw new Error(
+          problem?.detail ?? `AI 分析の実行に失敗しました (${response.status})`,
+        );
+      }
+      setMessage(
+        "AI 分析をキューに追加しました。完了までしばらくお待ちください。",
+      );
+      const id = selectedId;
+      window.setTimeout(() => {
+        void loadDetail(id).catch(() => undefined);
+      }, 2000);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setAnalyzing(false);
     }
   }
 
@@ -672,6 +743,149 @@ export default function IncidentsPage() {
               </div>
 
               <div className="space-y-4">
+                <div className="rounded-lg border border-ink-700/70 bg-ink-950/40 p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="text-xs font-semibold uppercase tracking-[0.12em] text-mist-400">
+                      AI analysis
+                    </h3>
+                    <div className="flex items-center gap-2">
+                      {detail.report ? (
+                        <Link
+                          href={`/reports?focus=${encodeURIComponent(
+                            detail.report.id,
+                          )}`}
+                          className="rounded border border-signal-400/30 bg-signal-400/10 px-2 py-1 text-[10px] font-medium text-signal-400 transition hover:bg-signal-400/20"
+                        >
+                          レポートを開く
+                        </Link>
+                      ) : null}
+                      {canOperate ? (
+                        <button
+                          type="button"
+                          disabled={analyzing}
+                          onClick={() => void analyze()}
+                          className="rounded border border-ink-700 bg-ink-800/80 px-2 py-1 text-[10px] font-medium text-mist-200 transition hover:border-signal-400/40 hover:text-white disabled:opacity-50"
+                        >
+                          {analyzing ? "投入中…" : "AI 分析を実行"}
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                  {detail.analysis ? (
+                    <div className="mt-2 space-y-2">
+                      <div className="flex flex-wrap items-center gap-2 text-[10px] text-mist-400">
+                        <span
+                          className={`rounded border px-1.5 py-0.5 font-medium uppercase ${
+                            detail.analysis.provider === "template"
+                              ? "border-warn-400/30 bg-warn-400/10 text-warn-400"
+                              : "border-signal-400/30 bg-signal-400/10 text-signal-400"
+                          }`}
+                        >
+                          {detail.analysis.provider}
+                        </span>
+                        <span className="font-mono">
+                          {detail.analysis.model}
+                        </span>
+                        <span>
+                          confidence{" "}
+                          {(detail.analysis.confidence * 100).toFixed(0)}%
+                        </span>
+                        {detail.analysis.latencyMs > 0 ? (
+                          <span>{detail.analysis.latencyMs}ms</span>
+                        ) : null}
+                      </div>
+                      <p className="text-xs leading-relaxed text-mist-200">
+                        {detail.analysis.result.summary}
+                      </p>
+                      <dl className="grid gap-1 text-[10px] sm:grid-cols-2">
+                        <div>
+                          <dt className="uppercase tracking-wide text-mist-400">
+                            Category
+                          </dt>
+                          <dd className="font-mono text-mist-200">
+                            {detail.analysis.result.category}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt className="uppercase tracking-wide text-mist-400">
+                            Generated
+                          </dt>
+                          <dd className="text-mist-200">
+                            {formatDate(detail.analysis.createdAt)}
+                          </dd>
+                        </div>
+                      </dl>
+                      {detail.analysis.result.rootCauseHypothesis ? (
+                        <div>
+                          <div className="text-[10px] uppercase tracking-wide text-mist-400">
+                            推定原因
+                          </div>
+                          <p className="mt-1 whitespace-pre-wrap text-[11px] text-mist-200">
+                            {detail.analysis.result.rootCauseHypothesis}
+                          </p>
+                        </div>
+                      ) : null}
+                      {detail.analysis.result.evidence.length > 0 ? (
+                        <div>
+                          <div className="text-[10px] uppercase tracking-wide text-mist-400">
+                            根拠ログ
+                          </div>
+                          <ul className="mt-1 space-y-1">
+                            {detail.analysis.result.evidence.map(
+                              (item, index) => (
+                                <li
+                                  key={`${item.logId ?? "log"}-${index}`}
+                                  className="rounded border border-ink-700/60 bg-ink-900/60 px-2 py-1 font-mono text-[10px] text-mist-400"
+                                >
+                                  {item.logId ? (
+                                    <span className="mr-1 text-signal-400">
+                                      {item.logId.slice(0, 8)}
+                                    </span>
+                                  ) : null}
+                                  {item.quote}
+                                </li>
+                              ),
+                            )}
+                          </ul>
+                        </div>
+                      ) : null}
+                      {detail.analysis.result.recommendedActions.length > 0 ? (
+                        <div>
+                          <div className="text-[10px] uppercase tracking-wide text-mist-400">
+                            推奨対応
+                          </div>
+                          <ul className="mt-1 space-y-1">
+                            {detail.analysis.result.recommendedActions.map(
+                              (action, index) => (
+                                <li
+                                  key={`${action.type}-${index}`}
+                                  className="flex items-start justify-between gap-2 rounded border border-ink-700/60 bg-ink-900/60 px-2 py-1 text-[10px]"
+                                >
+                                  <span className="text-mist-200">
+                                    <span className="font-mono text-signal-400">
+                                      {action.type}
+                                    </span>{" "}
+                                    {action.target ?? ""} {action.detail ?? ""}
+                                  </span>
+                                  <span className="shrink-0 text-warn-400">
+                                    {action.risk}
+                                  </span>
+                                </li>
+                              ),
+                            )}
+                          </ul>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-xs text-mist-400">
+                      AI
+                      分析はまだありません。インシデント作成時に自動実行され、
+                      未設定時はルールベースのレポートを生成します。
+                    </p>
+                  )}
+                </div>
+
                 <div className="rounded-lg border border-ink-700/70 bg-ink-950/40 p-3">
                   <h3 className="text-xs font-semibold uppercase tracking-[0.12em] text-mist-400">
                     Response

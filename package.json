@@ -16,6 +16,7 @@
     "test": "pnpm -r test",
     "db:generate": "pnpm --filter @sys4sys/api db:generate",
     "db:migrate": "pnpm --filter @sys4sys/api db:migrate",
+    "db:backup": "pnpm --filter @sys4sys/api db:backup",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },

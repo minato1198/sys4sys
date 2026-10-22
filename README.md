@@ -1,6 +1,6 @@
 # sys4sys
 
-バックエンド運用管理システム。ポート管理・ログ管理・監視・承認付き自動復旧を行います（AI レポートは M4）。
+バックエンド運用管理システム。ポート管理・ログ管理・監視・承認付き自動復旧に加え、ローカル LLM による AI 分析・レポート、監査ログ、保持期間、バックアップまでを提供します。
 
 計画書は [PLAN.md](./PLAN.md)、データモデルは [docs/ER.md](./docs/ER.md)、API 定義は [docs/openapi.yaml](./docs/openapi.yaml) を参照。
 
@@ -73,15 +73,15 @@ pnpm dev
 
 ### M2 関連の環境変数
 
-| 変数                        | 既定値                       | 内容                                    |
-| --------------------------- | ---------------------------- | --------------------------------------- |
-| `SERVICE_COMMAND_ALLOWLIST` | node / pnpm / python / go 等 | カンマ区切りの許可実行ファイル          |
-| `SERVICE_STOP_GRACE_MS`     | `5000`                       | TERM から KILL までの猶予               |
-| `SERVICE_AUTOSTART_ON_BOOT` | `false`                      | API 起動時に `autoStart` サービスを起動 |
-| `LOG_TAIL_POLL_MS`          | `1000`                       | ファイル / WSL ファイルのポーリング間隔 |
-| `LOG_MAX_LINE_CHARS`        | `8000`                       | 1 行の最大文字数                        |
-| `LOG_MAX_TAIL_BYTES`        | `1048576`                    | 1 回の tail で読む最大バイト数          |
-| `LOG_RETENTION_DAYS`        | `14`                         | ログ保持日数                            |
+| 変数                        | 既定値                       | 内容                                           |
+| --------------------------- | ---------------------------- | ---------------------------------------------- |
+| `SERVICE_COMMAND_ALLOWLIST` | node / pnpm / python / go 等 | カンマ区切りの許可実行ファイル                 |
+| `SERVICE_STOP_GRACE_MS`     | `5000`                       | TERM から KILL までの猶予                      |
+| `SERVICE_AUTOSTART_ON_BOOT` | `false`                      | API 起動時に `autoStart` サービスを起動        |
+| `LOG_TAIL_POLL_MS`          | `1000`                       | ファイル / WSL ファイルのポーリング間隔        |
+| `LOG_MAX_LINE_CHARS`        | `8000`                       | 1 行の最大文字数                               |
+| `LOG_MAX_TAIL_BYTES`        | `1048576`                    | 1 回の tail で読む最大バイト数                 |
+| `LOG_RETENTION_DAYS`        | `14`                         | ログ保持日数の初期値（設定画面の DB 値が優先） |
 
 ## 監視・承認付き復旧（M3）
 
@@ -120,13 +120,60 @@ pnpm dev
 | `SMTP_PASS` / `SMTP_FROM`         | 空                      | SMTP パスワード / 送信元                                       |
 | `MAIL_RECIPIENTS`                 | 空                      | カンマ区切りの送信先。空なら admin / operator にフォールバック |
 
+## AI 分析・レポート（M4）
+
+- **プロバイダ**: OpenAI 互換 API（LM Studio / Ollama / llama.cpp / vLLM / OpenAI など）。`/settings` で保存した DB 設定を env より優先
+- **API キー**: DB 保存時に `SESSION_SECRET` から導出した鍵で AES-256-GCM 暗号化。API は平文を返さず `apiKeySet` のみ返す。BYOK とローカル LLM（キーなし）の両方に対応
+- **実行タイミング**: インシデント作成時に非同期キューへ自動投入。`/incidents` の詳細から「AI 分析を実行」で再実行（API は `202`）
+- **入力**: インシデント前後のログ（最大 200 行）、マスク済みのタイトル・概要、類似インシデント。`maxInputTokens` に応じてログ行を予算内に削減
+- **出力**: JSON スキーマ（severity / category / summary / root_cause_hypothesis / evidence / recommended_actions / confidence / needs_human）を検証して保存
+- **レポート**: 分析ジョブが Markdown を生成して `reports` に保存。`/reports` で一覧・プレビュー・Markdown / JSON ダウンロード
+- **フォールバック**: AI 未設定、外部送信が無効、日次上限到達、接続失敗、タイムアウト時はルールベースの分析 + Markdown レポートを保存（`provider=template`, `model=rules-v1`）
+- **マスキング**: 送信前に Bearer / JWT / API キー / DB URL / パスワード代入 / 秘密鍵ブロックなどをマスク。ログ本文は 1 行 2,000 文字に切り詰め
+- **外部送信制御**: `localhost` / `127.0.0.1` / プライベート IP / `*.local` / 短いホスト名はローカル扱い。それ以外のエンドポイントへログを送るには `sendLogsExternally`（または `AI_SEND_LOGS_EXTERNALLY=true`）が必要
+- **コスト制御**: 同一 fingerprint の分析結果を 30 分キャッシュ。`dailyRequestLimit` で 1 日の実 LLM リクエスト数を制限。`0` で AI を実質無効化
+- **メール送信**: レポートのメール送信・再送は後回し（`POST /reports/:id/send` は未実装）。UI にも送信ボタンは出していません
+
+### ローカル LLM での動作確認
+
+開発時の OpenAI 互換 API は `http://localhost:8081/v1` を使用できます（例: llama.cpp のモデル `Qwen3.8-27B-GSQ-RCO-IQ3_XXS`）。設定画面で Base URL と Model を保存し、「接続テスト」で `/models` を確認してください。
+
+```powershell
+# モデル一覧の確認
+Invoke-RestMethod http://localhost:8081/v1/models | ConvertTo-Json -Depth 4
+```
+
+スモークでは `SMOKE_AI_BASE_URL` / `SMOKE_AI_MODEL` を指定すると、実際のローカル LLM で分析・レポート生成まで検証します。未指定時は `http://localhost:8081/v1` と `/models` の先頭モデルを使います。
+
+### M4 関連の環境変数
+
+| 変数                      | 既定値                     | 内容                                          |
+| ------------------------- | -------------------------- | --------------------------------------------- |
+| `AI_BASE_URL`             | `http://127.0.0.1:1234/v1` | OpenAI 互換 API のベース URL（DB 設定が優先） |
+| `AI_MODEL`                | 空                         | モデル名。空なら env の AI 設定は無効         |
+| `AI_API_KEY`              | 空                         | BYOK 用 API キー                              |
+| `AI_MAX_INPUT_TOKENS`     | `8000`                     | プロンプトに含めるログの予算                  |
+| `AI_TEMPERATURE`          | `0.2`                      | 生成温度                                      |
+| `AI_TIMEOUT_SEC`          | `60`                       | 1 リクエストのタイムアウト                    |
+| `AI_DAILY_LIMIT`          | `200`                      | 1 日の実 LLM リクエスト上限。`0` で無効化     |
+| `AI_SEND_LOGS_EXTERNALLY` | `false`                    | 非ローカルエンドポイントへのログ送信を許可    |
+
+## 運用強化（M5）
+
+- **監査ログ UI**: `/audit`（admin のみ）。actor / action / target / 期間でフィルタし、変更前後の JSON を確認。20 秒ごとに自動更新
+- **保持期間**: `/settings` でログ保持日数を DB に保存。`LOG_RETENTION_DAYS` は初期値として使い、1 時間ごとのクリーンアップが DB 設定を参照
+- **バックアップ**: `/settings` の「バックアップを作成」または `pnpm db:backup` で SQLite のオンラインバックアップを `backups/` に作成。`POST /api/admin/backup` は admin のみ
+- **復元**: API を停止してから、`apps/api/data/backups/sys4sys-*.db` を `DATABASE_URL` の DB ファイルにコピーし、`-wal` / `-shm` を削除して起動
+- **Phase 3 昇格**: `/settings` のチェックリストを確認し、対象サービスを `approve` で運用してから `auto` に変更。クラッシュループ・ポート競合・WSL 停止は自動再起動の対象外
+- **監査対象**: 設定変更、承認 / 却下、再起動、kill、レポート生成、バックアップなど。秘密値は監査ログに含めない
+
 ## 構成
 
 ```
 sys4sys/
 ├─ apps/
-│  ├─ api/        Fastify + Drizzle + SQLite（ポート / サービス / ログ / 監視 / インシデント）
-│  ├─ web/        Next.js ダッシュボード（Ports / Services / Logs / Incidents / Approvals / Settings / Hosts / Users）
+│  ├─ api/        Fastify + Drizzle + SQLite（ポート / サービス / ログ / 監視 / AI / レポート / 監査）
+│  ├─ web/        Next.js ダッシュボード（Ports / Services / Logs / Incidents / Reports / Approvals / Audit / Settings / Hosts / Users）
 │  └─ agent/      Windows / WSL ポートスキャン・プロセス操作
 ├─ packages/
 │  ├─ shared/     Zod スキーマ・型
@@ -157,6 +204,13 @@ sys4sys/
 - [x] M3: インシデント・承認キュー・ack / resolve・復旧検証・自動再起動の安全装置
 - [x] M3: SMTP 設定（暗号化）・即時通知・接続テスト・Incidents / Approvals / Settings UI
 - [x] M3: 統合スモーク（69 checks、kill → 検知 → 承認 → 再起動 → 復旧）
+- [x] M4: OpenAI 互換クライアント・AI 設定（DB / env / BYOK / 暗号化）・接続テスト
+- [x] M4: 非同期分析キュー・JSON 検証・マスキング・fingerprint キャッシュ・日次上限・フォールバック
+- [x] M4: Markdown レポート生成・`/reports` 一覧 / プレビュー / MD・JSON ダウンロード・インシデント詳細の AI パネル
+- [x] M4: 実ローカル LLM（`localhost:8081`）での分析確認
+- [x] M5: 監査ログ UI（`/audit`）・保持期間設定・SQLite バックアップ・Phase 3 昇格チェックリスト
+- [x] M4/M5: 統合スモーク（86 checks、AI 分析・レポート・監査・保持期間・バックアップ）
+- [ ] M3+: レポートのメール送信・再送（後回し）
 
 ## 認証の設計
 
@@ -171,28 +225,36 @@ sys4sys/
 
 ## スクリプト
 
-| コマンド                           | 内容                                                                                |
-| ---------------------------------- | ----------------------------------------------------------------------------------- |
-| `pnpm dev`                         | API + Web を同時起動                                                                |
-| `pnpm dev:api`                     | API のみ                                                                            |
-| `pnpm dev:web`                     | Web のみ                                                                            |
-| `pnpm scan`                        | ポートスキャン（CLI）                                                               |
-| `pnpm typecheck`                   | 全パッケージの型チェック                                                            |
-| `pnpm test`                        | テスト（policy / auth / 予約 / kill / ログ解析 / 許可リスト / 監視ルール / 暗号化） |
-| `pnpm db:generate`                 | Drizzle マイグレーション生成                                                        |
-| `pnpm db:migrate`                  | マイグレーション適用                                                                |
-| `pnpm --filter @sys4sys/api smoke` | M1 + M2 + M3 統合スモーク（認証・予約・kill・サービス・ログ・監視・承認・WSL）      |
+| コマンド                           | 内容                                                                                                       |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `pnpm dev`                         | API + Web を同時起動                                                                                       |
+| `pnpm dev:api`                     | API のみ                                                                                                   |
+| `pnpm dev:web`                     | Web のみ                                                                                                   |
+| `pnpm scan`                        | ポートスキャン（CLI）                                                                                      |
+| `pnpm typecheck`                   | 全パッケージの型チェック                                                                                   |
+| `pnpm test`                        | テスト（policy / auth / 予約 / kill / ログ解析 / 許可リスト / 監視ルール / 暗号化 / マスキング）           |
+| `pnpm db:generate`                 | Drizzle マイグレーション生成                                                                               |
+| `pnpm db:migrate`                  | マイグレーション適用                                                                                       |
+| `pnpm db:backup`                   | SQLite のオンラインバックアップを `backups/` に作成                                                        |
+| `pnpm --filter @sys4sys/api smoke` | M1〜M5 統合スモーク（認証・予約・kill・サービス・ログ・監視・承認・AI・レポート・監査・バックアップ・WSL） |
 
 ### スモークテスト
 
-スモークは実際に一時ポートでリスナーとサービスを起動し、予約 → 競合検出 → kill → 履歴 → サービス CRUD / 起動 / ログ / ヘルス / 停止まで検証します。さらに M3 として、`approve` モードのサービスを kill → 30 秒以内のインシデント検知 → 承認キュー → operator 承認 → 再起動 → 復旧確認 → resolved まで検証します。WSL ホストが登録されていれば、その distro で `node` または `python3` を使って WSL サービスも検証します。開発 DB を汚さないよう、一時 DB を指定して実行してください。
+スモークは実際に一時ポートでリスナーとサービスを起動し、予約 → 競合検出 → kill → 履歴 → サービス CRUD / 起動 / ログ / ヘルス / 停止まで検証します。さらに M3 として、`approve` モードのサービスを kill → 30 秒以内のインシデント検知 → 承認キュー → operator 承認 → 再起動 → 復旧確認 → resolved まで検証します。M4/M5 では、ローカル OpenAI 互換 API で AI 分析 → レポート生成 → 一覧 / 詳細 / MD・JSON エクスポート、監査ログ、保持期間、バックアップまで検証します。WSL ホストが登録されていれば、その distro で `node` または `python3` を使って WSL サービスも検証します。開発 DB を汚さないよう、一時 DB を指定して実行してください。
 
 ```powershell
-Remove-Item -Force apps/api/data/smoke-m3.db* -ErrorAction SilentlyContinue
-$env:DATABASE_URL='./data/smoke-m3.db'
-$env:ADMIN_PASSWORD='SmokeTest-Password-123!'
-$env:LOG_LEVEL='warn'
+$vars = @{}; Get-Content .env | ForEach-Object {
+  if ($_ -match '^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$') { $vars[$matches[1]] = $matches[2].Trim() }
+}
+$env:ADMIN_EMAIL = $vars['ADMIN_EMAIL']
+$env:ADMIN_PASSWORD = 'SmokeTest-Password-123!'
+$env:DATABASE_URL = './data/smoke-m4.db'
+$env:LOG_LEVEL = 'warn'
+$env:SMOKE_AI_BASE_URL = 'http://localhost:8081/v1'
+$env:SMOKE_AI_MODEL = 'Qwen3.8-27B-GSQ-RCO-IQ3_XXS'
+Remove-Item -Force apps/api/data/smoke-m4.db* -ErrorAction SilentlyContinue
+Remove-Item -Force apps/api/data/backups/*.db -ErrorAction SilentlyContinue
 pnpm --filter @sys4sys/api smoke
 ```
 
-`ADMIN_PASSWORD` を設定しない場合、認証以降のチェックはスキップされます。WSL の distro は停止中でも、サービス起動時に `wsl.exe -d` で暗黙起動されます。
+`ADMIN_PASSWORD` を設定しない場合、認証以降のチェックはスキップされます。ローカル LLM が起動していない場合、`local OpenAI-compatible API is reachable` が失敗し、AI 分析・レポート・監査・保持期間・バックアップのチェックはスキップされます（M1〜M3 は継続）。WSL の distro は停止中でも、サービス起動時に `wsl.exe -d` で暗黙起動されます。

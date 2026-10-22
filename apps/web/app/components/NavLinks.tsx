@@ -8,9 +8,11 @@ const LINKS = [
   { href: "/services", label: "Services", adminOnly: false },
   { href: "/logs", label: "Logs", adminOnly: false },
   { href: "/incidents", label: "Incidents", adminOnly: false },
+  { href: "/reports", label: "Reports", adminOnly: false },
   { href: "/approvals", label: "Approvals", adminOnly: false },
   { href: "/hosts", label: "Hosts", adminOnly: false },
   { href: "/admin/users", label: "Users", adminOnly: true },
+  { href: "/audit", label: "Audit", adminOnly: true },
   { href: "/settings", label: "Settings", adminOnly: true },
 ] as const;
 

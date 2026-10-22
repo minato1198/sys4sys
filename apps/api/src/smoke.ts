@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { appendFile, mkdir, unlink, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, stat, unlink, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { join } from "node:path";
 import { runFile, stopProcess } from "@sys4sys/agent";
@@ -934,6 +934,289 @@ try {
           "viewer cannot read mail settings",
           viewerMailSettings.statusCode === 403,
         );
+
+        // --- AI analysis / reports (M4) ----------------------------------
+        const aiBaseUrl = (
+          process.env.SMOKE_AI_BASE_URL ?? "http://localhost:8081/v1"
+        ).replace(/\/+$/, "");
+        const aiModel = await (async () => {
+          if (process.env.SMOKE_AI_MODEL) return process.env.SMOKE_AI_MODEL;
+          try {
+            const response = await fetch(`${aiBaseUrl}/models`, {
+              signal: AbortSignal.timeout(10_000),
+            });
+            if (!response.ok) return null;
+            const body = (await response.json()) as {
+              data?: Array<{ id?: string }>;
+            };
+            return body.data?.find((item) => item.id)?.id ?? null;
+          } catch {
+            return null;
+          }
+        })();
+
+        check("local OpenAI-compatible API is reachable", Boolean(aiModel));
+        if (aiModel) {
+          const saveAi = await app.inject({
+            method: "PUT",
+            url: "/api/settings/ai",
+            headers: {
+              cookie: admin.cookie,
+              "content-type": "application/json",
+            },
+            payload: {
+              baseUrl: aiBaseUrl,
+              model: aiModel,
+              maxInputTokens: 4000,
+              temperature: 0,
+              timeoutSec: 180,
+              dailyRequestLimit: 50,
+              sendLogsExternally: false,
+            },
+          });
+          const aiView = saveAi.json<{
+            configured: boolean;
+            model: string;
+            apiKeySet: boolean;
+            localEndpoint: boolean;
+            externalLogsAllowed: boolean;
+          }>();
+          check(
+            "admin saves AI settings (local endpoint)",
+            saveAi.statusCode === 200 &&
+              aiView.configured &&
+              aiView.model === aiModel &&
+              aiView.localEndpoint &&
+              aiView.externalLogsAllowed,
+          );
+
+          const viewerAi = await app.inject({
+            method: "GET",
+            url: "/api/settings/ai",
+            headers: { cookie: viewerCookie },
+          });
+          check("viewer cannot read AI settings", viewerAi.statusCode === 403);
+
+          const aiTest = await app.inject({
+            method: "POST",
+            url: "/api/ai/test",
+            headers: { cookie: admin.cookie },
+          });
+          const aiTestBody = aiTest.json<{
+            models?: string[];
+            latencyMs?: number;
+          }>();
+          check(
+            "admin tests AI connection",
+            aiTest.statusCode === 200 &&
+              Array.isArray(aiTestBody.models) &&
+              aiTestBody.models.includes(aiModel),
+          );
+
+          const analyzeStartedAt = Date.now();
+          const analyze = await app.inject({
+            method: "POST",
+            url: `/api/incidents/${incident.id}/analyze`,
+            headers: { cookie: operatorCookie },
+          });
+          check("operator queues AI analysis 202", analyze.statusCode === 202);
+
+          const analyzed = await waitFor(
+            "AI analysis report",
+            async () => {
+              const response = await app.inject({
+                method: "GET",
+                url: `/api/incidents/${incident.id}`,
+                headers: { cookie: operatorCookie },
+              });
+              if (response.statusCode !== 200) return null;
+              const body = response.json<{
+                analysis: {
+                  provider: string;
+                  result: { summary: string; category: string };
+                  createdAt: string;
+                } | null;
+                report: { id: string; createdAt: string } | null;
+              }>();
+              if (!body.analysis || !body.report) return null;
+              if (body.analysis.provider === "template") return null;
+              if (
+                new Date(body.analysis.createdAt).getTime() < analyzeStartedAt
+              ) {
+                return null;
+              }
+              return body;
+            },
+            210_000,
+            1000,
+          );
+          check(
+            "local LLM produces an analysis",
+            analyzed.analysis?.provider === "openai-compatible" &&
+              Boolean(analyzed.analysis.result.summary),
+          );
+          check(
+            "incident detail includes generated report",
+            Boolean(analyzed.report?.id),
+          );
+
+          const reportList = await app.inject({
+            method: "GET",
+            url: `/api/reports?incidentId=${incident.id}&limit=50`,
+            headers: { cookie: operatorCookie },
+          });
+          const reportListBody = reportList.json<{
+            items: Array<{ id: string; incidentId: string }>;
+            total: number;
+          }>();
+          check(
+            "reports list is filterable by incident",
+            reportList.statusCode === 200 &&
+              reportListBody.items.some(
+                (item) => item.id === analyzed.report?.id,
+              ) &&
+              reportListBody.total >= 1,
+          );
+
+          if (analyzed.report?.id) {
+            const reportDetail = await app.inject({
+              method: "GET",
+              url: `/api/reports/${analyzed.report.id}`,
+              headers: { cookie: operatorCookie },
+            });
+            const reportBody = reportDetail.json<{
+              body: string;
+              analysis: { result: { summary: string } } | null;
+            }>();
+            check(
+              "report detail contains Markdown and analysis",
+              reportDetail.statusCode === 200 &&
+                reportBody.body.includes("# インシデントレポート") &&
+                Boolean(reportBody.analysis?.result.summary),
+            );
+
+            const exportMd = await app.inject({
+              method: "GET",
+              url: `/api/reports/${analyzed.report.id}/export?format=md`,
+              headers: { cookie: operatorCookie },
+            });
+            check(
+              "report Markdown export",
+              exportMd.statusCode === 200 &&
+                String(exportMd.headers["content-type"]).includes(
+                  "text/markdown",
+                ) &&
+                exportMd.body.includes("## 推奨対応"),
+            );
+
+            const exportJson = await app.inject({
+              method: "GET",
+              url: `/api/reports/${analyzed.report.id}/export?format=json`,
+              headers: { cookie: operatorCookie },
+            });
+            check(
+              "report JSON export",
+              exportJson.statusCode === 200 &&
+                Boolean(
+                  exportJson.json<{ report?: { id: string } }>().report?.id,
+                ),
+            );
+          }
+
+          // --- audit log / retention / backup (M5) ----------------------
+          const audit = await app.inject({
+            method: "GET",
+            url: `/api/audit-logs?action=report.create&target=incident:${incident.id}&limit=20`,
+            headers: { cookie: admin.cookie },
+          });
+          const auditBody = audit.json<{
+            items: Array<{ action: string; target: string }>;
+          }>();
+          check(
+            "admin reads audit logs for report creation",
+            audit.statusCode === 200 &&
+              auditBody.items.some(
+                (item) =>
+                  item.action === "report.create" &&
+                  item.target === `incident:${incident.id}`,
+              ),
+          );
+
+          const viewerAudit = await app.inject({
+            method: "GET",
+            url: "/api/audit-logs",
+            headers: { cookie: viewerCookie },
+          });
+          check(
+            "viewer cannot read audit logs",
+            viewerAudit.statusCode === 403,
+          );
+
+          const retention = await app.inject({
+            method: "PUT",
+            url: "/api/settings/retention",
+            headers: {
+              cookie: admin.cookie,
+              "content-type": "application/json",
+            },
+            payload: { logDays: 7 },
+          });
+          const retentionBody = retention.json<{
+            logDays: number;
+            source: string;
+          }>();
+          check(
+            "admin updates log retention",
+            retention.statusCode === 200 &&
+              retentionBody.logDays === 7 &&
+              retentionBody.source === "db",
+          );
+          const viewerRetention = await app.inject({
+            method: "GET",
+            url: "/api/settings/retention",
+            headers: { cookie: viewerCookie },
+          });
+          check(
+            "viewer cannot read retention settings",
+            viewerRetention.statusCode === 403,
+          );
+
+          const viewerBackup = await app.inject({
+            method: "POST",
+            url: "/api/admin/backup",
+            headers: { cookie: viewerCookie },
+          });
+          check(
+            "viewer cannot create database backup",
+            viewerBackup.statusCode === 403,
+          );
+
+          const backup = await app.inject({
+            method: "POST",
+            url: "/api/admin/backup",
+            headers: { cookie: admin.cookie },
+          });
+          const backupBody = backup.json<{
+            path?: string;
+            sizeBytes?: number;
+          }>();
+          let backupExists = false;
+          if (backupBody.path) {
+            backupExists = await stat(backupBody.path)
+              .then((info) => info.size > 0)
+              .catch(() => false);
+          }
+          check(
+            "admin creates database backup",
+            backup.statusCode === 200 &&
+              Boolean(backupBody.path) &&
+              (backupBody.sizeBytes ?? 0) > 0 &&
+              backupExists,
+          );
+          if (backupBody.path) {
+            await unlink(backupBody.path).catch(() => undefined);
+          }
+        }
       } finally {
         if (incidentServiceId) {
           await app.inject({

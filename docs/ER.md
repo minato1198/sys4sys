@@ -321,6 +321,21 @@ WSL 3.x では distro 間でネットワーク名前空間が共有されるた�
 - 自動再起動は `AUTO_RESTART_BACKOFF_SEC` の指数バックオフに従う
 - 復旧確認に失敗した `auto` の再試行は最大試行回数まで。上限に達したら `critical` に昇格して通知する
 
+### 2.8 AI 分析・レポート・設定キー
+
+- `settings.ai` は `{ baseUrl, model, apiKeyCipher, maxInputTokens, temperature, timeoutSec, dailyRequestLimit, sendLogsExternally }`。`apiKeyCipher` は `v1:<iv>:<tag>:<ciphertext>`
+- `settings.retention` は `{ logDays }`。未設定時は `LOG_RETENTION_DAYS` を使う
+- `ai_analyses.result` は `analysisResultSchema` の JSON。`provider=openai-compatible` が実 LLM、`template` がルールベースのフォールバック
+- 同一 fingerprint の実 LLM 分析は 30 分キャッシュし、`ai_analyses` に履歴を残す
+- `reports.body` は Markdown。`format` は現状 `markdown` のみ生成する
+- `report_deliveries` は将来のメール送信用。レポート送信 API は未実装
+- `audit_logs` は設定変更・承認・再起動・kill・レポート生成・バックアップを記録。秘密値は `before` / `after` に含めない
+
+### 2.9 バックアップ
+
+- `pnpm db:backup` / `POST /api/admin/backup` は better-sqlite3 の online backup を使い、DB と同じディレクトリの `backups/` に `sys4sys-<timestamp>.db` を作成する
+- 復元時は API を停止し、`-wal` / `-shm` を削除してからバックアップを `DATABASE_URL` のファイルに戻す
+
 ---
 
 ## 3. 制約・インデックス

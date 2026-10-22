@@ -203,6 +203,9 @@ importers:
       '@sys4sys/agent':
         specifier: workspace:*
         version: link:../agent
+      '@sys4sys/ai':
+        specifier: workspace:*
+        version: link:../../packages/ai
       '@sys4sys/mail':
         specifier: workspace:*
         version: link:../../packages/mail

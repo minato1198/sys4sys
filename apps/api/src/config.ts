@@ -42,7 +42,19 @@ const envSchema = z.object({
   AI_BASE_URL: z.string().url().default("http://127.0.0.1:1234/v1"),
   AI_MODEL: z.string().default(""),
   AI_API_KEY: z.string().optional(),
-  AI_DAILY_LIMIT: z.coerce.number().int().min(1).default(200),
+  AI_MAX_INPUT_TOKENS: z.coerce
+    .number()
+    .int()
+    .min(256)
+    .max(200_000)
+    .default(8000),
+  AI_TEMPERATURE: z.coerce.number().min(0).max(2).default(0.2),
+  AI_TIMEOUT_SEC: z.coerce.number().int().min(5).max(600).default(60),
+  AI_DAILY_LIMIT: z.coerce.number().int().min(0).default(200),
+  AI_SEND_LOGS_EXTERNALLY: z
+    .string()
+    .default("false")
+    .transform((value) => value === "true"),
 
   LOG_RETENTION_DAYS: z.coerce.number().int().min(1).default(14),
   LOG_TAIL_POLL_MS: z.coerce.number().int().min(200).max(60_000).default(1000),

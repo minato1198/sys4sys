@@ -269,10 +269,11 @@ ai:
 [4] 自動復旧ポリシー評価（observe / approve / auto）
    ↓
 [5] AI 分析ジョブ（非同期キュー）
-    入力: エラー前後 ±50 行 / 直近デプロイ / 設定 / 類似インシデント / メトリクス
+    入力: インシデント前後のログ（最大 200 行）/ マスク済み概要 / 類似インシデント
     出力: JSON (severity, category, root_cause, evidence[], actions[], confidence)
    ↓
-[6] レポート生成（Markdown）→ 保存 → メール送信
+[6] レポート生成（Markdown）→ 保存 → UI 表示 / MD・JSON ダウンロード
+    （メール送信は後回し）
    ↓
 [7] 監査ログ + フィードバック収集
 ```
@@ -482,15 +483,18 @@ DELETE /api/logs/sources/:id           admin
 
 # インシデント / 承認 / レポート
 GET    /api/incidents?status=&severity=
+GET    /api/incidents/:id               詳細（最新 analysis / report を含む）
 POST   /api/incidents/:id/ack
 POST   /api/incidents/:id/resolve
-POST   /api/incidents/:id/analyze      手動で AI 分析を再実行
+POST   /api/incidents/:id/analyze       手動で AI 分析をキュー投入（202）
+GET    /api/incidents/:id/analysis      最新の AI 分析とレポート
 GET    /api/approvals?status=pending
 POST   /api/approvals/:id/approve
 POST   /api/approvals/:id/reject
+GET    /api/reports?incidentId=&limit=&offset=
 GET    /api/reports/:id
-GET    /api/reports/:id/export?format=md
-POST   /api/reports/:id/send           メール再送
+GET    /api/reports/:id/export?format=md|json
+POST   /api/reports/:id/send            メール再送（後回し・未実装）
 
 # 設定 / 監査
 GET    /api/policies
@@ -498,10 +502,13 @@ PUT    /api/policies/:id
 GET    /api/settings/mail              admin のみ（秘密値はマスク）
 PUT    /api/settings/mail
 POST   /api/settings/mail/test
-GET    /api/settings/ai
+GET    /api/settings/ai                admin のみ（API キーは真偽のみ）
 PUT    /api/settings/ai
 POST   /api/ai/test                    接続テスト
-GET    /api/audit-logs                 admin のみ
+GET    /api/settings/retention         admin のみ
+PUT    /api/settings/retention         admin のみ
+GET    /api/audit-logs                 admin のみ（actor/action/target/from/to）
+POST   /api/admin/backup               admin のみ（SQLite オンラインバックアップ）
 ```
 
 エラーは RFC 7807（Problem Details）形式。破壊的操作は `Idempotency-Key` と確認トークンを要求する。
@@ -556,14 +563,14 @@ GET    /api/audit-logs                 admin のみ
 
 ## 10. マイルストーン
 
-| フェーズ                         | 期間目安 | 内容                                                                        | 完了条件（DoD）                                                                              |
-| -------------------------------- | -------- | --------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| **M0: 設計確定**                 | 完了     | 要件確定（v0.3 で完了）、ER 図、OpenAPI、画面ワイヤー                       | 要件は確定済み。ER 図と API 定義がレビュー済みになること                                     |
-| **M1: 基盤 + 認証 + ポート**     | 2 週     | モノレポ、API、DB、認証/ロール、HostAdapter、ポートスキャン、予約・競合検出 | ログインして 2 ホストのポートが 10 秒以内に反映され、競合を起動前に検出できる                |
-| **M2: サービス + ログ + WSL**    | 完了     | サービス CRUD、起動/停止、ヘルスチェック、ログ収集・検索・tail、WSL 連携    | UI から Windows / WSL のサービスを起動し、ログを 1 秒以内に tail 表示できる（達成）          |
-| **M3: 監視 + 自動復旧 + メール** | 完了     | ルールエンジン、インシデント、承認キュー、再起動 + 検証、メール通知         | プロセスを kill すると 30 秒以内に検知し、Phase 2 で承認 → 再起動 → 復旧通知まで通る（達成） |
-| **M4: AI 分析 + レポート**       | 2 週     | AI ジョブ、接続設定、トリアージ、原因仮説、Markdown レポート、類似検索      | インシデント発生から 1 分以内にレポートが生成され、メールで届く                              |
-| **M5: 運用強化**                 | 1 週     | 監査ログ UI、保持期間、コスト制御、バックアップ、ドキュメント、Phase 3 昇格 | 1 週間の連続稼働でメモリリーク・再起動ループがない                                           |
+| フェーズ                         | 期間目安 | 内容                                                                        | 完了条件（DoD）                                                                                                 |
+| -------------------------------- | -------- | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| **M0: 設計確定**                 | 完了     | 要件確定（v0.3 で完了）、ER 図、OpenAPI、画面ワイヤー                       | 要件は確定済み。ER 図と API 定義がレビュー済みになること                                                        |
+| **M1: 基盤 + 認証 + ポート**     | 2 週     | モノレポ、API、DB、認証/ロール、HostAdapter、ポートスキャン、予約・競合検出 | ログインして 2 ホストのポートが 10 秒以内に反映され、競合を起動前に検出できる                                   |
+| **M2: サービス + ログ + WSL**    | 完了     | サービス CRUD、起動/停止、ヘルスチェック、ログ収集・検索・tail、WSL 連携    | UI から Windows / WSL のサービスを起動し、ログを 1 秒以内に tail 表示できる（達成）                             |
+| **M3: 監視 + 自動復旧 + メール** | 完了     | ルールエンジン、インシデント、承認キュー、再起動 + 検証、メール通知         | プロセスを kill すると 30 秒以内に検知し、Phase 2 で承認 → 再起動 → 復旧通知まで通る（達成）                    |
+| **M4: AI 分析 + レポート**       | 完了     | AI ジョブ、接続設定、トリアージ、原因仮説、Markdown レポート、類似検索      | インシデントから非同期で分析・レポート生成し、失敗時もルールベースで保存できる（達成。メール送信は後回し）      |
+| **M5: 運用強化**                 | 完了     | 監査ログ UI、保持期間、コスト制御、バックアップ、ドキュメント、Phase 3 昇格 | 監査・保持期間・バックアップ・昇格手順が揃い、統合スモーク 86 checks が通る（達成。1 週間連続稼働は運用で確認） |
 
 **合計: 約 9〜10 週間**（1 人・兼業想定）。M1〜M3 だけで「監視 + 承認付き復旧」は成立するため、AI は後から載せられる。
 
@@ -598,14 +605,18 @@ GET    /api/audit-logs                 admin のみ
 - [x] M3: 承認キュー + 自動再起動ポリシー + 検証 + サーキットブレーカー
 - [x] M3: SMTP 通知（即時 / 接続テスト / 設定画面、パスワード暗号化）
 - [x] M3: Incidents / Approvals / Settings UI と統合スモーク（69 checks）
-- [ ] M3+: メールダイジェスト集約とレポート再送（M4 のレポート生成後に実装）
-- [ ] M4: AI プロバイダ抽象化（OpenAI 互換 / BYOK）
-- [ ] M4: 分析ジョブ + JSON スキーマ検証
-- [ ] M4: レポート生成 + メール送信
-- [ ] M4: マスク処理とコスト制御
-- [ ] M5: 監査ログ UI とバックアップ
-- [ ] M5: Phase 3（自動復旧）の昇格運用
-- [ ] M5: 運用手順書
+- [ ] M3+: メールダイジェスト集約とレポート再送（後回し: `POST /reports/:id/send` は未実装）
+- [x] M4: AI プロバイダ抽象化（OpenAI 互換 / BYOK、DB 設定 + env フォールバック）
+- [x] M4: 分析ジョブ + JSON スキーマ検証（非同期キュー、fingerprint 30 分キャッシュ）
+- [x] M4: レポート生成 + Markdown / JSON エクスポート（メール送信は後回し）
+- [x] M4: マスク処理とコスト制御（日次上限、入力トークン予算、ローカル/外部送信制御）
+- [x] M4: インシデント詳細の AI 分析パネルとレポート UI
+- [x] M5: 監査ログ UI（admin、actor/action/target/期間フィルタ）
+- [x] M5: ログ保持期間の DB 設定 + 定期削除
+- [x] M5: SQLite バックアップ（`pnpm db:backup` / `POST /admin/backup`）
+- [x] M5: Phase 3（自動復旧）の昇格チェックリスト
+- [x] M5: 運用手順書（README 更新）
+- [ ] M5: 1 週間の連続稼働確認（運用フェーズで実施）
 
 ---
 

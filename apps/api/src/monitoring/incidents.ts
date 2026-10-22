@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { and, desc, eq, gte, inArray, isNull, ne, or } from "drizzle-orm";
 import { evaluateRestart, type RestartDecision } from "@sys4sys/policy";
 import type { IncidentSeverity, IncidentStatus } from "@sys4sys/shared";
+import { enqueueIncidentAnalysis } from "../ai/queue.js";
 import { writeAudit } from "../audit.js";
 import { config } from "../config.js";
 import { db } from "../db/index.js";
@@ -205,6 +206,7 @@ export async function createIncident(
   void notifyForIncident(incident, "detected", input.summary).catch(
     () => undefined,
   );
+  enqueueIncidentAnalysis(incident.id);
   return { incident, created: true };
 }
 

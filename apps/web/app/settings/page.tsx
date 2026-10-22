@@ -23,6 +23,67 @@ interface MailSettingsView {
   passwordSet: boolean;
 }
 
+interface AiSettingsView {
+  configured: boolean;
+  source: "db" | "env" | "none";
+  provider: string;
+  baseUrl: string;
+  model: string;
+  apiKeySet: boolean;
+  maxInputTokens: number;
+  temperature: number;
+  timeoutSec: number;
+  dailyRequestLimit: number;
+  dailyUsed: number;
+  sendLogsExternally: boolean;
+  localEndpoint: boolean;
+  externalLogsAllowed: boolean;
+}
+
+interface AiForm {
+  baseUrl: string;
+  model: string;
+  apiKey: string;
+  maxInputTokens: string;
+  temperature: string;
+  timeoutSec: string;
+  dailyRequestLimit: string;
+  sendLogsExternally: boolean;
+  clearApiKey: boolean;
+}
+
+interface RetentionView {
+  logDays: number;
+  source: "db" | "env";
+  updatedAt: string | null;
+}
+
+const EMPTY_AI_FORM: AiForm = {
+  baseUrl: "http://localhost:8081/v1",
+  model: "",
+  apiKey: "",
+  maxInputTokens: "8000",
+  temperature: "0.2",
+  timeoutSec: "60",
+  dailyRequestLimit: "200",
+  sendLogsExternally: false,
+  clearApiKey: false,
+};
+
+function aiViewToForm(view: AiSettingsView): AiForm {
+  return {
+    baseUrl: view.baseUrl,
+    model: view.model,
+    apiKey: "",
+    maxInputTokens: String(view.maxInputTokens),
+    temperature: String(view.temperature),
+    timeoutSec: String(view.timeoutSec),
+    dailyRequestLimit: String(view.dailyRequestLimit),
+    sendLogsExternally: view.sendLogsExternally,
+    clearApiKey: false,
+  };
+}
+
 interface Problem {
   detail?: string;
 }
@@ -82,6 +143,20 @@ export default function SettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
+  const [aiView, setAiView] = useState<AiSettingsView | null>(null);
+  const [aiForm, setAiForm] = useState<AiForm>(EMPTY_AI_FORM);
+  const [aiSaving, setAiSaving] = useState(false);
+  const [aiTesting, setAiTesting] = useState(false);
+  const [retention, setRetention] = useState<RetentionView | null>(null);
+  const [logDays, setLogDays] = useState("14");
+  const [retentionSaving, setRetentionSaving] = useState(false);
+  const [backupBusy, setBackupBusy] = useState(false);
+  const [backupResult, setBackupResult] = useState<{
+    path: string;
+    sizeBytes: number;
+    createdAt: string;
+  } | null>(null);
+
   const load = useCallback(async () => {
     const response = await fetch("/api/settings/mail", {
       cache: "no-store",
@@ -102,6 +177,32 @@ export default function SettingsPage() {
     setError(null);
   }, []);
 
+  const loadAi = useCallback(async () => {
+    const response = await fetch("/api/settings/ai", { cache: "no-store" });
+    if (response.status === 401) {
+      window.location.href = "/login";
+      return;
+    }
+    if (!response.ok) throw new Error(`ai settings ${response.status}`);
+    const body = (await response.json()) as AiSettingsView;
+    setAiView(body);
+    setAiForm(aiViewToForm(body));
+  }, []);
+
+  const loadRetention = useCallback(async () => {
+    const response = await fetch("/api/settings/retention", {
+      cache: "no-store",
+    });
+    if (response.status === 401) {
+      window.location.href = "/login";
+      return;
+    }
+    if (!response.ok) throw new Error(`retention ${response.status}`);
+    const body = (await response.json()) as RetentionView;
+    setRetention(body);
+    setLogDays(String(body.logDays));
+  }, []);
+
   useEffect(() => {
     let active = true;
     void (async () => {
@@ -112,8 +213,11 @@ export default function SettingsPage() {
           return;
         }
         if (!meResponse.ok) throw new Error(`auth ${meResponse.status}`);
-        if (active) setUser((await meResponse.json()) as AuthUser);
-        await load();
+        const me = (await meResponse.json()) as AuthUser;
+        if (active) setUser(me);
+        if (me.role === "admin") {
+          await Promise.all([load(), loadAi(), loadRetention()]);
+        }
       } catch (cause) {
         if (active)
           setError(cause instanceof Error ? cause.message : String(cause));
@@ -124,7 +228,7 @@ export default function SettingsPage() {
     return () => {
       active = false;
     };
-  }, [load]);
+  }, [load, loadAi, loadRetention]);
 
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -206,6 +310,134 @@ export default function SettingsPage() {
     }
   }
 
+  async function saveAi() {
+    setAiSaving(true);
+    setMessage(null);
+    setError(null);
+    try {
+      const response = await fetch("/api/settings/ai", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          baseUrl: aiForm.baseUrl.trim(),
+          model: aiForm.model.trim(),
+          apiKey: aiForm.apiKey || undefined,
+          maxInputTokens: Number(aiForm.maxInputTokens),
+          temperature: Number(aiForm.temperature),
+          timeoutSec: Number(aiForm.timeoutSec),
+          dailyRequestLimit: Number(aiForm.dailyRequestLimit),
+          sendLogsExternally: aiForm.sendLogsExternally,
+          clearApiKey: aiForm.clearApiKey,
+        }),
+      });
+      if (!response.ok) {
+        const problem = (await response
+          .json()
+          .catch(() => null)) as Problem | null;
+        throw new Error(
+          problem?.detail ?? `AI 設定の保存に失敗しました (${response.status})`,
+        );
+      }
+      const body = (await response.json()) as AiSettingsView;
+      setAiView(body);
+      setAiForm(aiViewToForm(body));
+      setMessage("AI 設定を保存しました");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setAiSaving(false);
+    }
+  }
+
+  async function testAi() {
+    setAiTesting(true);
+    setMessage(null);
+    setError(null);
+    try {
+      const response = await fetch("/api/ai/test", { method: "POST" });
+      const body = (await response.json().catch(() => null)) as {
+        models?: string[];
+        latencyMs?: number;
+        detail?: string;
+      } | null;
+      if (!response.ok) {
+        throw new Error(
+          body?.detail ?? `AI 接続テストに失敗しました (${response.status})`,
+        );
+      }
+      setMessage(
+        `AI 接続 OK: ${body?.models?.length ?? 0} models / ${
+          body?.latencyMs ?? 0
+        }ms`,
+      );
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setAiTesting(false);
+    }
+  }
+
+  async function saveRetention() {
+    setRetentionSaving(true);
+    setMessage(null);
+    setError(null);
+    try {
+      const response = await fetch("/api/settings/retention", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ logDays: Number(logDays) }),
+      });
+      if (!response.ok) {
+        const problem = (await response
+          .json()
+          .catch(() => null)) as Problem | null;
+        throw new Error(
+          problem?.detail ??
+            `保持期間の保存に失敗しました (${response.status})`,
+        );
+      }
+      const body = (await response.json()) as RetentionView;
+      setRetention(body);
+      setLogDays(String(body.logDays));
+      setMessage("ログ保持期間を保存しました（次回の定期削除から適用）");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setRetentionSaving(false);
+    }
+  }
+
+  async function backupDatabase() {
+    setBackupBusy(true);
+    setMessage(null);
+    setError(null);
+    try {
+      const response = await fetch("/api/admin/backup", { method: "POST" });
+      const body = (await response.json().catch(() => null)) as {
+        path?: string;
+        sizeBytes?: number;
+        createdAt?: string;
+        detail?: string;
+      } | null;
+      if (!response.ok || !body?.path) {
+        throw new Error(
+          body?.detail ??
+            `データベースのバックアップに失敗しました (${response.status})`,
+        );
+      }
+      setBackupResult({
+        path: body.path,
+        sizeBytes: body.sizeBytes ?? 0,
+        createdAt: body.createdAt ?? new Date().toISOString(),
+      });
+      setMessage("データベースのバックアップを作成しました");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBackupBusy(false);
+    }
+  }
+
   const isAdmin = user?.role === "admin";
 
   return (
@@ -222,7 +454,7 @@ export default function SettingsPage() {
               Settings
             </h1>
             <p className="text-xs text-mist-400">
-              SMTP 通知と監視ポリシーの設定を確認します。
+              SMTP / AI / 保持期間 / バックアップと監視ポリシーを管理します。
             </p>
           </div>
         </div>
@@ -261,7 +493,7 @@ export default function SettingsPage() {
 
       {!isAdmin ? (
         <section className="mt-6 rounded-xl border border-ink-700/70 bg-ink-900/50 p-6 text-sm text-mist-400">
-          SMTP 設定の変更には admin 権限が必要です。
+          設定の変更には admin 権限が必要です。
         </section>
       ) : (
         <div className="mt-6 grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
@@ -570,6 +802,360 @@ export default function SettingsPage() {
           </section>
         </div>
       )}
+
+      {isAdmin ? (
+        <div className="mt-4 space-y-4">
+          <section className="rounded-xl border border-ink-700/70 bg-ink-900/50">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-ink-700/70 px-4 py-3">
+              <div>
+                <h2 className="text-sm font-semibold text-white">
+                  AI / OpenAI compatible
+                </h2>
+                <p className="text-[11px] text-mist-400">
+                  ローカル LLM / LM Studio / Ollama / vLLM / BYOK
+                  に対応します。保存した設定は env より優先されます。
+                </p>
+              </div>
+              {aiView ? (
+                <div className="flex flex-wrap items-center gap-2 text-[10px]">
+                  <span
+                    className={`rounded border px-2 py-0.5 font-medium uppercase ${
+                      aiView.configured
+                        ? "border-signal-400/40 bg-signal-400/10 text-signal-400"
+                        : "border-warn-400/40 bg-warn-400/10 text-warn-400"
+                    }`}
+                  >
+                    {aiView.configured ? "configured" : "not configured"} /{" "}
+                    {aiView.source}
+                  </span>
+                  <span className="rounded border border-ink-700 bg-ink-800/60 px-2 py-0.5 text-mist-400">
+                    {aiView.localEndpoint ? "local" : "external"} /{" "}
+                    {aiView.externalLogsAllowed
+                      ? "logs allowed"
+                      : "logs blocked"}
+                  </span>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="space-y-3 p-4">
+              <div className="grid gap-3 lg:grid-cols-[1.2fr_0.8fr]">
+                <label className="block">
+                  <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-mist-400">
+                    Base URL
+                  </span>
+                  <input
+                    value={aiForm.baseUrl}
+                    onChange={(event) =>
+                      setAiForm({ ...aiForm, baseUrl: event.target.value })
+                    }
+                    placeholder="http://localhost:8081/v1"
+                    className="mt-1 w-full rounded-md border border-ink-700 bg-ink-800/80 px-2.5 py-2 font-mono text-xs text-mist-200 outline-none focus:border-signal-400/50"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-mist-400">
+                    Model
+                  </span>
+                  <input
+                    value={aiForm.model}
+                    onChange={(event) =>
+                      setAiForm({ ...aiForm, model: event.target.value })
+                    }
+                    placeholder="Qwen3.8-27B..."
+                    className="mt-1 w-full rounded-md border border-ink-700 bg-ink-800/80 px-2.5 py-2 font-mono text-xs text-mist-200 outline-none focus:border-signal-400/50"
+                  />
+                </label>
+              </div>
+
+              <div className="grid gap-3 lg:grid-cols-2">
+                <label className="block">
+                  <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-mist-400">
+                    API key{" "}
+                    {aiView?.apiKeySet ? (
+                      <span className="text-signal-400">(保存済み)</span>
+                    ) : null}
+                  </span>
+                  <input
+                    type="password"
+                    value={aiForm.apiKey}
+                    onChange={(event) =>
+                      setAiForm({
+                        ...aiForm,
+                        apiKey: event.target.value,
+                        clearApiKey: false,
+                      })
+                    }
+                    placeholder={
+                      aiView?.apiKeySet
+                        ? "変更する場合のみ入力"
+                        : "ローカル LLM では空でも可"
+                    }
+                    autoComplete="new-password"
+                    className="mt-1 w-full rounded-md border border-ink-700 bg-ink-800/80 px-2.5 py-2 text-xs text-mist-200 outline-none focus:border-signal-400/50"
+                  />
+                </label>
+                <div className="flex flex-col justify-end gap-2 text-xs text-mist-200">
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={aiForm.sendLogsExternally}
+                      onChange={(event) =>
+                        setAiForm({
+                          ...aiForm,
+                          sendLogsExternally: event.target.checked,
+                        })
+                      }
+                      className="size-3.5 accent-signal-400"
+                    />
+                    外部エンドポイントへのログ送信を許可
+                  </label>
+                  {aiView?.apiKeySet ? (
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={aiForm.clearApiKey}
+                        onChange={(event) =>
+                          setAiForm({
+                            ...aiForm,
+                            clearApiKey: event.target.checked,
+                            apiKey: "",
+                          })
+                        }
+                        className="size-3.5 accent-danger-400"
+                      />
+                      保存済み API キーを削除
+                    </label>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <label className="block">
+                  <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-mist-400">
+                    Max input tokens
+                  </span>
+                  <input
+                    value={aiForm.maxInputTokens}
+                    onChange={(event) =>
+                      setAiForm({
+                        ...aiForm,
+                        maxInputTokens: event.target.value,
+                      })
+                    }
+                    inputMode="numeric"
+                    className="mt-1 w-full rounded-md border border-ink-700 bg-ink-800/80 px-2.5 py-2 font-mono text-xs text-mist-200 outline-none focus:border-signal-400/50"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-mist-400">
+                    Temperature
+                  </span>
+                  <input
+                    value={aiForm.temperature}
+                    onChange={(event) =>
+                      setAiForm({ ...aiForm, temperature: event.target.value })
+                    }
+                    inputMode="decimal"
+                    className="mt-1 w-full rounded-md border border-ink-700 bg-ink-800/80 px-2.5 py-2 font-mono text-xs text-mist-200 outline-none focus:border-signal-400/50"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-mist-400">
+                    Timeout (sec)
+                  </span>
+                  <input
+                    value={aiForm.timeoutSec}
+                    onChange={(event) =>
+                      setAiForm({ ...aiForm, timeoutSec: event.target.value })
+                    }
+                    inputMode="numeric"
+                    className="mt-1 w-full rounded-md border border-ink-700 bg-ink-800/80 px-2.5 py-2 font-mono text-xs text-mist-200 outline-none focus:border-signal-400/50"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-mist-400">
+                    Daily limit
+                  </span>
+                  <input
+                    value={aiForm.dailyRequestLimit}
+                    onChange={(event) =>
+                      setAiForm({
+                        ...aiForm,
+                        dailyRequestLimit: event.target.value,
+                      })
+                    }
+                    inputMode="numeric"
+                    className="mt-1 w-full rounded-md border border-ink-700 bg-ink-800/80 px-2.5 py-2 font-mono text-xs text-mist-200 outline-none focus:border-signal-400/50"
+                  />
+                </label>
+              </div>
+
+              <div className="flex flex-wrap gap-2 pt-1">
+                <button
+                  type="button"
+                  disabled={aiSaving}
+                  onClick={() => void saveAi()}
+                  className="rounded-md border border-signal-400/40 bg-signal-400/10 px-3 py-1.5 text-xs font-medium text-signal-400 transition hover:bg-signal-400/20 disabled:opacity-50"
+                >
+                  {aiSaving ? "保存中…" : "AI 設定を保存"}
+                </button>
+                <button
+                  type="button"
+                  disabled={aiTesting}
+                  onClick={() => void testAi()}
+                  className="rounded-md border border-ink-700 bg-ink-800/80 px-3 py-1.5 text-xs font-medium text-mist-200 transition hover:border-signal-400/40 hover:text-white disabled:opacity-50"
+                >
+                  {aiTesting ? "接続中…" : "接続テスト（保存済み設定）"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void loadAi()}
+                  className="rounded-md border border-ink-700 px-3 py-1.5 text-xs text-mist-400 transition hover:border-signal-400/40 hover:text-white"
+                >
+                  再読み込み
+                </button>
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] text-mist-400">
+                <p>
+                  外部 URL かつ「ログ送信を許可」がオフの場合、AI
+                  分析はスキップされルールベースのレポートになります。 送信前に
+                  Bearer/JWT/API キー/DB 認証情報などをマスキングします。
+                </p>
+                {aiView ? (
+                  <p className="font-mono">
+                    today: {aiView.dailyUsed}/{aiView.dailyRequestLimit}
+                  </p>
+                ) : null}
+              </div>
+            </div>
+          </section>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <section className="rounded-xl border border-ink-700/70 bg-ink-900/50 p-4">
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-sm font-semibold text-white">
+                  ログ保持期間
+                </h2>
+                <span className="rounded border border-ink-700 bg-ink-800/60 px-2 py-0.5 text-[10px] uppercase text-mist-400">
+                  {retention?.source ?? "env"}
+                </span>
+              </div>
+              <p className="mt-1 text-[11px] text-mist-400">
+                1 時間ごとのクリーンアップで、指定日数より古いログを削除します。
+                インシデントとレポートは削除しません。
+              </p>
+              <div className="mt-3 flex flex-wrap items-end gap-2">
+                <label className="block">
+                  <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-mist-400">
+                    Retention days
+                  </span>
+                  <input
+                    value={logDays}
+                    onChange={(event) => setLogDays(event.target.value)}
+                    inputMode="numeric"
+                    className="mt-1 w-32 rounded-md border border-ink-700 bg-ink-800/80 px-2.5 py-2 font-mono text-xs text-mist-200 outline-none focus:border-signal-400/50"
+                  />
+                </label>
+                <button
+                  type="button"
+                  disabled={retentionSaving}
+                  onClick={() => void saveRetention()}
+                  className="rounded-md border border-signal-400/40 bg-signal-400/10 px-3 py-1.5 text-xs font-medium text-signal-400 transition hover:bg-signal-400/20 disabled:opacity-50"
+                >
+                  {retentionSaving ? "保存中…" : "保持期間を保存"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void loadRetention()}
+                  className="rounded-md border border-ink-700 px-3 py-1.5 text-xs text-mist-400 transition hover:border-signal-400/40 hover:text-white"
+                >
+                  再読み込み
+                </button>
+              </div>
+              {retention?.updatedAt ? (
+                <p className="mt-2 font-mono text-[10px] text-mist-400">
+                  updated{" "}
+                  {new Date(retention.updatedAt).toLocaleString("ja-JP")}
+                </p>
+              ) : null}
+            </section>
+
+            <section className="rounded-xl border border-ink-700/70 bg-ink-900/50 p-4">
+              <h2 className="text-sm font-semibold text-white">
+                データベースバックアップ
+              </h2>
+              <p className="mt-1 text-[11px] text-mist-400">
+                SQLite のオンラインバックアップを DB と同じディレクトリの
+                <span className="font-mono text-mist-200"> backups/ </span>
+                に作成します。WAL 中でも整合性を保ちます。
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  disabled={backupBusy}
+                  onClick={() => void backupDatabase()}
+                  className="rounded-md border border-signal-400/40 bg-signal-400/10 px-3 py-1.5 text-xs font-medium text-signal-400 transition hover:bg-signal-400/20 disabled:opacity-50"
+                >
+                  {backupBusy ? "作成中…" : "バックアップを作成"}
+                </button>
+                <span className="rounded-md border border-ink-700 px-3 py-1.5 font-mono text-[10px] text-mist-400">
+                  pnpm db:backup
+                </span>
+              </div>
+              {backupResult ? (
+                <dl className="mt-3 space-y-1 rounded-lg border border-ink-700/60 bg-ink-950/40 p-2 text-[10px]">
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-mist-400">path</dt>
+                    <dd className="break-all text-right font-mono text-mist-200">
+                      {backupResult.path}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-mist-400">size</dt>
+                    <dd className="font-mono text-mist-200">
+                      {(backupResult.sizeBytes / 1024).toFixed(1)} KiB
+                    </dd>
+                  </div>
+                </dl>
+              ) : null}
+            </section>
+          </div>
+
+          <section className="rounded-xl border border-ink-700/70 bg-ink-900/50 p-4">
+            <h2 className="text-sm font-semibold text-white">
+              Phase 3（自動復旧）昇格チェックリスト
+            </h2>
+            <div className="mt-2 grid gap-2 text-[11px] text-mist-400 sm:grid-cols-2">
+              <p>
+                1. 対象サービスを{" "}
+                <span className="font-mono text-mist-200">approve</span> で 1
+                週間運用し、承認判断と再起動結果を確認する。
+              </p>
+              <p>
+                2. クラッシュループ・ポート競合・WSL
+                停止が再起動対象外であることを確認する。
+              </p>
+              <p>
+                3.
+                クールダウン、最大試行回数、バックオフ、復旧確認タイムアウトを環境に合わせる。
+              </p>
+              <p>
+                4. 承認ログ、監査ログ、バックアップからの復元手順を確認してから{" "}
+                <span className="font-mono text-mist-200">auto</span>{" "}
+                に変更する。
+              </p>
+            </div>
+            <p className="mt-3 text-[10px] text-mist-400">
+              phase の変更は{" "}
+              <a href="/services" className="text-signal-400 hover:underline">
+                Services
+              </a>{" "}
+              画面（admin のみ）から行えます。
+            </p>
+          </section>
+        </div>
+      ) : null}
     </main>
   );
 }

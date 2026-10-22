@@ -1,6 +1,7 @@
 import Fastify, { type FastifyError } from "fastify";
 import cookie from "@fastify/cookie";
 import { ZodError } from "zod";
+import { stopAnalysisQueue } from "./ai/queue.js";
 import { ensureAdminUser } from "./auth/bootstrap.js";
 import { cleanupExpiredSessions } from "./auth/session.js";
 import { config } from "./config.js";
@@ -9,13 +10,16 @@ import { ensureDefaultHosts } from "./hosts/bootstrap.js";
 import { cleanupLogs, startLogRetention } from "./logs/retention.js";
 import { startAllLogTailers, stopAllLogTailers } from "./logs/tailers.js";
 import { startMonitor, stopMonitor } from "./monitoring/engine.js";
+import { aiRoutes } from "./routes/ai.js";
 import { approvalRoutes } from "./routes/approvals.js";
+import { auditRoutes } from "./routes/audit.js";
 import { authRoutes } from "./routes/auth.js";
 import { healthRoutes } from "./routes/health.js";
 import { hostRoutes } from "./routes/hosts.js";
 import { incidentRoutes } from "./routes/incidents.js";
 import { logRoutes } from "./routes/logs.js";
 import { portRoutes } from "./routes/ports.js";
+import { reportRoutes } from "./routes/reports.js";
 import { serviceRoutes } from "./routes/services.js";
 import { settingsRoutes } from "./routes/settings.js";
 import { userRoutes } from "./routes/users.js";
@@ -119,6 +123,7 @@ export async function buildApp() {
 
   app.addHook("onClose", async () => {
     clearInterval(retentionTimer);
+    stopAnalysisQueue();
     stopMonitor();
     stopAllLogTailers();
     closeServiceWatchers();
@@ -182,6 +187,9 @@ export async function buildApp() {
   await app.register(logRoutes, { prefix: "/api" });
   await app.register(incidentRoutes, { prefix: "/api" });
   await app.register(approvalRoutes, { prefix: "/api" });
+  await app.register(aiRoutes, { prefix: "/api" });
+  await app.register(reportRoutes, { prefix: "/api" });
+  await app.register(auditRoutes, { prefix: "/api" });
   await app.register(settingsRoutes, { prefix: "/api" });
 
   return app;

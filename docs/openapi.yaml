@@ -702,18 +702,39 @@ paths:
       - $ref: "#/components/parameters/Id"
     post:
       tags: [incidents]
-      summary: AI 分析を再実行（operator 以上）
+      summary: AI 分析を非同期キューへ投入（operator 以上）
       responses:
         "202":
           description: 分析ジョブを受け付け
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/AiAnalysis" }
-        "503":
-          description: AI プロバイダに接続できない
+              schema: { $ref: "#/components/schemas/AiAnalysisQueued" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /incidents/{id}/analysis:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [incidents]
+      summary: 最新の AI 分析とレポート
+      responses:
+        "200":
+          description: OK
           content:
-            application/problem+json:
-              schema: { $ref: "#/components/schemas/Problem" }
+            application/json:
+              schema:
+                type: object
+                required: [analysis, report]
+                properties:
+                  analysis:
+                    allOf:
+                      - $ref: "#/components/schemas/AiAnalysis"
+                    nullable: true
+                  report:
+                    allOf:
+                      - $ref: "#/components/schemas/Report"
+                    nullable: true
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /approvals:
     get:
@@ -773,33 +794,34 @@ paths:
   /reports:
     get:
       tags: [reports]
-      summary: レポート一覧
+      summary: レポート一覧（新しい順）
       parameters:
         - name: incidentId
           in: query
           schema: { type: string }
         - $ref: "#/components/parameters/Limit"
+        - name: offset
+          in: query
+          schema: { type: integer, minimum: 0, default: 0 }
       responses:
         "200":
           description: OK
           content:
             application/json:
-              schema:
-                type: array
-                items: { $ref: "#/components/schemas/Report" }
+              schema: { $ref: "#/components/schemas/ReportList" }
 
   /reports/{id}:
     parameters:
       - $ref: "#/components/parameters/Id"
     get:
       tags: [reports]
-      summary: レポート詳細
+      summary: レポート詳細（インシデントと AI 分析を含む）
       responses:
         "200":
           description: OK
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/Report" }
+              schema: { $ref: "#/components/schemas/ReportDetail" }
         "404": { $ref: "#/components/responses/NotFound" }
 
   /reports/{id}/export:
@@ -814,25 +836,24 @@ paths:
           schema: { type: string, enum: [md, json], default: md }
       responses:
         "200":
-          description: ファイル
+          description: ファイル（Content-Disposition attachment）
           content:
             text/markdown:
               schema: { type: string }
             application/json:
-              schema: { type: object }
-
-  /reports/{id}/send:
-    parameters:
-      - $ref: "#/components/parameters/Id"
-    post:
-      tags: [reports]
-      summary: レポートをメール再送（operator 以上）
-      responses:
-        "202":
-          description: 送信を受け付け
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ReportDelivery" }
+              schema:
+                type: object
+                required: [report, analysis]
+                properties:
+                  report:
+                    allOf:
+                      - $ref: "#/components/schemas/Report"
+                    nullable: true
+                  analysis:
+                    allOf:
+                      - $ref: "#/components/schemas/AiAnalysis"
+                    nullable: true
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /policies:
     get:
@@ -915,13 +936,14 @@ paths:
   /settings/ai:
     get:
       tags: [settings]
-      summary: AI 設定（admin のみ、API キーはマスク）
+      summary: AI 設定（admin のみ、API キーは真偽のみ）
       responses:
         "200":
           description: OK
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/AiSettings" }
+              schema: { $ref: "#/components/schemas/AiSettingsView" }
+        "403": { $ref: "#/components/responses/Forbidden" }
     put:
       tags: [settings]
       summary: AI 設定の更新（admin のみ）
@@ -929,26 +951,76 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/AiSettings" }
+            schema: { $ref: "#/components/schemas/AiSettingsInput" }
       responses:
         "200":
           description: 更新済み
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/AiSettings" }
+              schema: { $ref: "#/components/schemas/AiSettingsView" }
+        "422": { $ref: "#/components/responses/ValidationError" }
 
   /ai/test:
     post:
       tags: [settings]
-      summary: AI 接続テスト（admin のみ）
+      summary: 保存済み AI 設定で接続テスト（admin のみ）
       responses:
         "200":
           description: 接続結果
           content:
             application/json:
               schema: { $ref: "#/components/schemas/AiTestResult" }
-        "503":
-          description: 接続失敗
+        "409":
+          description: AI が未設定
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "502":
+          description: AI プロバイダへの接続失敗
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+
+  /settings/retention:
+    get:
+      tags: [settings]
+      summary: ログ保持期間（admin のみ）
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RetentionSettings" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    put:
+      tags: [settings]
+      summary: ログ保持期間の更新（admin のみ）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RetentionSettingsInput" }
+      responses:
+        "200":
+          description: 更新済み
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RetentionSettings" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /admin/backup:
+    post:
+      tags: [settings]
+      summary: SQLite オンラインバックアップを作成（admin のみ）
+      responses:
+        "200":
+          description: 作成したバックアップ
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BackupResult" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "500":
+          description: バックアップ作成失敗
           content:
             application/problem+json:
               schema: { $ref: "#/components/schemas/Problem" }
@@ -958,11 +1030,17 @@ paths:
       tags: [audit]
       summary: 監査ログ（admin のみ）
       parameters:
-        - name: actorUserId
+        - name: actor
           in: query
+          description: actorLabel の部分一致、または actorUserId の完全一致
           schema: { type: string }
         - name: action
           in: query
+          description: action の部分一致
+          schema: { type: string }
+        - name: target
+          in: query
+          description: target の部分一致
           schema: { type: string }
         - name: from
           in: query
@@ -971,14 +1049,15 @@ paths:
           in: query
           schema: { type: string, format: date-time }
         - $ref: "#/components/parameters/Limit"
+        - name: offset
+          in: query
+          schema: { type: integer, minimum: 0, default: 0 }
       responses:
         "200":
           description: OK
           content:
             application/json:
-              schema:
-                type: array
-                items: { $ref: "#/components/schemas/AuditLog" }
+              schema: { $ref: "#/components/schemas/AuditLogList" }
         "403": { $ref: "#/components/responses/Forbidden" }
 
 components:
@@ -1550,6 +1629,14 @@ components:
             actions:
               type: array
               items: { $ref: "#/components/schemas/Action" }
+            analysis:
+              allOf:
+                - $ref: "#/components/schemas/AiAnalysis"
+              nullable: true
+            report:
+              allOf:
+                - $ref: "#/components/schemas/Report"
+              nullable: true
 
     IncidentEvent:
       type: object
@@ -1659,6 +1746,15 @@ components:
         finishedAt: { type: string, format: date-time, nullable: true }
         error: { type: string, nullable: true }
 
+    AiAnalysisQueued:
+      type: object
+      required: [incidentId, queued, alreadyQueued, status]
+      properties:
+        incidentId: { type: string }
+        queued: { type: boolean }
+        alreadyQueued: { type: boolean }
+        status: { type: string, enum: [queued] }
+
     AiAnalysis:
       type: object
       required: [id, incidentId, provider, model, result, createdAt]
@@ -1706,17 +1802,46 @@ components:
         body: { type: string }
         createdAt: { type: string, format: date-time }
 
-    ReportDelivery:
+    ReportIncident:
       type: object
-      required: [id, reportId, channel, status]
+      nullable: true
       properties:
         id: { type: string }
-        reportId: { type: string }
-        channel: { type: string, enum: [email] }
-        to: { type: string }
-        status: { type: string, enum: [sent, failed] }
-        error: { type: string, nullable: true }
-        sentAt: { type: string, format: date-time, nullable: true }
+        title: { type: string }
+        severity: { type: string, enum: [info, warning, error, critical] }
+        status: { type: string }
+        startedAt: { type: string, format: date-time }
+        serviceId: { type: string }
+        serviceName: { type: string, nullable: true }
+
+    ReportListItem:
+      allOf:
+        - $ref: "#/components/schemas/Report"
+        - type: object
+          properties:
+            incident: { $ref: "#/components/schemas/ReportIncident" }
+
+    ReportList:
+      type: object
+      required: [items, total, limit, offset]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/ReportListItem" }
+        total: { type: integer }
+        limit: { type: integer }
+        offset: { type: integer }
+
+    ReportDetail:
+      allOf:
+        - $ref: "#/components/schemas/Report"
+        - type: object
+          properties:
+            incident: { $ref: "#/components/schemas/ReportIncident" }
+            analysis:
+              allOf:
+                - $ref: "#/components/schemas/AiAnalysis"
+              nullable: true
 
     Policy:
       type: object
@@ -1783,29 +1908,94 @@ components:
           type: array
           items: { type: string, format: email }
 
-    AiSettings:
+    AiSettingsInput:
       type: object
       required: [baseUrl, model]
       properties:
         baseUrl: { type: string, format: uri }
         model: { type: string }
-        apiKey: { type: string, description: "書き込み時のみ。取得時はマスク" }
-        maxInputTokens: { type: integer, default: 8000 }
-        temperature: { type: number, default: 0.2 }
-        timeoutSec: { type: integer, default: 60 }
-        dailyRequestLimit: { type: integer, default: 200 }
+        apiKey:
+          {
+            type: string,
+            description: "書き込み時のみ。省略時は保存済み API キーを維持",
+          }
+        clearApiKey:
+          { type: boolean, description: "保存済み API キーを削除する" }
+        maxInputTokens: { type: integer, minimum: 256, default: 8000 }
+        temperature: { type: number, minimum: 0, maximum: 2, default: 0.2 }
+        timeoutSec: { type: integer, minimum: 5, default: 60 }
+        dailyRequestLimit: { type: integer, minimum: 0, default: 200 }
         sendLogsExternally: { type: boolean, default: false }
+
+    AiSettingsView:
+      type: object
+      required:
+        [
+          configured,
+          source,
+          provider,
+          baseUrl,
+          model,
+          apiKeySet,
+          maxInputTokens,
+          temperature,
+          timeoutSec,
+          dailyRequestLimit,
+          dailyUsed,
+          sendLogsExternally,
+          localEndpoint,
+          externalLogsAllowed,
+        ]
+      properties:
+        configured: { type: boolean }
+        source: { type: string, enum: [db, env, none] }
+        provider: { type: string, enum: [openai-compatible] }
+        baseUrl: { type: string, format: uri }
+        model: { type: string }
+        apiKeySet: { type: boolean }
+        maxInputTokens: { type: integer }
+        temperature: { type: number }
+        timeoutSec: { type: integer }
+        dailyRequestLimit: { type: integer }
+        dailyUsed: { type: integer }
+        sendLogsExternally: { type: boolean }
+        localEndpoint:
+          { type: boolean, description: "localhost / private IP など" }
+        externalLogsAllowed:
+          { type: boolean, description: "ローカル、または外部送信が許可済み" }
 
     AiTestResult:
       type: object
-      required: [ok, models]
+      required: [models, latencyMs, baseUrl, model]
       properties:
-        ok: { type: boolean }
         models:
           type: array
           items: { type: string }
         latencyMs: { type: integer }
-        message: { type: string }
+        baseUrl: { type: string, format: uri }
+        model: { type: string }
+
+    RetentionSettingsInput:
+      type: object
+      required: [logDays]
+      properties:
+        logDays: { type: integer, minimum: 1, maximum: 3650, default: 14 }
+
+    RetentionSettings:
+      type: object
+      required: [logDays, source, updatedAt]
+      properties:
+        logDays: { type: integer }
+        source: { type: string, enum: [db, env] }
+        updatedAt: { type: string, format: date-time, nullable: true }
+
+    BackupResult:
+      type: object
+      required: [path, sizeBytes, createdAt]
+      properties:
+        path: { type: string }
+        sizeBytes: { type: integer }
+        createdAt: { type: string, format: date-time }
 
     AuditLog:
       type: object
@@ -1819,9 +2009,22 @@ components:
         before:
           type: object
           additionalProperties: true
+          nullable: true
         after:
           type: object
           additionalProperties: true
-        reason: { type: string }
-        ip: { type: string }
+          nullable: true
+        reason: { type: string, nullable: true }
+        ip: { type: string, nullable: true }
         ts: { type: string, format: date-time }
+
+    AuditLogList:
+      type: object
+      required: [items, total, limit, offset]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/AuditLog" }
+        total: { type: integer }
+        limit: { type: integer }
+        offset: { type: integer }

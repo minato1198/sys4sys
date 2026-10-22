@@ -252,3 +252,36 @@ export const aiSettingsSchema = z.object({
   sendLogsExternally: z.boolean().default(false),
 });
 export type AiSettingsInput = z.infer<typeof aiSettingsSchema>;
+
+export const aiSettingsUpdateSchema = aiSettingsSchema.extend({
+  clearApiKey: z.boolean().optional(),
+});
+export type AiSettingsUpdateInput = z.infer<typeof aiSettingsUpdateSchema>;
+
+export const reportQuerySchema = z.object({
+  incidentId: z.string().min(1).optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  offset: z.coerce.number().int().min(0).default(0),
+});
+export type ReportQuery = z.infer<typeof reportQuerySchema>;
+
+export const reportExportQuerySchema = z.object({
+  format: z.enum(["md", "json"]).default("md"),
+});
+export type ReportExportQuery = z.infer<typeof reportExportQuerySchema>;
+
+export const auditLogQuerySchema = z.object({
+  actor: z.string().optional(),
+  action: z.string().optional(),
+  target: z.string().optional(),
+  from: z.string().datetime().optional(),
+  to: z.string().datetime().optional(),
+  limit: z.coerce.number().int().min(1).max(500).default(100),
+  offset: z.coerce.number().int().min(0).default(0),
+});
+export type AuditLogQuery = z.infer<typeof auditLogQuerySchema>;
+
+export const retentionSettingsSchema = z.object({
+  logDays: z.number().int().min(1).max(3650).default(14),
+});
+export type RetentionSettingsInput = z.infer<typeof retentionSettingsSchema>;
