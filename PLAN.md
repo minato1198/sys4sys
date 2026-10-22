@@ -138,15 +138,16 @@ interface HostAdapter {
 
 ### 3.2 サービス管理
 
-| ID   | 機能                 | 内容                                                                       |
-| ---- | -------------------- | -------------------------------------------------------------------------- |
-| S-01 | サービス登録         | 名前、ホスト、起動コマンド、cwd、環境変数、期待ポート、ヘルスチェック      |
-| S-02 | 起動 / 停止 / 再起動 | API 経由。Agent が実行（許可リストのコマンドのみ、`spawn` に配列で渡す）   |
-| S-03 | ヘルスチェック       | HTTP / TCP / プロセス生存 / カスタムコマンド。間隔・タイムアウト・失敗閾値 |
-| S-04 | 依存関係             | `depends_on`（例: worker → api）。起動順を制御                             |
-| S-05 | 状態管理             | `stopped` / `starting` / `running` / `degraded` / `restarting` / `failed`  |
-| S-06 | 自動起動             | システム起動時、または依存サービス復帰時に起動                             |
-| S-07 | 実行ユーザー         | Windows / WSL それぞれの実行ユーザーを指定（WSL は `-u`）                  |
+| ID   | 機能                 | 内容                                                                                                                              |
+| ---- | -------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| S-01 | サービス登録         | 名前、ホスト、起動コマンド、cwd、環境変数、期待ポート、ヘルスチェック                                                             |
+| S-02 | 起動 / 停止 / 再起動 | API 経由。Agent が実行（許可リストのコマンドのみ、`spawn` に配列で渡す）                                                          |
+| S-03 | ヘルスチェック       | HTTP / TCP / プロセス生存 / カスタムコマンド。間隔・タイムアウト・失敗閾値                                                        |
+| S-04 | 依存関係             | `depends_on`（例: worker → api）。起動順を制御                                                                                    |
+| S-05 | 状態管理             | `stopped` / `starting` / `running` / `degraded` / `restarting` / `failed`                                                         |
+| S-06 | 自動起動             | システム起動時、または依存サービス復帰時に起動                                                                                    |
+| S-07 | 実行ユーザー         | Windows / WSL それぞれの実行ユーザーを指定（WSL は `-u`）                                                                         |
+| S-08 | デプロイ             | 登録済み `deploy` 設定（コマンド / cwd / env / timeout / restartAfter / healthTimeout）を非同期実行。ログは `[deploy]` として保存 |
 
 ### 3.3 ログ管理
 
@@ -381,8 +382,10 @@ hosts
 
 services
   id, host_id, name, command(JSON array), cwd, env(JSON), expected_ports(JSON),
-  health_check(JSON), depends_on(JSON), auto_start, auto_restart_phase,
-  status, created_at, updated_at
+  health_check(JSON), deploy(JSON: command/cwd/env/timeoutSec/restartAfter/healthTimeoutSec),
+  depends_on(JSON), auto_start, auto_restart_phase, status,
+  last_deploy_at, last_deploy_status(running|succeeded|failed), last_deploy_error,
+  created_at, updated_at
 
 ports
   id, scope(windows|wsl), pid_host_id(NULL, PID を観測した WSL distro),
@@ -420,8 +423,8 @@ report_deliveries
   id, report_id, channel(email), to_addr, status(sent|failed), error, sent_at
 
 actions
-  id, incident_id, service_id, type, status, requested_by, approved_by,
-  policy_id, started_at, finished_at, error
+  id, incident_id, service_id, type(start|stop|restart|kill|deploy), status,
+  requested_by, approved_by, policy_id, started_at, finished_at, error
 
 policies
   id, name, scope(JSON), rules(JSON), enabled, priority
@@ -471,6 +474,7 @@ DELETE /api/services/:id               admin（論理削除）
 POST   /api/services/:id/start         operator 以上
 POST   /api/services/:id/stop          operator 以上
 POST   /api/services/:id/restart       operator 以上
+POST   /api/services/:id/deploy        operator 以上（登録済み deploy 設定を非同期実行、202）
 GET    /api/services/:id/health
 
 # ログ
@@ -563,14 +567,15 @@ POST   /api/admin/backup               admin のみ（SQLite オンラインバ�
 
 ## 10. マイルストーン
 
-| フェーズ                         | 期間目安 | 内容                                                                        | 完了条件（DoD）                                                                                                 |
-| -------------------------------- | -------- | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| **M0: 設計確定**                 | 完了     | 要件確定（v0.3 で完了）、ER 図、OpenAPI、画面ワイヤー                       | 要件は確定済み。ER 図と API 定義がレビュー済みになること                                                        |
-| **M1: 基盤 + 認証 + ポート**     | 2 週     | モノレポ、API、DB、認証/ロール、HostAdapter、ポートスキャン、予約・競合検出 | ログインして 2 ホストのポートが 10 秒以内に反映され、競合を起動前に検出できる                                   |
-| **M2: サービス + ログ + WSL**    | 完了     | サービス CRUD、起動/停止、ヘルスチェック、ログ収集・検索・tail、WSL 連携    | UI から Windows / WSL のサービスを起動し、ログを 1 秒以内に tail 表示できる（達成）                             |
-| **M3: 監視 + 自動復旧 + メール** | 完了     | ルールエンジン、インシデント、承認キュー、再起動 + 検証、メール通知         | プロセスを kill すると 30 秒以内に検知し、Phase 2 で承認 → 再起動 → 復旧通知まで通る（達成）                    |
-| **M4: AI 分析 + レポート**       | 完了     | AI ジョブ、接続設定、トリアージ、原因仮説、Markdown レポート、類似検索      | インシデントから非同期で分析・レポート生成し、失敗時もルールベースで保存できる（達成。メール送信は後回し）      |
-| **M5: 運用強化**                 | 完了     | 監査ログ UI、保持期間、コスト制御、バックアップ、ドキュメント、Phase 3 昇格 | 監査・保持期間・バックアップ・昇格手順が揃い、統合スモーク 86 checks が通る（達成。1 週間連続稼働は運用で確認） |
+| フェーズ                         | 期間目安 | 内容                                                                                                                | 完了条件（DoD）                                                                                                    |
+| -------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| **M0: 設計確定**                 | 完了     | 要件確定（v0.3 で完了）、ER 図、OpenAPI、画面ワイヤー                                                               | 要件は確定済み。ER 図と API 定義がレビュー済みになること                                                           |
+| **M1: 基盤 + 認証 + ポート**     | 2 週     | モノレポ、API、DB、認証/ロール、HostAdapter、ポートスキャン、予約・競合検出                                         | ログインして 2 ホストのポートが 10 秒以内に反映され、競合を起動前に検出できる                                      |
+| **M2: サービス + ログ + WSL**    | 完了     | サービス CRUD、起動/停止、ヘルスチェック、ログ収集・検索・tail、WSL 連携                                            | UI から Windows / WSL のサービスを起動し、ログを 1 秒以内に tail 表示できる（達成）                                |
+| **M3: 監視 + 自動復旧 + メール** | 完了     | ルールエンジン、インシデント、承認キュー、再起動 + 検証、メール通知                                                 | プロセスを kill すると 30 秒以内に検知し、Phase 2 で承認 → 再起動 → 復旧通知まで通る（達成）                       |
+| **M4: AI 分析 + レポート**       | 完了     | AI ジョブ、接続設定、トリアージ、原因仮説、Markdown レポート、類似検索                                              | インシデントから非同期で分析・レポート生成し、失敗時もルールベースで保存できる（達成。メール送信は後回し）         |
+| **M5: 運用強化**                 | 完了     | 監査ログ UI、保持期間、コスト制御、バックアップ、ドキュメント、Phase 3 昇格                                         | 監査・保持期間・バックアップ・昇格手順が揃い、統合スモーク 86 checks が通る（達成。1 週間連続稼働は運用で確認）    |
+| **M6: デプロイ連携**             | 完了     | サービス単位の `deploy` 設定、非同期デプロイ action、`[deploy]` ログ、再起動 + ヘルス確認、UI / API / demo-api 統合 | UI から `deploy.ps1` を実行し、成功後にサービスが再起動・healthy になり、deploy ログと最終状態を確認できる（達成） |
 
 **合計: 約 9〜10 週間**（1 人・兼業想定）。M1〜M3 だけで「監視 + 承認付き復旧」は成立するため、AI は後から載せられる。
 
@@ -617,6 +622,11 @@ POST   /api/admin/backup               admin のみ（SQLite オンラインバ�
 - [x] M5: Phase 3（自動復旧）の昇格チェックリスト
 - [x] M5: 運用手順書（README 更新）
 - [ ] M5: 1 週間の連続稼働確認（運用フェーズで実施）
+- [x] M6: `deployConfigSchema` / `services.deploy` / `actions.type=deploy` とマイグレーション
+- [x] M6: 非同期デプロイランナー（タイムアウト、ログ取り込み、再起動、ヘルス待機、多重実行防止、起動時 reconciliation）
+- [x] M6: `POST /api/services/:id/deploy` / `/services` の deploy 設定・実行・状態表示
+- [x] M6: `pwsh` / `powershell` の allowlist 追加とテスト更新
+- [x] M6: demo-api の `deploy.ps1` を API 経由で実行し、再起動・healthy・ログ保存を確認
 
 ---
 

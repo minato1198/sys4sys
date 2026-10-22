@@ -1,3 +1,4 @@
+import type { DeployConfigInput } from "@sys4sys/shared";
 import {
   index,
   integer,
@@ -65,6 +66,7 @@ export const services = sqliteTable(
     healthCheck: text("health_check", { mode: "json" }).$type<
       Record<string, unknown>
     >(),
+    deploy: text("deploy", { mode: "json" }).$type<DeployConfigInput>(),
     dependsOn: text("depends_on", { mode: "json" }).$type<string[]>(),
     autoStart: integer("auto_start", { mode: "boolean" })
       .notNull()
@@ -92,6 +94,11 @@ export const services = sqliteTable(
     lastExitedAt: timestamp("last_exited_at"),
     lastExitCode: integer("last_exit_code"),
     lastError: text("last_error"),
+    lastDeployAt: timestamp("last_deploy_at"),
+    lastDeployStatus: text("last_deploy_status", {
+      enum: ["running", "succeeded", "failed"],
+    }),
+    lastDeployError: text("last_deploy_error"),
     createdAt: timestamp("created_at").notNull(),
     updatedAt: timestamp("updated_at").notNull(),
     isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
@@ -347,7 +354,7 @@ export const actions = sqliteTable(
     incidentId: text("incident_id"),
     serviceId: text("service_id").notNull(),
     type: text("type", {
-      enum: ["start", "stop", "restart", "kill"],
+      enum: ["start", "stop", "restart", "kill", "deploy"],
     }).notNull(),
     status: text("status", {
       enum: ["pending", "running", "succeeded", "failed"],

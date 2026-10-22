@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import {
+  deployConfigSchema,
   serviceCreateSchema,
   serviceListQuerySchema,
   serviceUpdateSchema,
+  type DeployConfigInput,
 } from "@sys4sys/shared";
 import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
@@ -13,6 +15,7 @@ import { db } from "../db/index.js";
 import { actions, hosts, logSources, services } from "../db/schema.js";
 import { refreshLogTailer } from "../logs/tailers.js";
 import { isCommandAllowed } from "../services/allowlist.js";
+import { beginDeploy, runDeploy } from "../services/deploy.js";
 import {
   checkServiceHealth,
   restartService,
@@ -75,6 +78,7 @@ function serviceResponse(row: ServiceRow, host: HostRow | undefined) {
     env: row.env ?? null,
     expectedPorts: row.expectedPorts ?? [],
     healthCheck: row.healthCheck ?? null,
+    deploy: row.deploy ?? null,
     dependsOn: row.dependsOn ?? [],
     autoStart: row.autoStart,
     autoRestartPhase: row.autoRestartPhase,
@@ -86,6 +90,9 @@ function serviceResponse(row: ServiceRow, host: HostRow | undefined) {
     lastExitedAt: iso(row.lastExitedAt),
     lastExitCode: row.lastExitCode,
     lastError: row.lastError,
+    lastDeployAt: iso(row.lastDeployAt),
+    lastDeployStatus: row.lastDeployStatus,
+    lastDeployError: row.lastDeployError,
     createdAt: iso(row.createdAt),
     updatedAt: iso(row.updatedAt),
     host: hostResponse(host),
@@ -123,6 +130,26 @@ function isUniqueConstraint(error: unknown): boolean {
   if (typeof error !== "object" || error === null) return false;
   const code = (error as { code?: unknown }).code;
   return typeof code === "string" && code.includes("SQLITE_CONSTRAINT");
+}
+
+function deployValidationError(deploy: DeployConfigInput | null | undefined) {
+  if (!deploy) return null;
+  const allowed = isCommandAllowed(deploy.command);
+  return allowed.ok
+    ? null
+    : (allowed.reason ?? "デプロイコマンドが許可されていません");
+}
+
+/** 監査ログには deploy.env（秘密値を含み得る）を残さない。 */
+function deployAuditValue(deploy: DeployConfigInput | null | undefined) {
+  if (!deploy) return null;
+  return {
+    command: deploy.command,
+    cwd: deploy.cwd ?? null,
+    timeoutSec: deploy.timeoutSec,
+    restartAfter: deploy.restartAfter,
+    healthTimeoutSec: deploy.healthTimeoutSec,
+  };
 }
 
 export async function serviceRoutes(app: FastifyInstance): Promise<void> {
@@ -202,6 +229,11 @@ export async function serviceRoutes(app: FastifyInstance): Promise<void> {
         );
       }
 
+      const deployError = deployValidationError(body.deploy);
+      if (deployError) {
+        return problem(reply, 422, "Unprocessable Entity", deployError);
+      }
+
       const now = new Date();
       const id = randomUUID();
       try {
@@ -214,6 +246,7 @@ export async function serviceRoutes(app: FastifyInstance): Promise<void> {
           env: body.env ?? null,
           expectedPorts: body.expectedPorts ?? null,
           healthCheck: body.healthCheck ?? null,
+          deploy: body.deploy ?? null,
           dependsOn: body.dependsOn ?? null,
           autoStart: body.autoStart,
           autoRestartPhase: body.autoRestartPhase,
@@ -244,6 +277,7 @@ export async function serviceRoutes(app: FastifyInstance): Promise<void> {
           name: body.name,
           command: body.command,
           expectedPorts: body.expectedPorts ?? null,
+          deploy: deployAuditValue(body.deploy),
         },
         ip: request.ip,
       });
@@ -264,6 +298,7 @@ export async function serviceRoutes(app: FastifyInstance): Promise<void> {
             env: body.env ?? null,
             expectedPorts: body.expectedPorts ?? null,
             healthCheck: body.healthCheck ?? null,
+            deploy: body.deploy ?? null,
             dependsOn: body.dependsOn ?? null,
             autoStart: body.autoStart,
             autoRestartPhase: body.autoRestartPhase,
@@ -274,6 +309,9 @@ export async function serviceRoutes(app: FastifyInstance): Promise<void> {
             lastExitedAt: null,
             lastExitCode: null,
             lastError: null,
+            lastDeployAt: null,
+            lastDeployStatus: null,
+            lastDeployError: null,
             createdAt: now,
             updatedAt: now,
             isActive: true,
@@ -308,6 +346,11 @@ export async function serviceRoutes(app: FastifyInstance): Promise<void> {
         }
       }
 
+      const deployError = deployValidationError(body.deploy);
+      if (deployError) {
+        return problem(reply, 422, "Unprocessable Entity", deployError);
+      }
+
       const runtime = runtimeInfo(id);
       if (
         runtime.running &&
@@ -335,6 +378,7 @@ export async function serviceRoutes(app: FastifyInstance): Promise<void> {
       }
       if (body.healthCheck !== undefined)
         updates.healthCheck = body.healthCheck;
+      if (body.deploy !== undefined) updates.deploy = body.deploy;
       if (body.dependsOn !== undefined) updates.dependsOn = body.dependsOn;
       if (body.autoStart !== undefined) updates.autoStart = body.autoStart;
       if (body.autoRestartPhase !== undefined) {
@@ -365,6 +409,7 @@ export async function serviceRoutes(app: FastifyInstance): Promise<void> {
           command: existing.command,
           cwd: existing.cwd,
           expectedPorts: existing.expectedPorts,
+          deploy: deployAuditValue(existing.deploy),
           autoStart: existing.autoStart,
           autoRestartPhase: existing.autoRestartPhase,
         },
@@ -376,6 +421,9 @@ export async function serviceRoutes(app: FastifyInstance): Promise<void> {
             body.expectedPorts !== undefined
               ? body.expectedPorts
               : existing.expectedPorts,
+          deploy: deployAuditValue(
+            body.deploy !== undefined ? body.deploy : existing.deploy,
+          ),
           autoStart: body.autoStart ?? existing.autoStart,
           autoRestartPhase: body.autoRestartPhase ?? existing.autoRestartPhase,
         },
@@ -584,6 +632,73 @@ export async function serviceRoutes(app: FastifyInstance): Promise<void> {
         const { id } = idParamsSchema.parse(request.params);
         return restartService(id);
       }),
+  );
+
+  app.post(
+    "/services/:id/deploy",
+    { preHandler: requireRole("operator", "admin") },
+    async (request, reply) => {
+      const { id } = idParamsSchema.parse(request.params);
+      const user = actor(request);
+      const service = await findService(id);
+      if (!service) {
+        return problem(reply, 404, "Not Found", "サービスが見つかりません");
+      }
+      if (!service.deploy) {
+        return problem(
+          reply,
+          422,
+          "Unprocessable Entity",
+          "デプロイ設定がありません",
+        );
+      }
+
+      let deploy: DeployConfigInput;
+      try {
+        deploy = deployConfigSchema.parse(service.deploy);
+      } catch {
+        return problem(
+          reply,
+          422,
+          "Unprocessable Entity",
+          "デプロイ設定が不正です",
+        );
+      }
+
+      const allowed = isCommandAllowed(deploy.command);
+      if (!allowed.ok) {
+        return problem(
+          reply,
+          422,
+          "Unprocessable Entity",
+          allowed.reason ?? "デプロイコマンドが許可されていません",
+        );
+      }
+
+      try {
+        const action = await beginDeploy(service, user);
+        void runDeploy(service, deploy, action.id, user, request.ip).catch(
+          (error: unknown) => {
+            console.warn(
+              `[deploy] runner failed: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+            );
+          },
+        );
+        return reply.code(202).send(actionResponse(action));
+      } catch (error) {
+        if (error instanceof ServiceError) {
+          return problem(
+            reply,
+            error.statusCode,
+            error.statusCode === 409 ? "Conflict" : "Unprocessable Entity",
+            error.message,
+          );
+        }
+        throw error;
+      }
+    },
   );
 
   app.get(

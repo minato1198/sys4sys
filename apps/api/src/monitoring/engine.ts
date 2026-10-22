@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { and, desc, eq, gte, inArray } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, notLike, or } from "drizzle-orm";
 import type { IncidentSeverity } from "@sys4sys/shared";
 import { config } from "../config.js";
 import { db } from "../db/index.js";
@@ -16,6 +16,12 @@ import {
 } from "./incidents.js";
 
 type ServiceRow = typeof services.$inferSelect;
+
+// デプロイ操作の出力はサービス異常ではないため、ログ監視の対象から外す。
+const notDeployLog = or(
+  isNull(logEvents.fields),
+  notLike(logEvents.fields, '%"source":"deploy"%'),
+);
 
 let intervalTimer: NodeJS.Timeout | null = null;
 let startupTimer: NodeJS.Timeout | null = null;
@@ -129,6 +135,7 @@ async function runErrorLogRules(service: ServiceRow): Promise<void> {
         eq(logEvents.serviceId, service.id),
         inArray(logEvents.level, ["error", "fatal"]),
         gte(logEvents.ts, cutoff),
+        notDeployLog,
       ),
     )
     .orderBy(desc(logEvents.ts))
@@ -168,7 +175,13 @@ async function runPatternRules(service: ServiceRow): Promise<void> {
   const rows = await db
     .select()
     .from(logEvents)
-    .where(and(eq(logEvents.serviceId, service.id), gte(logEvents.ts, cutoff)))
+    .where(
+      and(
+        eq(logEvents.serviceId, service.id),
+        gte(logEvents.ts, cutoff),
+        notDeployLog,
+      ),
+    )
     .orderBy(desc(logEvents.ts))
     .limit(200);
   const matched = rows.find((row) => pattern.test(row.message));

@@ -118,6 +118,22 @@ export const healthCheckSchema = z.object({
 });
 export type HealthCheckInput = z.infer<typeof healthCheckSchema>;
 
+/**
+ * サービス単位のデプロイ設定。
+ * deployCommand は SERVICE_COMMAND_ALLOWLIST に従って実行される。
+ * restartAfter=true の場合は、デプロイ成功後に sys4sys がサービスを再起動し、
+ * healthTimeoutSec の間ヘルスチェックを待つ。
+ */
+export const deployConfigSchema = z.object({
+  command: z.array(z.string().min(1)).min(1),
+  cwd: z.string().max(4096).optional(),
+  env: z.record(z.string(), z.string()).optional(),
+  timeoutSec: z.number().int().min(10).max(3600).default(600),
+  restartAfter: z.boolean().default(true),
+  healthTimeoutSec: z.number().int().min(5).max(900).default(120),
+});
+export type DeployConfigInput = z.infer<typeof deployConfigSchema>;
+
 export const serviceCreateSchema = z.object({
   hostId: z.string().min(1),
   name: z.string().min(1).max(100),
@@ -126,6 +142,7 @@ export const serviceCreateSchema = z.object({
   env: z.record(z.string(), z.string()).optional(),
   expectedPorts: z.array(z.number().int().min(1).max(65535)).optional(),
   healthCheck: healthCheckSchema.optional(),
+  deploy: deployConfigSchema.optional(),
   dependsOn: z.array(z.string()).optional(),
   autoStart: z.boolean().default(false),
   autoRestartPhase: restartPhaseSchema.default("observe"),
@@ -142,6 +159,7 @@ export const serviceUpdateSchema = z.object({
     .nullable()
     .optional(),
   healthCheck: healthCheckSchema.nullable().optional(),
+  deploy: deployConfigSchema.nullable().optional(),
   dependsOn: z.array(z.string()).nullable().optional(),
   autoStart: z.boolean().optional(),
   autoRestartPhase: restartPhaseSchema.optional(),

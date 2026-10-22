@@ -58,6 +58,24 @@ Invoke-RestMethod http://127.0.0.1:4100/health
 登録後に「起動」を押すと、sys4sys が `node.exe dist/server.js` を `cwd` で起動します。
 stdout / stderr は自動的にログへ取り込まれます。
 
+## sys4sys 管理下でのデプロイ
+
+`/services` の Edit で `deploy` 設定を登録すると、一覧の Deploy ボタンまたは
+`POST /api/services/:id/deploy` から `deploy.ps1` を実行できます。sys4sys が
+再起動とヘルス確認まで行うため、スクリプトには `-NoRestart` を渡します。
+
+| 項目           | 推奨値                                                                                                |
+| -------------- | ----------------------------------------------------------------------------------------------------- |
+| Deploy command | `["pwsh.exe","-NoProfile","-ExecutionPolicy","Bypass","-File","deploy.ps1","-SkipPull","-NoRestart"]` |
+| Deploy CWD     | `C:\path\to\sys4sys\apps\demo-api`                                                      |
+| Timeout (sec)  | `900`                                                                                                 |
+| Restart after  | ON                                                                                                    |
+| Health timeout | `120`                                                                                                 |
+
+`origin` remote を設定済みで `git pull` も sys4sys から実行したい場合は、`-SkipPull` を外してください。
+デプロイの進行状況は `/logs` で `[deploy]` を検索すると確認できます。最終結果はサービスの
+`lastDeployStatus` / `lastDeployError` と recent actions に残ります。
+
 ## デプロイスクリプト（deploy.ps1）
 
 サービス登録後は `apps/demo-api/deploy.ps1` で、`git pull` からビルド、sys4sys 経由の再起動、ヘルス確認までを1コマンドで実行できます。
@@ -167,6 +185,8 @@ pnpm install --frozen-lockfile
 4. `http://127.0.0.1:4100/error` を開き、`/logs` にエラーログが出ることを確認する
 5. 必要なら `/crash` を開き、`/incidents` にプロセス異常終了が記録されることを確認する
 6. `autoRestartPhase=approve` にした場合、`/approvals` に再起動承認が並ぶ
+7. `/services` の Deploy を押し、`lastDeployStatus=succeeded`、`status=running`、`health=healthy` になることを確認する
+8. `/logs` で `[deploy]` を検索し、ビルドログと `deploy succeeded` が保存されていることを確認する
 
 ## 注意
 

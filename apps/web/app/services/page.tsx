@@ -37,6 +37,15 @@ interface HealthCheck {
   failures?: number;
 }
 
+interface DeployConfig {
+  command: string[];
+  cwd?: string;
+  env?: Record<string, string>;
+  timeoutSec?: number;
+  restartAfter?: boolean;
+  healthTimeoutSec?: number;
+}
+
 interface HealthResult {
   serviceId: string;
   status: "healthy" | "unhealthy" | "unknown" | "stopped";
@@ -63,6 +72,7 @@ interface Service {
   env: Record<string, string> | null;
   expectedPorts: number[];
   healthCheck: HealthCheck | null;
+  deploy: DeployConfig | null;
   dependsOn: string[];
   autoStart: boolean;
   autoRestartPhase: "observe" | "approve" | "auto";
@@ -75,6 +85,9 @@ interface Service {
   lastExitedAt: string | null;
   lastExitCode: number | null;
   lastError: string | null;
+  lastDeployAt: string | null;
+  lastDeployStatus: "running" | "succeeded" | "failed" | null;
+  lastDeployError: string | null;
   createdAt: string | null;
   updatedAt: string | null;
   host: Host | null;
@@ -115,6 +128,12 @@ const EMPTY_FORM = {
   healthInterval: "10",
   healthTimeout: "3",
   healthFailures: "3",
+  deployCommand: "",
+  deployCwd: "",
+  deployEnv: "",
+  deployTimeout: "600",
+  deployHealthTimeout: "120",
+  deployRestartAfter: true,
 };
 
 function formatDate(value: string | null | undefined): string {
@@ -138,6 +157,13 @@ function statusDot(status: Service["status"]): string {
   if (status === "failed") return "bg-danger-400";
   if (status === "starting" || status === "restarting") return "bg-sky-300";
   return "bg-mist-400";
+}
+
+function deployTone(status: Service["lastDeployStatus"]): string {
+  if (status === "succeeded") return "text-signal-400";
+  if (status === "failed") return "text-danger-400";
+  if (status === "running") return "text-sky-300";
+  return "text-mist-400";
 }
 
 function HealthBadge({ health }: { health: HealthResult | null }) {
@@ -296,6 +322,77 @@ export default function ServicesPage() {
     }
   }
 
+  async function pollDeploy(id: string) {
+    for (let attempt = 0; attempt < 120; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+      try {
+        const response = await fetch(
+          `/api/services/${encodeURIComponent(id)}`,
+          { cache: "no-store" },
+        );
+        if (!response.ok) return;
+        const detail = (await response.json()) as ServiceDetail;
+        setSelected((current) => (current?.id === id ? detail : current));
+        if (detail.lastDeployStatus !== "running") {
+          await refreshServices();
+          setMessage(
+            `${detail.name}: deploy ${detail.lastDeployStatus ?? "unknown"}${
+              detail.lastDeployError ? ` — ${detail.lastDeployError}` : ""
+            }`,
+          );
+          return;
+        }
+      } catch {
+        return;
+      }
+    }
+    await refreshServices().catch(() => undefined);
+    setMessage(
+      "デプロイ状態の確認がタイムアウトしました。Logs で [deploy] ログを確認してください。",
+    );
+  }
+
+  async function runDeploy(service: Service) {
+    if (!service.deploy) {
+      setMessage("デプロイ設定がありません。Edit から登録してください。");
+      return;
+    }
+    if (
+      !window.confirm(
+        `${service.name} をデプロイしますか？\n${service.deploy.command.join(" ")}`,
+      )
+    ) {
+      return;
+    }
+
+    setBusyId(service.id);
+    setMessage(null);
+    try {
+      const response = await fetch(
+        `/api/services/${encodeURIComponent(service.id)}/deploy`,
+        { method: "POST" },
+      );
+      if (!response.ok) {
+        const problem = (await response
+          .json()
+          .catch(() => null)) as Problem | null;
+        throw new Error(
+          problem?.detail ?? `デプロイに失敗しました (${response.status})`,
+        );
+      }
+      setMessage(
+        `${service.name} のデプロイを開始しました。進行状況は Logs の [deploy] ログで確認できます。`,
+      );
+      await refreshServices();
+      if (selected?.id === service.id) await openDetail(service.id);
+      void pollDeploy(service.id);
+    } catch (cause) {
+      setMessage(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   async function checkHealth(service: Service) {
     setBusyId(service.id);
     setMessage(null);
@@ -362,6 +459,16 @@ export default function ServicesPage() {
       healthInterval: String(service.healthCheck?.intervalSec ?? 10),
       healthTimeout: String(service.healthCheck?.timeoutSec ?? 3),
       healthFailures: String(service.healthCheck?.failures ?? 3),
+      deployCommand: service.deploy
+        ? JSON.stringify(service.deploy.command)
+        : "",
+      deployCwd: service.deploy?.cwd ?? "",
+      deployEnv: service.deploy?.env
+        ? JSON.stringify(service.deploy.env, null, 2)
+        : "",
+      deployTimeout: String(service.deploy?.timeoutSec ?? 600),
+      deployHealthTimeout: String(service.deploy?.healthTimeoutSec ?? 120),
+      deployRestartAfter: service.deploy?.restartAfter ?? true,
     });
     setMessage(null);
     window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
@@ -371,6 +478,18 @@ export default function ServicesPage() {
     setEditingId(null);
     const candidate = hosts.find((host) => host.enabled) ?? hosts[0];
     setForm({ ...EMPTY_FORM, hostId: candidate?.id ?? "" });
+  }
+
+  function fillDeployExample() {
+    setForm((current) => ({
+      ...current,
+      deployCommand:
+        '["pwsh.exe","-NoProfile","-ExecutionPolicy","Bypass","-File","deploy.ps1","-NoRestart"]',
+      deployCwd: current.deployCwd || current.cwd,
+      deployTimeout: current.deployTimeout || "600",
+      deployHealthTimeout: current.deployHealthTimeout || "120",
+      deployRestartAfter: true,
+    }));
   }
 
   async function submitService(event: FormEvent<HTMLFormElement>) {
@@ -467,6 +586,78 @@ export default function ServicesPage() {
         }
       }
 
+      let deploy: DeployConfig | null = null;
+      if (form.deployCommand.trim()) {
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(form.deployCommand);
+        } catch {
+          throw new Error("deploy command は JSON 配列で入力してください");
+        }
+        if (
+          !Array.isArray(parsed) ||
+          parsed.length === 0 ||
+          !parsed.every((item) => typeof item === "string" && item.length > 0)
+        ) {
+          throw new Error(
+            "deploy command は空でない文字列の配列にしてください",
+          );
+        }
+
+        let deployEnv: Record<string, string> | undefined;
+        if (form.deployEnv.trim()) {
+          let parsedEnv: unknown;
+          try {
+            parsedEnv = JSON.parse(form.deployEnv);
+          } catch {
+            throw new Error(
+              "deploy env は JSON オブジェクトで入力してください",
+            );
+          }
+          if (
+            typeof parsedEnv !== "object" ||
+            parsedEnv === null ||
+            Array.isArray(parsedEnv) ||
+            !Object.values(parsedEnv).every(
+              (value) => typeof value === "string",
+            )
+          ) {
+            throw new Error(
+              "deploy env は文字列の値を持つ JSON オブジェクトにしてください",
+            );
+          }
+          deployEnv = parsedEnv as Record<string, string>;
+        }
+
+        const timeoutSec = Number(form.deployTimeout) || 600;
+        const healthTimeoutSec = Number(form.deployHealthTimeout) || 120;
+        if (
+          !Number.isInteger(timeoutSec) ||
+          timeoutSec < 10 ||
+          timeoutSec > 3600
+        ) {
+          throw new Error("deploy timeout は 10-3600 の整数にしてください");
+        }
+        if (
+          !Number.isInteger(healthTimeoutSec) ||
+          healthTimeoutSec < 5 ||
+          healthTimeoutSec > 900
+        ) {
+          throw new Error(
+            "deploy health timeout は 5-900 の整数にしてください",
+          );
+        }
+
+        deploy = {
+          command: parsed as string[],
+          timeoutSec,
+          restartAfter: form.deployRestartAfter,
+          healthTimeoutSec,
+        };
+        if (form.deployCwd.trim()) deploy.cwd = form.deployCwd.trim();
+        if (deployEnv) deploy.env = deployEnv;
+      }
+
       const payload = {
         hostId: form.hostId,
         name: form.name.trim(),
@@ -475,6 +666,7 @@ export default function ServicesPage() {
         env: env ?? undefined,
         expectedPorts: expectedPorts.length > 0 ? expectedPorts : undefined,
         healthCheck: healthCheck ?? undefined,
+        deploy: deploy ?? (editingId ? null : undefined),
         autoStart: form.autoStart,
         autoRestartPhase: form.autoRestartPhase,
       };
@@ -682,6 +874,27 @@ export default function ServicesPage() {
                         >
                           {service.command.join(" ")}
                         </div>
+                        {service.deploy ? (
+                          <div className="mt-1 max-w-72 text-[10px] text-mist-400">
+                            deploy:{" "}
+                            <span
+                              className={deployTone(service.lastDeployStatus)}
+                            >
+                              {service.lastDeployStatus ?? "not run"}
+                            </span>
+                            {service.lastDeployAt
+                              ? ` · ${formatDate(service.lastDeployAt)}`
+                              : ""}
+                            {service.lastDeployError ? (
+                              <div
+                                className="max-w-72 truncate text-danger-400"
+                                title={service.lastDeployError}
+                              >
+                                {service.lastDeployError}
+                              </div>
+                            ) : null}
+                          </div>
+                        ) : null}
                       </td>
                       <td className="px-4 py-3">
                         <span className="inline-flex items-center gap-1.5">
@@ -763,6 +976,21 @@ export default function ServicesPage() {
                               >
                                 Restart
                               </button>
+                              {service.deploy ? (
+                                <button
+                                  type="button"
+                                  disabled={
+                                    busy ||
+                                    service.lastDeployStatus === "running"
+                                  }
+                                  onClick={() => void runDeploy(service)}
+                                  className="rounded border border-sky-400/30 bg-sky-400/10 px-2 py-1 text-[10px] text-sky-300 transition hover:bg-sky-400/20 disabled:cursor-not-allowed disabled:opacity-40"
+                                >
+                                  {service.lastDeployStatus === "running"
+                                    ? "Deploying…"
+                                    : "Deploy"}
+                                </button>
+                              ) : null}
                             </>
                           ) : null}
                           <button
@@ -821,6 +1049,18 @@ export default function ServicesPage() {
                 last started {formatDate(selected.lastStartedAt)} / last exited{" "}
                 {formatDate(selected.lastExitedAt)}
               </p>
+              <p className="mt-1 text-[11px] text-mist-400">
+                last deploy {formatDate(selected.lastDeployAt)} /{" "}
+                <span className={deployTone(selected.lastDeployStatus)}>
+                  {selected.lastDeployStatus ?? "not run"}
+                </span>
+                {selected.lastDeployError ? (
+                  <span className="text-danger-400">
+                    {" "}
+                    — {selected.lastDeployError}
+                  </span>
+                ) : null}
+              </p>
             </div>
             <button
               type="button"
@@ -843,6 +1083,7 @@ export default function ServicesPage() {
                     env: selected.env,
                     expectedPorts: selected.expectedPorts,
                     healthCheck: selected.healthCheck,
+                    deploy: selected.deploy,
                     autoStart: selected.autoStart,
                     autoRestartPhase: selected.autoRestartPhase,
                   },
@@ -1141,6 +1382,117 @@ export default function ServicesPage() {
               />
             </label>
           ) : null}
+
+          <div className="mt-5 rounded-lg border border-ink-700 bg-ink-950/40 p-3">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <div className="text-[10px] uppercase tracking-[0.12em] text-mist-400">
+                  Deploy
+                </div>
+                <p className="mt-1 text-[10px] text-mist-400">
+                  deploy.ps1 などの実行コマンドを登録します。成功後に sys4sys
+                  がサービスを再起動し、ヘルス確認します。
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={fillDeployExample}
+                className="rounded border border-ink-700 px-2 py-1 text-[10px] text-mist-200 transition hover:border-signal-400/40 hover:text-white"
+              >
+                deploy.ps1 の例を入力
+              </button>
+            </div>
+            <div className="mt-3 grid gap-3 md:grid-cols-2">
+              <label className="block md:col-span-2">
+                <span className="mb-1 block text-[10px] uppercase tracking-[0.12em] text-mist-400">
+                  Deploy command (JSON array)
+                </span>
+                <textarea
+                  rows={2}
+                  value={form.deployCommand}
+                  onChange={(event) =>
+                    setForm({ ...form, deployCommand: event.target.value })
+                  }
+                  placeholder='["pwsh.exe","-NoProfile","-ExecutionPolicy","Bypass","-File","deploy.ps1","-NoRestart"]'
+                  className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 font-mono text-xs text-mist-200 placeholder:text-mist-400/50 focus:border-signal-400/40 focus:outline-none"
+                />
+                <span className="mt-1 block text-[10px] text-mist-400">
+                  空欄でデプロイ設定なし。deploy.ps1 側で再起動する場合は
+                  restartAfter を OFF にしてください。
+                </span>
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-[10px] uppercase tracking-[0.12em] text-mist-400">
+                  Deploy working directory
+                </span>
+                <input
+                  value={form.deployCwd}
+                  onChange={(event) =>
+                    setForm({ ...form, deployCwd: event.target.value })
+                  }
+                  placeholder="(service cwd)"
+                  className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 font-mono text-xs text-mist-200 placeholder:text-mist-400/50 focus:border-signal-400/40 focus:outline-none"
+                />
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <label className="block">
+                  <span className="mb-1 block text-[10px] uppercase tracking-[0.12em] text-mist-400">
+                    Timeout (sec)
+                  </span>
+                  <input
+                    value={form.deployTimeout}
+                    onChange={(event) =>
+                      setForm({ ...form, deployTimeout: event.target.value })
+                    }
+                    className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 font-mono text-xs text-mist-200 focus:border-signal-400/40 focus:outline-none"
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-[10px] uppercase tracking-[0.12em] text-mist-400">
+                    Health timeout (sec)
+                  </span>
+                  <input
+                    value={form.deployHealthTimeout}
+                    onChange={(event) =>
+                      setForm({
+                        ...form,
+                        deployHealthTimeout: event.target.value,
+                      })
+                    }
+                    className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 font-mono text-xs text-mist-200 focus:border-signal-400/40 focus:outline-none"
+                  />
+                </label>
+              </div>
+              <label className="block md:col-span-2">
+                <span className="mb-1 block text-[10px] uppercase tracking-[0.12em] text-mist-400">
+                  Deploy env (JSON object, optional)
+                </span>
+                <textarea
+                  rows={2}
+                  value={form.deployEnv}
+                  onChange={(event) =>
+                    setForm({ ...form, deployEnv: event.target.value })
+                  }
+                  placeholder='{"NODE_ENV":"production"}'
+                  className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 font-mono text-xs text-mist-200 placeholder:text-mist-400/50 focus:border-signal-400/40 focus:outline-none"
+                />
+              </label>
+              <label className="flex items-center gap-2 rounded-md border border-ink-700 bg-ink-950/40 px-3 py-2 text-xs text-mist-200 md:col-span-2">
+                <input
+                  type="checkbox"
+                  checked={form.deployRestartAfter}
+                  onChange={(event) =>
+                    setForm({
+                      ...form,
+                      deployRestartAfter: event.target.checked,
+                    })
+                  }
+                  className="accent-signal-400"
+                />
+                Restart service after successful deploy
+              </label>
+            </div>
+          </div>
 
           <button
             type="submit"

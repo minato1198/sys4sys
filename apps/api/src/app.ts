@@ -23,6 +23,7 @@ import { reportRoutes } from "./routes/reports.js";
 import { serviceRoutes } from "./routes/services.js";
 import { settingsRoutes } from "./routes/settings.js";
 import { userRoutes } from "./routes/users.js";
+import { reconcileDeployments } from "./services/deploy.js";
 import { closeServiceWatchers, reconcileServices } from "./services/manager.js";
 
 export async function buildApp() {
@@ -116,6 +117,7 @@ export async function buildApp() {
   }
   await cleanupExpiredSessions();
   await reconcileServices();
+  await reconcileDeployments();
   await startAllLogTailers();
   await cleanupLogs();
   const retentionTimer = startLogRetention();

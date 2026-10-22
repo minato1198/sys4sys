@@ -83,7 +83,7 @@ const envSchema = z.object({
   SERVICE_COMMAND_ALLOWLIST: z
     .string()
     .default(
-      "node,node.exe,pnpm,pnpm.cmd,npm,npm.cmd,npx,npx.cmd,bun,bun.exe,deno,deno.exe,python,python.exe,python3,python3.exe,uvicorn,uvicorn.exe,go,go.exe,dotnet,dotnet.exe,java,java.exe,ruby,ruby.exe,php,php.exe,sh,bash",
+      "node,node.exe,pnpm,pnpm.cmd,npm,npm.cmd,npx,npx.cmd,bun,bun.exe,deno,deno.exe,python,python.exe,python3,python3.exe,uvicorn,uvicorn.exe,go,go.exe,dotnet,dotnet.exe,java,java.exe,ruby,ruby.exe,php,php.exe,sh,bash,pwsh,pwsh.exe,powershell,powershell.exe",
     ),
   SERVICE_STOP_GRACE_MS: z.coerce
     .number()

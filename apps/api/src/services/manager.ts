@@ -19,7 +19,7 @@ import { isCommandAllowed } from "./allowlist.js";
 import { serviceEvents } from "./events.js";
 
 export type ServiceRow = typeof services.$inferSelect;
-type HostRow = typeof hosts.$inferSelect;
+export type HostRow = typeof hosts.$inferSelect;
 
 export type HealthStatus = "healthy" | "unhealthy" | "unknown" | "stopped";
 
@@ -104,7 +104,7 @@ function healthCheckOf(service: ServiceRow): HealthCheckInput | null {
   return raw as unknown as HealthCheckInput;
 }
 
-function wslCommandArgs(
+export function wslCommandArgs(
   host: HostRow,
   command: string[],
   cwd?: string | null,

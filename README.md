@@ -73,15 +73,15 @@ pnpm dev
 
 ### M2 関連の環境変数
 
-| 変数                        | 既定値                       | 内容                                           |
-| --------------------------- | ---------------------------- | ---------------------------------------------- |
-| `SERVICE_COMMAND_ALLOWLIST` | node / pnpm / python / go 等 | カンマ区切りの許可実行ファイル                 |
-| `SERVICE_STOP_GRACE_MS`     | `5000`                       | TERM から KILL までの猶予                      |
-| `SERVICE_AUTOSTART_ON_BOOT` | `false`                      | API 起動時に `autoStart` サービスを起動        |
-| `LOG_TAIL_POLL_MS`          | `1000`                       | ファイル / WSL ファイルのポーリング間隔        |
-| `LOG_MAX_LINE_CHARS`        | `8000`                       | 1 行の最大文字数                               |
-| `LOG_MAX_TAIL_BYTES`        | `1048576`                    | 1 回の tail で読む最大バイト数                 |
-| `LOG_RETENTION_DAYS`        | `14`                         | ログ保持日数の初期値（設定画面の DB 値が優先） |
+| 変数                        | 既定値                              | 内容                                           |
+| --------------------------- | ----------------------------------- | ---------------------------------------------- |
+| `SERVICE_COMMAND_ALLOWLIST` | node / pnpm / python / go / pwsh 等 | カンマ区切りの許可実行ファイル                 |
+| `SERVICE_STOP_GRACE_MS`     | `5000`                              | TERM から KILL までの猶予                      |
+| `SERVICE_AUTOSTART_ON_BOOT` | `false`                             | API 起動時に `autoStart` サービスを起動        |
+| `LOG_TAIL_POLL_MS`          | `1000`                              | ファイル / WSL ファイルのポーリング間隔        |
+| `LOG_MAX_LINE_CHARS`        | `8000`                              | 1 行の最大文字数                               |
+| `LOG_MAX_TAIL_BYTES`        | `1048576`                           | 1 回の tail で読む最大バイト数                 |
+| `LOG_RETENTION_DAYS`        | `14`                                | ログ保持日数の初期値（設定画面の DB 値が優先） |
 
 ## 監視・承認付き復旧（M3）
 
@@ -167,6 +167,32 @@ Invoke-RestMethod http://localhost:8081/v1/models | ConvertTo-Json -Depth 4
 - **Phase 3 昇格**: `/settings` のチェックリストを確認し、対象サービスを `approve` で運用してから `auto` に変更。クラッシュループ・ポート競合・WSL 停止は自動再起動の対象外
 - **監査対象**: 設定変更、承認 / 却下、再起動、kill、レポート生成、バックアップなど。秘密値は監査ログに含めない
 
+## サービスデプロイ（M6）
+
+- **deploy 設定**: サービスごとに `deploy` JSON を保存します。`command`（配列）、`cwd`、`env`、`timeoutSec`（既定 600）、`restartAfter`（既定 true）、`healthTimeoutSec`（既定 120）
+- **登録**: admin が `/services` の Edit フォームで Deploy command / CWD / timeout / restartAfter / healthTimeout を入力します。`deploy.ps1 の例を入力` ボタンで PowerShell の例を埋められます
+- **実行**: operator 以上が一覧の Deploy ボタン、または `POST /api/services/:id/deploy` で開始します。API は `actions.type=deploy` を作成して `202` を返し、コマンドを非同期実行します
+- **ログ**: コマンドの stdout / stderr は `log_events` に `[deploy]` プレフィックス、`fields.source="deploy"`、`fields.actionId` 付きで保存されます。`/logs` で `[deploy]` を検索してください。エラーログ件数・パターン監視からは deploy ログを除外します
+- **再起動と確認**: `restartAfter=true` の場合、コマンド成功後に sys4sys がサービスを再起動し、`healthTimeoutSec` の間ヘルスチェックを待ちます。成功すると action は `succeeded`、失敗すると `failed` になり、`services.last_deploy_*` に最終状態が残ります
+- **多重実行防止**: 同一サービスのデプロイは in-memory Set と DB の running action で防止します。API 再起動時に running のまま残った deploy は、起動時の reconciliation で failed になります
+- **ファイルアップロードなし**: スクリプト本体をアップロードするのではなく、実行コマンドとパスを登録する方式です。既存の `SERVICE_COMMAND_ALLOWLIST` に従うため、`pwsh.exe` / `powershell.exe` を追加済みです
+- **deploy.ps1 の注意**: sys4sys 側で再起動する場合はスクリプトに `-NoRestart` を渡してください。`git pull` を含める場合はリポジトリに `origin` が必要です。未設定のときは `-SkipPull` を使います
+- **demo-api の例**: `command` は `["pwsh.exe","-NoProfile","-ExecutionPolicy","Bypass","-File","deploy.ps1","-SkipPull","-NoRestart"]`、`cwd` は `apps/demo-api`、`restartAfter=true`、`healthTimeoutSec=120`。詳細は [apps/demo-api/README.md](./apps/demo-api/README.md) を参照してください
+
+### デプロイの確認例
+
+```powershell
+# サービス詳細で deploy 設定と最終状態を確認
+Invoke-RestMethod http://127.0.0.1:8787/api/services/<serviceId> -WebSession $session |
+  Select-Object name, status, lastDeployStatus, lastDeployError, deploy
+
+# デプロイ開始（202）
+Invoke-RestMethod -Method Post http://127.0.0.1:8787/api/services/<serviceId>/deploy -WebSession $session
+
+# deploy ログの検索
+Invoke-RestMethod "http://127.0.0.1:8787/api/logs?serviceId=<serviceId>&q=%5Bdeploy%5D&limit=100" -WebSession $session
+```
+
 ## 構成
 
 ```
@@ -213,6 +239,9 @@ sys4sys/
 - [x] M4: 実ローカル LLM（`localhost:8081`）での分析確認
 - [x] M5: 監査ログ UI（`/audit`）・保持期間設定・SQLite バックアップ・Phase 3 昇格チェックリスト
 - [x] M4/M5: 統合スモーク（86 checks、AI 分析・レポート・監査・保持期間・バックアップ）
+- [x] M6: サービス単位の deploy 設定・非同期デプロイ action・`[deploy]` ログ・再起動 + ヘルス確認
+- [x] M6: `/services` の deploy フォーム / 実行ボタン / 最終状態表示、`POST /api/services/:id/deploy`
+- [x] M6: demo-api の `deploy.ps1` を API 経由で実行し、再起動・healthy・ログ保存を確認
 - [ ] M3+: レポートのメール送信・再送（後回し）
 
 ## 認証の設計

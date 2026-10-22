@@ -500,6 +500,30 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Action" }
 
+  /services/{id}/deploy:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      tags: [services]
+      summary: 登録済み deploy 設定でデプロイ（operator 以上）
+      description: |
+        サービスの `deploy.command` を非同期実行し、`actions.type=deploy` を作成して 202 を返します。
+        `deploy.restartAfter=true` の場合は、コマンド成功後に sys4sys がサービスを再起動し、
+        `deploy.healthTimeoutSec` の間ヘルスチェックを待ちます。ログは `[deploy]` プレフィックスと
+        `fields.source="deploy"` 付きで保存されます。
+      responses:
+        "202":
+          description: デプロイを受け付け
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Action" }
+        "409":
+          description: 既にデプロイ実行中
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
   /services/{id}/health:
     parameters:
       - $ref: "#/components/parameters/Id"
@@ -1364,6 +1388,10 @@ components:
           type: array
           items: { type: integer }
         healthCheck: { $ref: "#/components/schemas/HealthCheck" }
+        deploy:
+          allOf:
+            - $ref: "#/components/schemas/DeployConfig"
+          nullable: true
         dependsOn:
           type: array
           items: { type: string }
@@ -1385,6 +1413,10 @@ components:
         lastExitedAt: { type: string, format: date-time, nullable: true }
         lastExitCode: { type: integer, nullable: true }
         lastError: { type: string, nullable: true }
+        lastDeployAt: { type: string, format: date-time, nullable: true }
+        lastDeployStatus:
+          { type: string, enum: [running, succeeded, failed], nullable: true }
+        lastDeployError: { type: string, nullable: true }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
         host: { $ref: "#/components/schemas/ServiceHost" }
@@ -1445,6 +1477,7 @@ components:
           type: array
           items: { type: integer }
         healthCheck: { $ref: "#/components/schemas/HealthCheck" }
+        deploy: { $ref: "#/components/schemas/DeployConfig" }
         dependsOn:
           type: array
           items: { type: string }
@@ -1467,11 +1500,36 @@ components:
           type: array
           items: { type: integer }
         healthCheck: { $ref: "#/components/schemas/HealthCheck" }
+        deploy:
+          allOf:
+            - $ref: "#/components/schemas/DeployConfig"
+          nullable: true
         dependsOn:
           type: array
           items: { type: string }
         autoStart: { type: boolean }
         autoRestartPhase: { type: string, enum: [observe, approve, auto] }
+
+    DeployConfig:
+      type: object
+      required: [command]
+      properties:
+        command:
+          type: array
+          items: { type: string }
+          minItems: 1
+          description: "SERVICE_COMMAND_ALLOWLIST に従って実行するコマンド配列"
+        cwd:
+          type: string
+          description: "省略時はサービスの cwd。Windows では存在確認を行う"
+        env:
+          type: object
+          additionalProperties: { type: string }
+          description: "サービス env に上書きマージされる環境変数"
+        timeoutSec: { type: integer, minimum: 10, maximum: 3600, default: 600 }
+        restartAfter: { type: boolean, default: true }
+        healthTimeoutSec:
+          { type: integer, minimum: 5, maximum: 900, default: 120 }
 
     HealthCheck:
       type: object
@@ -1737,7 +1795,7 @@ components:
         id: { type: string }
         incidentId: { type: string, nullable: true }
         serviceId: { type: string }
-        type: { type: string, enum: [start, stop, restart, kill] }
+        type: { type: string, enum: [start, stop, restart, kill, deploy] }
         status: { type: string, enum: [pending, running, succeeded, failed] }
         requestedBy: { type: string, nullable: true }
         approvedBy: { type: string, nullable: true }

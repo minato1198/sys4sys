@@ -15,10 +15,17 @@ describe("isCommandAllowed", () => {
     expect(isCommandAllowed(["/usr/bin/node", "app.js"]).ok).toBe(true);
   });
 
-  it("rejects shells and unknown binaries", () => {
-    expect(isCommandAllowed(["powershell.exe", "-Command", "x"]).ok).toBe(
-      false,
-    );
+  it("allows PowerShell for registered deploy scripts", () => {
+    expect(
+      isCommandAllowed(["pwsh.exe", "-NoProfile", "-File", "deploy.ps1"]).ok,
+    ).toBe(true);
+    expect(
+      isCommandAllowed(["powershell.exe", "-NoProfile", "-File", "deploy.ps1"])
+        .ok,
+    ).toBe(true);
+  });
+
+  it("rejects cmd.exe and unknown binaries", () => {
     expect(isCommandAllowed(["cmd.exe", "/c", "x"]).ok).toBe(false);
     expect(isCommandAllowed(["unknown-binary"]).ok).toBe(false);
   });

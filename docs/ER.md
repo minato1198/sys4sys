@@ -71,6 +71,7 @@ erDiagram
         json env
         json expected_ports
         json health_check
+        json deploy "command / cwd / env / timeoutSec / restartAfter / healthTimeoutSec"
         json depends_on
         boolean auto_start
         text auto_restart_phase "observe | approve | auto"
@@ -81,6 +82,9 @@ erDiagram
         datetime last_exited_at
         integer last_exit_code
         text last_error
+        datetime last_deploy_at
+        text last_deploy_status "running | succeeded | failed"
+        text last_deploy_error
         boolean is_active
         datetime created_at
         datetime updated_at
@@ -223,7 +227,7 @@ erDiagram
         text id PK
         text incident_id FK
         text service_id FK
-        text type "start | stop | restart | kill"
+        text type "start | stop | restart | kill | deploy"
         text status "pending | running | succeeded | failed"
         text requested_by FK
         text approved_by FK
@@ -301,6 +305,7 @@ WSL 3.x では distro 間でネットワーク名前空間が共有されるた�
 
 - `approvals.requested_action` は `{ "type": "restart", "serviceId": "...", "reason": "..." }` の JSON
 - 承認後に `actions` を作成し、実行結果を `actions.status` に反映。承認 API は `202` を返して非同期に再起動する
+- デプロイは `actions.type=deploy`。コマンド実行、`[deploy]` ログ取り込み、必要に応じた再起動とヘルス確認を 1 つの action で扱う
 - 復旧確認はヘルスチェック成功 + 安定待ち。ヘルスチェックがないサービスは 3 秒間 `running` を維持できるかで判定する
 - `actions.requested_by` / `approved_by` は実装上はメールアドレス文字列。システム起因は `system:auto` / `system:auto-retry`
 - 復旧成功時は同一サービスの未解決インシデントも自動解決する
@@ -335,6 +340,15 @@ WSL 3.x では distro 間でネットワーク名前空間が共有されるた�
 
 - `pnpm db:backup` / `POST /api/admin/backup` は better-sqlite3 の online backup を使い、DB と同じディレクトリの `backups/` に `sys4sys-<timestamp>.db` を作成する
 - 復元時は API を停止し、`-wal` / `-shm` を削除してからバックアップを `DATABASE_URL` のファイルに戻す
+
+### 2.10 デプロイ
+
+- `services.deploy` は `{ command, cwd?, env?, timeoutSec, restartAfter, healthTimeoutSec }` の JSON。`command` は `SERVICE_COMMAND_ALLOWLIST` に従う
+- `cwd` を省略した場合は `services.cwd` を使う。Windows ホストでは実行前にディレクトリの存在を確認する
+- `POST /api/services/:id/deploy` は `actions.type=deploy` を作成して `202` を返し、コマンドを非同期実行する
+- 実行ログは `log_events` に `[deploy]` プレフィックス、`fields.source="deploy"`、`fields.actionId` 付きで保存する。エラーログ件数・パターン監視の対象からは除外する
+- `restartAfter=true` の場合はコマンド成功後にサービスを再起動し、`healthTimeoutSec` の間ヘルスチェックを待つ。失敗時は action と `services.last_deploy_*` を failed にする
+- 同一サービスの多重デプロイは in-memory Set と DB の running action で防止する。API 再起動時に running のまま残った deploy は起動時 reconciliation で failed にする
 
 ---
 
