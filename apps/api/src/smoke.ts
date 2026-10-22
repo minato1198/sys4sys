@@ -1,5 +1,8 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { appendFile, mkdir, unlink, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
+import { join } from "node:path";
+import { runFile } from "@sys4sys/agent";
 import { buildApp } from "./app.js";
 
 process.env.LOG_LEVEL = process.env.LOG_LEVEL ?? "warn";
@@ -110,6 +113,23 @@ async function waitFor<T>(
   }
 }
 
+interface SmokeHost {
+  id: string;
+  kind: "windows" | "wsl";
+  name: string;
+  distro: string | null;
+  enabled: boolean;
+  state: "running" | "stopped" | "unknown";
+}
+
+interface ServiceBody {
+  id: string;
+  name: string;
+  status: string;
+  pid: number | null;
+  lastError: string | null;
+}
+
 interface PortItem {
   id: string;
   pid: number | null;
@@ -133,6 +153,41 @@ async function fetchPorts(cookie: string, port?: number): Promise<PortsBody> {
     headers: { cookie },
   });
   return response.json<PortsBody>();
+}
+
+async function fetchService(
+  cookie: string,
+  serviceId: string,
+): Promise<ServiceBody | null> {
+  const response = await app.inject({
+    method: "GET",
+    url: `/api/services/${serviceId}`,
+    headers: { cookie },
+  });
+  if (response.statusCode !== 200) return null;
+  return response.json<ServiceBody>();
+}
+
+async function findLog(
+  cookie: string,
+  serviceId: string,
+  needle: string,
+): Promise<{ id: string; message: string } | null> {
+  const params = new URLSearchParams({
+    serviceId,
+    q: needle,
+    limit: "50",
+  });
+  const response = await app.inject({
+    method: "GET",
+    url: `/api/logs?${params.toString()}`,
+    headers: { cookie },
+  });
+  if (response.statusCode !== 200) return null;
+  const body = response.json<{
+    items: Array<{ id: string; message: string }>;
+  }>();
+  return body.items.find((item) => item.message.includes(needle)) ?? null;
 }
 
 const checks: Array<{ name: string; ok: boolean }> = [];
@@ -189,7 +244,7 @@ try {
       url: "/api/hosts",
       headers: { cookie: admin.cookie },
     });
-    const hostList = hosts.json<Array<{ kind: string }>>();
+    const hostList = hosts.json<SmokeHost[]>();
     check(
       "hosts include seeded windows host",
       hosts.statusCode === 200 &&
@@ -455,6 +510,460 @@ try {
       }
     } else {
       console.log(`skip WSL detect (status ${detect.statusCode})`);
+    }
+
+    // --- services + logs (M2) --------------------------------------------
+    const m2Hosts = hostList.filter((host) => host.enabled);
+    const windowsHost = m2Hosts.find((host) => host.kind === "windows");
+    check("windows host available for services", Boolean(windowsHost));
+
+    if (windowsHost) {
+      const serviceName = `smoke-service-${suffix}`;
+      const logFile = join(process.cwd(), "data", `smoke-log-${suffix}.log`);
+      let serviceId: string | null = null;
+      let sourceId: string | null = null;
+
+      try {
+        const port = await freeTcpPort();
+        const script = `const http=require("http");const s=http.createServer((q,r)=>{r.end("ok")});s.listen(${port},"127.0.0.1",()=>{console.log("service-ready");console.error("service-boot");});`;
+        const createService = await app.inject({
+          method: "POST",
+          url: "/api/services",
+          headers: {
+            cookie: admin.cookie,
+            "content-type": "application/json",
+          },
+          payload: {
+            hostId: windowsHost.id,
+            name: serviceName,
+            command: [process.execPath, "-e", script],
+            expectedPorts: [port],
+            healthCheck: {
+              type: "http",
+              url: `http://127.0.0.1:${port}/`,
+              intervalSec: 2,
+              timeoutSec: 2,
+              failures: 2,
+            },
+          },
+        });
+        check("admin creates service 201", createService.statusCode === 201);
+        serviceId = createService.json<ServiceBody>().id;
+
+        const viewerStart = await app.inject({
+          method: "POST",
+          url: `/api/services/${serviceId}/start`,
+          headers: { cookie: viewerCookie },
+        });
+        check("viewer cannot start service", viewerStart.statusCode === 403);
+
+        const startedAt = Date.now();
+        const started = await app.inject({
+          method: "POST",
+          url: `/api/services/${serviceId}/start`,
+          headers: { cookie: operatorCookie },
+        });
+        check(
+          "operator starts service 202",
+          started.statusCode === 202 &&
+            started.json<{ status: string }>().status === "succeeded",
+        );
+
+        const running = await waitFor(
+          "service running",
+          async () => {
+            const body = await fetchService(operatorCookie, serviceId!);
+            return body?.status === "running" ? body : null;
+          },
+          15_000,
+          250,
+        );
+        check(
+          "service is running with pid",
+          running.pid !== null && typeof running.pid === "number",
+        );
+
+        const stdoutLog = await waitFor(
+          "stdout log",
+          () => findLog(operatorCookie, serviceId!, "service-ready"),
+          10_000,
+          250,
+        );
+        const elapsed = Date.now() - startedAt;
+        check(`stdout log is searchable (${elapsed}ms)`, Boolean(stdoutLog));
+
+        const health = await app.inject({
+          method: "GET",
+          url: `/api/services/${serviceId}/health`,
+          headers: { cookie: operatorCookie },
+        });
+        check(
+          "http health check is healthy",
+          health.statusCode === 200 &&
+            health.json<{ status: string }>().status === "healthy",
+        );
+
+        await mkdir(join(process.cwd(), "data"), { recursive: true });
+        await writeFile(logFile, `pre-existing-${suffix}\n`, "utf8");
+        const source = await app.inject({
+          method: "POST",
+          url: "/api/logs/sources",
+          headers: {
+            cookie: admin.cookie,
+            "content-type": "application/json",
+          },
+          payload: {
+            hostId: windowsHost.id,
+            serviceId,
+            type: "file",
+            config: { path: logFile },
+            enabled: true,
+          },
+        });
+        check("admin creates file log source 201", source.statusCode === 201);
+        sourceId = source.json<{ id: string }>().id;
+
+        await appendFile(logFile, `file-log-line-${suffix}\n`, "utf8");
+        const fileLog = await waitFor(
+          "file log",
+          () => findLog(operatorCookie, serviceId!, `file-log-line-${suffix}`),
+          10_000,
+          500,
+        );
+        check("file log source tails appended line", Boolean(fileLog));
+
+        const disabled = await app.inject({
+          method: "PATCH",
+          url: `/api/logs/sources/${sourceId}`,
+          headers: {
+            cookie: admin.cookie,
+            "content-type": "application/json",
+          },
+          payload: { enabled: false },
+        });
+        check(
+          "admin disables file log source",
+          disabled.statusCode === 200 &&
+            disabled.json<{ enabled: boolean }>().enabled === false,
+        );
+
+        const deleteSource = await app.inject({
+          method: "DELETE",
+          url: `/api/logs/sources/${sourceId}`,
+          headers: { cookie: admin.cookie },
+        });
+        check(
+          "admin deletes file log source 204",
+          deleteSource.statusCode === 204,
+        );
+        sourceId = null;
+
+        const restarted = await app.inject({
+          method: "POST",
+          url: `/api/services/${serviceId}/restart`,
+          headers: { cookie: operatorCookie },
+        });
+        check("operator restarts service 202", restarted.statusCode === 202);
+        const runningAfterRestart = await waitFor(
+          "service running after restart",
+          async () => {
+            const body = await fetchService(operatorCookie, serviceId!);
+            return body?.status === "running" ? body : null;
+          },
+          20_000,
+          500,
+        );
+        check(
+          "service is running after restart",
+          runningAfterRestart.pid !== null,
+        );
+
+        const stopped = await app.inject({
+          method: "POST",
+          url: `/api/services/${serviceId}/stop`,
+          headers: { cookie: operatorCookie },
+        });
+        check("operator stops service 202", stopped.statusCode === 202);
+        const stoppedBody = await waitFor(
+          "service stopped",
+          async () => {
+            const body = await fetchService(operatorCookie, serviceId!);
+            return body?.status === "stopped" && body.pid === null
+              ? body
+              : null;
+          },
+          20_000,
+          250,
+        );
+        check("service is stopped with pid cleared", stoppedBody.pid === null);
+
+        const renamed = await app.inject({
+          method: "PATCH",
+          url: `/api/services/${serviceId}`,
+          headers: {
+            cookie: admin.cookie,
+            "content-type": "application/json",
+          },
+          payload: { name: `${serviceName}-renamed` },
+        });
+        check(
+          "admin updates service",
+          renamed.statusCode === 200 &&
+            renamed.json<{ name: string }>().name === `${serviceName}-renamed`,
+        );
+
+        const deleted = await app.inject({
+          method: "DELETE",
+          url: `/api/services/${serviceId}`,
+          headers: { cookie: admin.cookie },
+        });
+        check("admin deletes service 204", deleted.statusCode === 204);
+        serviceId = null;
+      } finally {
+        if (sourceId) {
+          await app.inject({
+            method: "DELETE",
+            url: `/api/logs/sources/${sourceId}`,
+            headers: { cookie: admin.cookie },
+          });
+        }
+        if (serviceId) {
+          await app.inject({
+            method: "POST",
+            url: `/api/services/${serviceId}/stop`,
+            headers: { cookie: operatorCookie },
+          });
+          await app.inject({
+            method: "DELETE",
+            url: `/api/services/${serviceId}`,
+            headers: { cookie: admin.cookie },
+          });
+        }
+        await unlink(logFile).catch(() => undefined);
+      }
+    }
+
+    // --- WSL service (conditional) ---------------------------------------
+    const hostsNow = await app.inject({
+      method: "GET",
+      url: "/api/hosts",
+      headers: { cookie: admin.cookie },
+    });
+    const currentHosts = hostsNow.json<SmokeHost[]>();
+    const wslHost = currentHosts.find(
+      (host) => host.kind === "wsl" && host.distro,
+    );
+
+    if (!wslHost || !wslHost.distro) {
+      console.log("skip WSL service (no WSL host registered)");
+    } else {
+      let enabledForTest = false;
+      let wslServiceId: string | null = null;
+      let wslSourceId: string | null = null;
+      const wslFilePath = `/tmp/sys4sys-smoke-${suffix}.log`;
+      try {
+        if (!wslHost.enabled) {
+          const enabled = await app.inject({
+            method: "PATCH",
+            url: `/api/hosts/${wslHost.id}`,
+            headers: {
+              cookie: admin.cookie,
+              "content-type": "application/json",
+            },
+            payload: { enabled: true },
+          });
+          check("admin enables WSL host for smoke", enabled.statusCode === 200);
+          enabledForTest = true;
+        }
+
+        let wslCommand: string[] | null = null;
+        try {
+          await runFile(
+            "wsl.exe",
+            ["-d", wslHost.distro, "--", "node", "--version"],
+            10_000,
+          );
+          wslCommand = [
+            "node",
+            "-e",
+            `console.log("wsl-ready");const fs=require("fs");setInterval(()=>fs.appendFileSync(${JSON.stringify(wslFilePath)},"wsl-file-line\\n"),500);`,
+          ];
+        } catch {
+          try {
+            await runFile(
+              "wsl.exe",
+              ["-d", wslHost.distro, "--", "python3", "--version"],
+              10_000,
+            );
+            wslCommand = [
+              "python3",
+              "-u",
+              "-c",
+              `print("wsl-ready", flush=True)\nimport time\nf=open(${JSON.stringify(wslFilePath)},"a")\nfor _ in range(120):\n    f.write("wsl-file-line\\n"); f.flush(); time.sleep(0.5)`,
+            ];
+          } catch {
+            wslCommand = null;
+          }
+        }
+
+        if (!wslCommand) {
+          console.log(
+            `skip WSL service (node/python3 not found in ${wslHost.distro})`,
+          );
+        } else {
+          const created = await app.inject({
+            method: "POST",
+            url: "/api/services",
+            headers: {
+              cookie: admin.cookie,
+              "content-type": "application/json",
+            },
+            payload: {
+              hostId: wslHost.id,
+              name: `smoke-wsl-${suffix}`,
+              command: wslCommand,
+              healthCheck: {
+                type: "process",
+                intervalSec: 2,
+                timeoutSec: 2,
+                failures: 2,
+              },
+            },
+          });
+          check("admin creates WSL service 201", created.statusCode === 201);
+          wslServiceId = created.json<ServiceBody>().id;
+
+          const started = await app.inject({
+            method: "POST",
+            url: `/api/services/${wslServiceId}/start`,
+            headers: { cookie: operatorCookie },
+          });
+          check("operator starts WSL service 202", started.statusCode === 202);
+
+          const running = await waitFor(
+            "WSL service running",
+            async () => {
+              const body = await fetchService(operatorCookie, wslServiceId!);
+              return body?.status === "running" && body.pid ? body : null;
+            },
+            25_000,
+            500,
+          );
+          check(
+            "WSL service reports pid",
+            running.pid !== null && typeof running.pid === "number",
+          );
+
+          const wslLog = await waitFor(
+            "WSL stdout log",
+            () => findLog(operatorCookie, wslServiceId!, "wsl-ready"),
+            15_000,
+            500,
+          );
+          check("WSL service stdout is searchable", Boolean(wslLog));
+
+          const wslSource = await app.inject({
+            method: "POST",
+            url: "/api/logs/sources",
+            headers: {
+              cookie: admin.cookie,
+              "content-type": "application/json",
+            },
+            payload: {
+              hostId: wslHost.id,
+              serviceId: wslServiceId,
+              type: "wsl_file",
+              config: { path: wslFilePath },
+              enabled: true,
+            },
+          });
+          check(
+            "admin creates WSL file log source 201",
+            wslSource.statusCode === 201,
+          );
+          wslSourceId = wslSource.json<{ id: string }>().id;
+
+          const wslFileLog = await waitFor(
+            "WSL file log",
+            () => findLog(operatorCookie, wslServiceId!, "wsl-file-line"),
+            20_000,
+            500,
+          );
+          check("WSL file log source tails appended line", Boolean(wslFileLog));
+
+          const deletedWslSource = await app.inject({
+            method: "DELETE",
+            url: `/api/logs/sources/${wslSourceId}`,
+            headers: { cookie: admin.cookie },
+          });
+          check(
+            "admin deletes WSL file log source 204",
+            deletedWslSource.statusCode === 204,
+          );
+          wslSourceId = null;
+
+          const stopped = await app.inject({
+            method: "POST",
+            url: `/api/services/${wslServiceId}/stop`,
+            headers: { cookie: operatorCookie },
+          });
+          check("operator stops WSL service 202", stopped.statusCode === 202);
+          await waitFor(
+            "WSL service stopped",
+            async () => {
+              const body = await fetchService(operatorCookie, wslServiceId!);
+              return body?.status === "stopped" ? body : null;
+            },
+            20_000,
+            500,
+          );
+          check("WSL service stopped", true);
+
+          const deleted = await app.inject({
+            method: "DELETE",
+            url: `/api/services/${wslServiceId}`,
+            headers: { cookie: admin.cookie },
+          });
+          check("admin deletes WSL service 204", deleted.statusCode === 204);
+          wslServiceId = null;
+        }
+      } finally {
+        if (wslSourceId) {
+          await app.inject({
+            method: "DELETE",
+            url: `/api/logs/sources/${wslSourceId}`,
+            headers: { cookie: admin.cookie },
+          });
+        }
+        if (wslServiceId) {
+          await app.inject({
+            method: "POST",
+            url: `/api/services/${wslServiceId}/stop`,
+            headers: { cookie: operatorCookie },
+          });
+          await app.inject({
+            method: "DELETE",
+            url: `/api/services/${wslServiceId}`,
+            headers: { cookie: admin.cookie },
+          });
+        }
+        await runFile(
+          "wsl.exe",
+          ["-d", wslHost.distro, "--", "rm", "-f", wslFilePath],
+          10_000,
+        ).catch(() => undefined);
+        if (enabledForTest) {
+          await app.inject({
+            method: "PATCH",
+            url: `/api/hosts/${wslHost.id}`,
+            headers: {
+              cookie: admin.cookie,
+              "content-type": "application/json",
+            },
+            payload: { enabled: false },
+          });
+        }
+      }
     }
 
     // --- CSRF + logout ---------------------------------------------------

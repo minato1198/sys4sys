@@ -45,6 +45,35 @@ const envSchema = z.object({
   AI_DAILY_LIMIT: z.coerce.number().int().min(1).default(200),
 
   LOG_RETENTION_DAYS: z.coerce.number().int().min(1).default(14),
+  LOG_TAIL_POLL_MS: z.coerce.number().int().min(200).max(60_000).default(1000),
+  LOG_MAX_LINE_CHARS: z.coerce
+    .number()
+    .int()
+    .min(256)
+    .max(100_000)
+    .default(8000),
+  LOG_MAX_TAIL_BYTES: z.coerce
+    .number()
+    .int()
+    .min(4096)
+    .max(16 * 1024 * 1024)
+    .default(1024 * 1024),
+
+  SERVICE_COMMAND_ALLOWLIST: z
+    .string()
+    .default(
+      "node,node.exe,pnpm,pnpm.cmd,npm,npm.cmd,npx,npx.cmd,bun,bun.exe,deno,deno.exe,python,python.exe,python3,python3.exe,uvicorn,uvicorn.exe,go,go.exe,dotnet,dotnet.exe,java,java.exe,ruby,ruby.exe,php,php.exe,sh,bash",
+    ),
+  SERVICE_STOP_GRACE_MS: z.coerce
+    .number()
+    .int()
+    .min(500)
+    .max(60_000)
+    .default(5000),
+  SERVICE_AUTOSTART_ON_BOOT: z
+    .string()
+    .default("false")
+    .transform((value) => value === "true"),
 });
 
 const parsed = envSchema.safeParse(process.env);

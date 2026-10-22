@@ -129,13 +129,36 @@ export const serviceCreateSchema = z.object({
 });
 export type ServiceCreateInput = z.infer<typeof serviceCreateSchema>;
 
-export const serviceUpdateSchema = serviceCreateSchema
-  .omit({ hostId: true, name: true })
-  .partial()
-  .extend({
-    name: z.string().min(1).max(100).optional(),
-  });
+export const serviceUpdateSchema = z.object({
+  name: z.string().min(1).max(100).optional(),
+  command: z.array(z.string().min(1)).min(1).optional(),
+  cwd: z.string().max(4096).nullable().optional(),
+  env: z.record(z.string(), z.string()).nullable().optional(),
+  expectedPorts: z
+    .array(z.number().int().min(1).max(65535))
+    .nullable()
+    .optional(),
+  healthCheck: healthCheckSchema.nullable().optional(),
+  dependsOn: z.array(z.string()).nullable().optional(),
+  autoStart: z.boolean().optional(),
+  autoRestartPhase: restartPhaseSchema.optional(),
+});
 export type ServiceUpdateInput = z.infer<typeof serviceUpdateSchema>;
+
+export const serviceListQuerySchema = z.object({
+  hostId: z.string().optional(),
+  status: z
+    .enum([
+      "stopped",
+      "starting",
+      "running",
+      "degraded",
+      "restarting",
+      "failed",
+    ])
+    .optional(),
+});
+export type ServiceListQuery = z.infer<typeof serviceListQuerySchema>;
 
 export const approvalDecisionSchema = z.object({
   note: z.string().max(500).optional(),
@@ -153,6 +176,35 @@ export const logQuerySchema = z.object({
   cursor: z.string().optional(),
 });
 export type LogQuery = z.infer<typeof logQuerySchema>;
+
+export const logStreamQuerySchema = logQuerySchema.omit({
+  limit: true,
+  cursor: true,
+});
+export type LogStreamQuery = z.infer<typeof logStreamQuerySchema>;
+
+export const logSourceConfigSchema = z
+  .object({
+    path: z.string().min(1).max(4096),
+  })
+  .catchall(z.unknown());
+export type LogSourceConfig = z.infer<typeof logSourceConfigSchema>;
+
+export const logSourceCreateSchema = z.object({
+  hostId: z.string().min(1),
+  serviceId: z.string().min(1).nullable().optional(),
+  type: z.enum(["file", "wsl_file", "eventlog"]),
+  config: logSourceConfigSchema,
+  enabled: z.boolean().default(true),
+});
+export type LogSourceCreateInput = z.infer<typeof logSourceCreateSchema>;
+
+export const logSourceUpdateSchema = z.object({
+  serviceId: z.string().min(1).nullable().optional(),
+  config: logSourceConfigSchema.optional(),
+  enabled: z.boolean().optional(),
+});
+export type LogSourceUpdateInput = z.infer<typeof logSourceUpdateSchema>;
 
 export const mailSettingsSchema = z.object({
   host: z.string().min(1),

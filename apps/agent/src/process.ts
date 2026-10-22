@@ -8,6 +8,38 @@ export interface StopProcessOptions {
   force?: boolean;
 }
 
+export interface ProcessRef {
+  scope: "windows" | "wsl";
+  pidScope?: string | null;
+  pid: number;
+}
+
+/** PID が生存しているか。WSL は `kill -0` で確認する。 */
+export async function isProcessAlive(ref: ProcessRef): Promise<boolean> {
+  if (!Number.isInteger(ref.pid) || ref.pid <= 0) return false;
+
+  if (ref.scope === "windows") {
+    try {
+      process.kill(ref.pid, 0);
+      return true;
+    } catch (error) {
+      return (error as NodeJS.ErrnoException).code === "EPERM";
+    }
+  }
+
+  if (!ref.pidScope) return false;
+  try {
+    await runFile(
+      "wsl.exe",
+      ["-d", ref.pidScope, "--", "kill", "-0", String(ref.pid)],
+      5000,
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * ポートを掴んでいるプロセスを停止する。
  * シェル文字列は組み立てず、引数配列で実行する。

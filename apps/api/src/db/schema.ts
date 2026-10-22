@@ -86,6 +86,12 @@ export const services = sqliteTable(
     })
       .notNull()
       .default("stopped"),
+    pid: integer("pid"),
+    pidScope: text("pid_scope"),
+    lastStartedAt: timestamp("last_started_at"),
+    lastExitedAt: timestamp("last_exited_at"),
+    lastExitCode: integer("last_exit_code"),
+    lastError: text("last_error"),
     createdAt: timestamp("created_at").notNull(),
     updatedAt: timestamp("updated_at").notNull(),
     isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
@@ -172,18 +178,24 @@ export const portReservations = sqliteTable(
   ],
 );
 
-export const logSources = sqliteTable("log_sources", {
-  id: text("id").primaryKey(),
-  hostId: text("host_id").notNull(),
-  serviceId: text("service_id"),
-  type: text("type", {
-    enum: ["file", "stdout", "wsl_file", "eventlog"],
-  }).notNull(),
-  config: text("config", { mode: "json" })
-    .$type<Record<string, unknown>>()
-    .notNull(),
-  enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
-});
+export const logSources = sqliteTable(
+  "log_sources",
+  {
+    id: text("id").primaryKey(),
+    hostId: text("host_id").notNull(),
+    serviceId: text("service_id"),
+    type: text("type", {
+      enum: ["file", "stdout", "wsl_file", "eventlog"],
+    }).notNull(),
+    config: text("config", { mode: "json" })
+      .$type<Record<string, unknown>>()
+      .notNull(),
+    enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+  },
+  (table) => [
+    index("log_sources_host_service_idx").on(table.hostId, table.serviceId),
+  ],
+);
 
 export const logEvents = sqliteTable(
   "log_events",
@@ -209,6 +221,7 @@ export const logEvents = sqliteTable(
       table.ts,
     ),
     index("log_events_fingerprint_ts_idx").on(table.fingerprint, table.ts),
+    index("log_events_ts_idx").on(table.ts),
   ],
 );
 

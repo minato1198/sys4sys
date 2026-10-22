@@ -59,14 +59,38 @@ pnpm dev
 - **ホスト管理**: Windows は起動時に自動登録、WSL は検出 → 明示登録 → 有効化
 - **ユーザー管理**: admin / operator / viewer、有効化・無効化、ロール変更、パスワード再設定
 
+## サービス管理・ログ（M2）
+
+- **サービス CRUD**: admin が登録・更新・論理削除。起動 / 停止 / 再起動は operator 以上
+- **実行**: `cross-spawn` にコマンド配列を渡す（シェル文字列を組み立てない）。`SERVICE_COMMAND_ALLOWLIST` で許可した実行ファイルのみ起動
+- **WSL**: `wsl.exe -d <distro> [--cd <cwd>] -- [env K=V...] <cmd> ...` で直接起動。`sh -c` ラッパーは使わない
+- **停止**: Windows は `taskkill /PID /T`、猶予後に `/F`。WSL サービスは `wsl.exe` の Windows PID を `taskkill /T /F` して Linux 側プロセスも止める
+- **ヘルスチェック**: HTTP / TCP / process / command。失敗が `failures` 回に達すると `degraded`
+- **ログ収集**: サービスの stdout / stderr を捕捉。`file`（Windows）と `wsl_file`（WSL）は 1 秒ポーリングで追記分を取り込み
+- **ログ検索**: ホスト・サービス・レベル・期間・全文で検索。`/api/logs/stream` で SSE tail
+- **保持**: `LOG_RETENTION_DAYS`（既定 14 日）を超えたログを起動時 + 1 時間ごとに削除
+- **UI**: `/services`（一覧・起動停止・ヘルス・CRUD）と `/logs`（検索・SSE・ログソース管理）
+
+### M2 関連の環境変数
+
+| 変数                        | 既定値                       | 内容                                    |
+| --------------------------- | ---------------------------- | --------------------------------------- |
+| `SERVICE_COMMAND_ALLOWLIST` | node / pnpm / python / go 等 | カンマ区切りの許可実行ファイル          |
+| `SERVICE_STOP_GRACE_MS`     | `5000`                       | TERM から KILL までの猶予               |
+| `SERVICE_AUTOSTART_ON_BOOT` | `false`                      | API 起動時に `autoStart` サービスを起動 |
+| `LOG_TAIL_POLL_MS`          | `1000`                       | ファイル / WSL ファイルのポーリング間隔 |
+| `LOG_MAX_LINE_CHARS`        | `8000`                       | 1 行の最大文字数                        |
+| `LOG_MAX_TAIL_BYTES`        | `1048576`                    | 1 回の tail で読む最大バイト数          |
+| `LOG_RETENTION_DAYS`        | `14`                         | ログ保持日数                            |
+
 ## 構成
 
 ```
 sys4sys/
 ├─ apps/
-│  ├─ api/        Fastify + Drizzle + SQLite
-│  ├─ web/        Next.js ダッシュボード
-│  └─ agent/      Windows / WSL ポートスキャン
+│  ├─ api/        Fastify + Drizzle + SQLite（ポート / サービス / ログ）
+│  ├─ web/        Next.js ダッシュボード（Ports / Services / Logs / Hosts / Users）
+│  └─ agent/      Windows / WSL ポートスキャン・プロセス操作
 ├─ packages/
 │  ├─ shared/     Zod スキーマ・型
 │  ├─ policy/     自動再起動の決定論的評価
@@ -89,7 +113,9 @@ sys4sys/
 - [x] M1: 認証・ロール・セッション
 - [x] M1: ポート一覧・予約・競合検出・履歴・プロセス詳細・停止
 - [x] M1: ホスト管理・ユーザー管理・CSRF・M1 スモーク
-- [ ] M2: サービス管理・ログ収集
+- [x] M2: サービス管理・起動停止・ヘルスチェック（Windows / WSL）
+- [x] M2: ログ収集（stdout / stderr / file / WSL file）・検索・SSE tail・保持期間
+- [x] M2: Services / Logs UI・M2 スモーク（56 checks、WSL 含む）
 
 ## 認証の設計
 
@@ -104,28 +130,28 @@ sys4sys/
 
 ## スクリプト
 
-| コマンド                           | 内容                                                            |
-| ---------------------------------- | --------------------------------------------------------------- |
-| `pnpm dev`                         | API + Web を同時起動                                            |
-| `pnpm dev:api`                     | API のみ                                                        |
-| `pnpm dev:web`                     | Web のみ                                                        |
-| `pnpm scan`                        | ポートスキャン（CLI）                                           |
-| `pnpm typecheck`                   | 全パッケージの型チェック                                        |
-| `pnpm test`                        | テスト（policy / auth / 予約 / kill トークン）                  |
-| `pnpm db:generate`                 | Drizzle マイグレーション生成                                    |
-| `pnpm db:migrate`                  | マイグレーション適用                                            |
-| `pnpm --filter @sys4sys/api smoke` | M1 統合スモーク（認証・予約・競合・kill・ロール・ホスト・CSRF） |
+| コマンド                           | 内容                                                          |
+| ---------------------------------- | ------------------------------------------------------------- |
+| `pnpm dev`                         | API + Web を同時起動                                          |
+| `pnpm dev:api`                     | API のみ                                                      |
+| `pnpm dev:web`                     | Web のみ                                                      |
+| `pnpm scan`                        | ポートスキャン（CLI）                                         |
+| `pnpm typecheck`                   | 全パッケージの型チェック                                      |
+| `pnpm test`                        | テスト（policy / auth / 予約 / kill / ログ解析 / 許可リスト） |
+| `pnpm db:generate`                 | Drizzle マイグレーション生成                                  |
+| `pnpm db:migrate`                  | マイグレーション適用                                          |
+| `pnpm --filter @sys4sys/api smoke` | M1 + M2 統合スモーク（認証・予約・kill・サービス・ログ・WSL） |
 
 ### スモークテスト
 
-スモークは実際に一時ポートでリスナーを起動し、予約 → 競合検出 → 確認トークン → kill → 履歴まで検証します。開発 DB を汚さないよう、一時 DB を指定して実行してください。
+スモークは実際に一時ポートでリスナーとサービスを起動し、予約 → 競合検出 → kill → 履歴 → サービス CRUD / 起動 / ログ / ヘルス / 停止まで検証します。WSL ホストが登録されていれば、その distro で `node` または `python3` を使って WSL サービスも検証します。開発 DB を汚さないよう、一時 DB を指定して実行してください。
 
 ```powershell
-Remove-Item -Force apps/api/data/smoke-m1.db* -ErrorAction SilentlyContinue
-$env:DATABASE_URL='./data/smoke-m1.db'
+Remove-Item -Force apps/api/data/smoke-m2.db* -ErrorAction SilentlyContinue
+$env:DATABASE_URL='./data/smoke-m2.db'
 $env:ADMIN_PASSWORD='SmokeTest-Password-123!'
 $env:LOG_LEVEL='warn'
 pnpm --filter @sys4sys/api smoke
 ```
 
-`ADMIN_PASSWORD` を設定しない場合、認証以降のチェックはスキップされます。
+`ADMIN_PASSWORD` を設定しない場合、認証以降のチェックはスキップされます。WSL の distro は停止中でも、サービス起動時に `wsl.exe -d` で暗黙起動されます。

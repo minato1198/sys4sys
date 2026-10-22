@@ -75,6 +75,13 @@ erDiagram
         boolean auto_start
         text auto_restart_phase "observe | approve | auto"
         text status
+        integer pid "Windows PID (WSL は wsl.exe)"
+        text pid_scope "nullable"
+        datetime last_started_at
+        datetime last_exited_at
+        integer last_exit_code
+        text last_error
+        boolean is_active
         datetime created_at
         datetime updated_at
     }
@@ -268,26 +275,33 @@ WSL 3.x では distro 間でネットワーク名前空間が共有されるた�
 - 同じポートが複数 distro から見えるため、保存時は `(scope, protocol, address, port)` で upsert する
 - Windows 側の `wslrelay.exe` は `scope=windows` のまま残し、UI で「WSL フォワーディング」と注記する
 
-### 2.2 ログの粒度
+### 2.2 サービスの PID
+
+- Windows サービスは起動したプロセスの Windows PID を `services.pid` に保存する
+- WSL サービスは `wsl.exe` の Windows PID を保存する。`services.pid_scope` は `NULL`
+- 停止は `taskkill /PID <pid> /T /F` でプロセスツリーごと行う。WSL でも Linux 側プロセスが終了することを実機確認済み
+- `ports.pid_host_id`（観測できた distro）と `services.pid_scope` は用途が異なる。前者はポートスキャン、後者は旧方式の互換用
+
+### 2.3 ログの粒度
 
 - `log_events` は 1 行 1 ログ。`ts` は UTC（ISO 8601）で保存
 - `host_id` は実行ホスト（Windows / WSL distro）。ポートの `scope` とは別
 - 検索用に `message` の全文インデックス（SQLite は FTS5、PostgreSQL は `tsvector`）を用意
 - `fingerprint` は正規化したメッセージ（数値・ID・パスをマスク）のハッシュ
 
-### 2.3 インシデントの重複排除
+### 2.4 インシデントの重複排除
 
 - 同一 `service_id` + `fingerprint` が既定 10 分以内に再発した場合は既存インシデントに `incident_events` を追加
 - 解決後も 10 分以内なら再オープン
 - `status` 遷移: `open` → `acked` → `approval` → `resolved`（失敗時は `open` に戻す）
 
-### 2.4 承認とアクション
+### 2.5 承認とアクション
 
 - `approvals.requested_action` は `{ "type": "restart", "service_id": "..." }` のような JSON
 - 承認後に `actions` を作成し、実行結果を `actions.status` に反映
 - `actions.requested_by` / `approved_by` は `users.id`。システム起因は `NULL` + `audit_logs.actor_label = "system"`
 
-### 2.5 設定の秘密値
+### 2.6 設定の秘密値
 
 - `settings.value` に SMTP パスワードや AI API キーを入れる場合、アプリ層で AES-256-GCM 暗号化した文字列を保存
 - 鍵は OS 資格情報ストア（Windows Credential Manager）またはローカル鍵ファイル（`0600` 相当）

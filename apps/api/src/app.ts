@@ -6,11 +6,16 @@ import { cleanupExpiredSessions } from "./auth/session.js";
 import { config } from "./config.js";
 import { migrateDb } from "./db/migrate.js";
 import { ensureDefaultHosts } from "./hosts/bootstrap.js";
+import { cleanupLogs, startLogRetention } from "./logs/retention.js";
+import { startAllLogTailers, stopAllLogTailers } from "./logs/tailers.js";
 import { authRoutes } from "./routes/auth.js";
 import { healthRoutes } from "./routes/health.js";
 import { hostRoutes } from "./routes/hosts.js";
+import { logRoutes } from "./routes/logs.js";
 import { portRoutes } from "./routes/ports.js";
+import { serviceRoutes } from "./routes/services.js";
 import { userRoutes } from "./routes/users.js";
+import { closeServiceWatchers, reconcileServices } from "./services/manager.js";
 
 export async function buildApp() {
   migrateDb();
@@ -102,6 +107,16 @@ export async function buildApp() {
     }
   }
   await cleanupExpiredSessions();
+  await reconcileServices();
+  await startAllLogTailers();
+  await cleanupLogs();
+  const retentionTimer = startLogRetention();
+
+  app.addHook("onClose", async () => {
+    clearInterval(retentionTimer);
+    stopAllLogTailers();
+    closeServiceWatchers();
+  });
 
   app.setErrorHandler((error: FastifyError, request, reply) => {
     if (error instanceof ZodError) {
@@ -157,6 +172,8 @@ export async function buildApp() {
   await app.register(portRoutes, { prefix: "/api" });
   await app.register(hostRoutes, { prefix: "/api" });
   await app.register(userRoutes, { prefix: "/api" });
+  await app.register(serviceRoutes, { prefix: "/api" });
+  await app.register(logRoutes, { prefix: "/api" });
 
   return app;
 }

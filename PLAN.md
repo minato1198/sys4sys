@@ -301,15 +301,15 @@ ai:
 
 ### 3.6 WSL 連携
 
-| ID   | 機能           | 内容                                                                                                                   |
-| ---- | -------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| W-01 | ディストロ検出 | `wsl.exe -l -v` で名前・状態（Running / Stopped）を取得。UI の「ホスト検出」から選択して登録（名前は決め打ちしない）   |
-| W-02 | コマンド実行   | `wsl.exe -d <distro> -u <user> -- <cmd> <args...>`（シェル文字列を組み立てない）                                       |
-| W-03 | ポート取得     | `ss -H -tulpn` をパース。**ネットワーク名前空間は distro 間で共有**されるため、WSL 全体で 1 つのポート一覧にマージする |
-| W-04 | PID の帰属     | `pidScope`（PID を観測できた distro）を記録。他 distro からは `pid=null` に見える                                      |
-| W-05 | ログ収集       | `pidScope` の distro で `tail -F <path>` を spawn してストリーム取り込み                                               |
-| W-06 | 停止           | `pidScope` の distro で `kill -TERM <pid>` → タイムアウト後に `-KILL`（明示操作のみ）                                  |
-| W-07 | パス変換       | Windows パス ⇔ `/mnt/c/...` の変換ユーティリティ                                                                       |
+| ID   | 機能           | 内容                                                                                                                       |
+| ---- | -------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| W-01 | ディストロ検出 | `wsl.exe -l -v` で名前・状態（Running / Stopped）を取得。UI の「ホスト検出」から選択して登録（名前は決め打ちしない）       |
+| W-02 | コマンド実行   | `wsl.exe -d <distro> [-u <user>] [--cd <cwd>] -- [env K=V...] <cmd> <args...>`（シェル文字列を組み立てない）               |
+| W-03 | ポート取得     | `ss -H -tulpn` をパース。**ネットワーク名前空間は distro 間で共有**されるため、WSL 全体で 1 つのポート一覧にマージする     |
+| W-04 | PID の帰属     | ポートスキャンでは `pidScope`（PID を観測できた distro）を記録。他 distro からは `pid=null` に見える                       |
+| W-05 | ログ収集       | `wsl_file` は 1 秒ポーリングで `stat -c %s` と `tail -c +N` を使い、追記分だけ取り込む（`tail -F` は使わない）             |
+| W-06 | 停止           | サービスは `wsl.exe` の Windows PID を保存し、`taskkill /PID <pid> /T /F` でプロセスツリーごと停止（Linux PID は使わない） |
+| W-07 | パス変換       | Windows パス ⇔ `/mnt/c/...` の変換ユーティリティ                                                                           |
 
 **実測で判明した注意点**
 
@@ -319,6 +319,8 @@ ai:
 - 停止中の distro に `wsl.exe -d` を実行すると起動してしまう。監視スキャンは `Running` のみ対象にし、起動は明示操作にする
 - WSL はアイドルで自動停止する。「サービス停止」ではなく「WSL 停止」という別状態として扱い、自動再起動の対象外にする
 - `wsl.exe` の出力はパイプ経由で UTF-16LE + BOM。BOM / NUL 密度で判定してデコードする
+- WSL サービス起動に `sh -c` ラッパーを使うと、`wsl.exe` の引用処理で `code=126` になる。コマンドは配列のまま直接渡す
+- サービス停止は `wsl.exe` の Windows PID を `taskkill /T /F` する。実機で Linux 側プロセスも終了することを確認済み
 - WSL 内に常駐エージェントを置く方式は将来の拡張。初期は `wsl.exe` 呼び出しで十分（プロセス数が少ない前提）
 
 ---
@@ -448,7 +450,9 @@ PATCH  /api/users/:id                  admin のみ
 
 # ホスト
 GET    /api/hosts                      Windows / WSL 一覧と状態
-POST   /api/hosts/wsl/detect           WSL ディストロ検出
+POST   /api/hosts                      WSL ホスト登録（admin）
+PATCH  /api/hosts/:id                  WSL ホスト更新・有効化（admin）
+POST   /api/hosts/wsl/detect           WSL ディストロ検出（admin）
 
 # ポート
 GET    /api/ports?host=
@@ -459,17 +463,22 @@ POST   /api/ports/:port/kill           要確認トークン + operator 以上
 
 # サービス
 GET    /api/services
-POST   /api/services
-PATCH  /api/services/:id
-POST   /api/services/:id/start
-POST   /api/services/:id/stop
-POST   /api/services/:id/restart
+POST   /api/services                   admin
+GET    /api/services/:id
+PATCH  /api/services/:id               admin
+DELETE /api/services/:id               admin（論理削除）
+POST   /api/services/:id/start         operator 以上
+POST   /api/services/:id/stop          operator 以上
+POST   /api/services/:id/restart       operator 以上
 GET    /api/services/:id/health
 
 # ログ
 GET    /api/logs?host=&service=&level=&q=&from=&to=&limit=
 GET    /api/logs/stream                SSE
 GET    /api/logs/sources
+POST   /api/logs/sources               admin
+PATCH  /api/logs/sources/:id           admin
+DELETE /api/logs/sources/:id           admin
 
 # インシデント / 承認 / レポート
 GET    /api/incidents?status=&severity=
@@ -551,7 +560,7 @@ GET    /api/audit-logs                 admin のみ
 | -------------------------------- | -------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
 | **M0: 設計確定**                 | 完了     | 要件確定（v0.3 で完了）、ER 図、OpenAPI、画面ワイヤー                       | 要件は確定済み。ER 図と API 定義がレビュー済みになること                             |
 | **M1: 基盤 + 認証 + ポート**     | 2 週     | モノレポ、API、DB、認証/ロール、HostAdapter、ポートスキャン、予約・競合検出 | ログインして 2 ホストのポートが 10 秒以内に反映され、競合を起動前に検出できる        |
-| **M2: サービス + ログ + WSL**    | 2 週     | サービス CRUD、起動/停止、ヘルスチェック、ログ収集・検索・tail、WSL 連携    | UI から Windows / WSL のサービスを起動し、ログを 1 秒以内に tail 表示できる          |
+| **M2: サービス + ログ + WSL**    | 完了     | サービス CRUD、起動/停止、ヘルスチェック、ログ収集・検索・tail、WSL 連携    | UI から Windows / WSL のサービスを起動し、ログを 1 秒以内に tail 表示できる（達成）  |
 | **M3: 監視 + 自動復旧 + メール** | 2 週     | ルールエンジン、インシデント、承認キュー、再起動 + 検証、メール通知         | プロセスを kill すると 30 秒以内に検知し、Phase 2 で承認 → 再起動 → 復旧通知まで通る |
 | **M4: AI 分析 + レポート**       | 2 週     | AI ジョブ、接続設定、トリアージ、原因仮説、Markdown レポート、類似検索      | インシデント発生から 1 分以内にレポートが生成され、メールで届く                      |
 | **M5: 運用強化**                 | 1 週     | 監査ログ UI、保持期間、コスト制御、バックアップ、ドキュメント、Phase 3 昇格 | 1 週間の連続稼働でメモリリーク・再起動ループがない                                   |
@@ -578,10 +587,12 @@ GET    /api/audit-logs                 admin のみ
 - [x] M1: ユーザー管理（admin 限定 / 最後の管理者保護 / パスワード再設定でセッション無効化）
 - [x] M1: CSRF 対策（Origin / Sec-Fetch-Site / `ALLOWED_ORIGINS`）
 - [x] M1: スモークテスト（予約・競合・kill・ロール・ホスト・CSRF・パスワードローテーション）
-- [ ] M2: サービス CRUD とプロセス起動/停止
-- [ ] M2: ヘルスチェック（HTTP/TCP/process）
-- [ ] M2: ログ取り込み（file / stdout / WSL tail）
-- [ ] M2: ログ検索 + SSE tail
+- [x] M2: サービス CRUD とプロセス起動/停止/再起動（Windows / WSL）
+- [x] M2: ヘルスチェック（HTTP / TCP / process / command）
+- [x] M2: ログ取り込み（stdout / stderr / file / WSL file）
+- [x] M2: ログ検索 + SSE tail + 保持期間削除
+- [x] M2: サービス管理 UI / ログ検索・tail UI
+- [x] M2: スモークテスト（Windows / WSL サービス、ログ、ヘルス、CSRF）
 - [ ] M3: ルールエンジンと fingerprint
 - [ ] M3: インシデント管理
 - [ ] M3: 承認キュー + 自動再起動ポリシー + 検証 + サーキットブレーカー
@@ -677,5 +688,6 @@ sys4sys/
 2. ~~M1 スパイク~~: 完了。結果は `docs/spike/portscan-findings.md`（WSL の共有ネットワーク・停止中 distro の暗黙起動を確認）。
 3. ~~モノレポ初期化・DB・ポートスキャン・一覧 UI~~: 完了。
 4. ~~認証・ロール・セッション~~: 完了（`docs/adr/0001-auth.md`）。
-5. ~~M1 ポート予約・競合検出・履歴・プロセス停止・ホスト/ユーザー管理・CSRF・UI・テスト~~: 完了。次は **M2 サービス管理（CRUD / 起動停止 / ヘルスチェック / ログ）** に進む。
-6. SMTP / LLM / WSL の実値は、設定画面ができた時点（M2）で入力する。
+5. ~~M1 ポート予約・競合検出・履歴・プロセス停止・ホスト/ユーザー管理・CSRF・UI・テスト~~: 完了。
+6. ~~M2 サービス管理（CRUD / 起動停止 / ヘルスチェック / ログ / WSL）~~: 完了。次は **M3 監視 + 自動復旧 + メール**。
+7. SMTP / LLM の実値は M3 / M4 の設定画面で入力する。

@@ -437,7 +437,7 @@ paths:
           description: OK
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/Service" }
+              schema: { $ref: "#/components/schemas/ServiceDetail" }
         "404": { $ref: "#/components/responses/NotFound" }
     patch:
       tags: [services]
@@ -552,7 +552,7 @@ paths:
       summary: ログのライブ tail（SSE）
       description: |
         `text/event-stream`。イベント名は `log`、データは LogEvent の JSON。
-        再接続用に `Last-Event-ID` を受け付ける。
+        接続後の新着ログのみを配信する。15 秒ごとに keep-alive コメントを送る。
       parameters:
         - name: hostId
           in: query
@@ -597,6 +597,32 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/LogSource" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /logs/sources/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    patch:
+      tags: [logs]
+      summary: ログソース更新（admin のみ）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LogSourceUpdate" }
+      responses:
+        "200":
+          description: 更新済み
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LogSource" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [logs]
+      summary: ログソース削除（admin のみ）
+      responses:
+        "204": { description: 削除済み }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /incidents:
     get:
@@ -1262,9 +1288,60 @@ components:
         status:
           type: string
           enum: [stopped, starting, running, degraded, restarting, failed]
-        lastCheckedAt: { type: string, format: date-time, nullable: true }
+        isActive: { type: boolean }
+        pid:
+          type: integer
+          nullable: true
+          description: "Windows の PID。WSL サービスは wsl.exe の PID"
+        pidScope:
+          type: string
+          nullable: true
+          description: "ポートスキャンで観測した WSL distro。サービス実行では通常 null"
+        lastStartedAt: { type: string, format: date-time, nullable: true }
+        lastExitedAt: { type: string, format: date-time, nullable: true }
+        lastExitCode: { type: integer, nullable: true }
+        lastError: { type: string, nullable: true }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+        host: { $ref: "#/components/schemas/ServiceHost" }
+        health:
+          allOf:
+            - $ref: "#/components/schemas/HealthResult"
+          nullable: true
+        runtime: { $ref: "#/components/schemas/ServiceRuntime" }
+
+    ServiceHost:
+      type: object
+      nullable: true
+      properties:
+        id: { type: string }
+        kind: { type: string, enum: [windows, wsl] }
+        name: { type: string }
+        distro: { type: string, nullable: true }
+        defaultUser: { type: string, nullable: true }
+        enabled: { type: boolean }
+
+    ServiceRuntime:
+      type: object
+      properties:
+        running: { type: boolean }
+        adopted:
+          { type: boolean, description: "API 再起動後に引き継いだプロセス" }
+        pid: { type: integer, nullable: true }
+        pidScope: { type: string, nullable: true }
+        health:
+          allOf:
+            - $ref: "#/components/schemas/HealthResult"
+          nullable: true
+
+    ServiceDetail:
+      allOf:
+        - $ref: "#/components/schemas/Service"
+        - type: object
+          properties:
+            recentActions:
+              type: array
+              items: { $ref: "#/components/schemas/Action" }
 
     ServiceCreate:
       type: object
@@ -1332,10 +1409,11 @@ components:
       required: [serviceId, status, checkedAt]
       properties:
         serviceId: { type: string }
-        status: { type: string, enum: [healthy, unhealthy, unknown] }
+        status: { type: string, enum: [healthy, unhealthy, unknown, stopped] }
         latencyMs: { type: integer }
         checkedAt: { type: string, format: date-time }
         detail: { type: string }
+        consecutiveFailures: { type: integer }
 
     LogEvent:
       type: object
@@ -1369,11 +1447,14 @@ components:
         id: { type: string }
         hostId: { type: string }
         serviceId: { type: string, nullable: true }
-        type: { type: string, enum: [file, stdout, wsl_file, eventlog] }
+        type: { type: string, enum: [file, wsl_file, eventlog] }
         config:
           type: object
           additionalProperties: true
         enabled: { type: boolean }
+        hostName: { type: string, nullable: true }
+        hostKind: { type: string, enum: [windows, wsl], nullable: true }
+        serviceName: { type: string, nullable: true }
 
     LogSourceCreate:
       type: object
@@ -1381,11 +1462,23 @@ components:
       properties:
         hostId: { type: string }
         serviceId: { type: string, nullable: true }
-        type: { type: string, enum: [file, stdout, wsl_file, eventlog] }
+        type:
+          type: string
+          enum: [file, wsl_file, eventlog]
+          description: "stdout/stderr はサービス起動時に自動収集するため登録不要。eventlog は未実装（422）"
         config:
           type: object
           additionalProperties: true
         enabled: { type: boolean, default: true }
+
+    LogSourceUpdate:
+      type: object
+      properties:
+        serviceId: { type: string, nullable: true }
+        config:
+          type: object
+          additionalProperties: true
+        enabled: { type: boolean }
 
     Incident:
       type: object

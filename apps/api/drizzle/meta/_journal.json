@@ -22,6 +22,13 @@
       "when": 1792593192051,
       "tag": "0002_majestic_blue_blade",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1792663847175,
+      "tag": "0003_rainy_groot",
+      "breakpoints": true
     }
   ]
 }
