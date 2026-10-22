@@ -189,7 +189,7 @@ sys4sys/
 └─ PLAN.md
 ```
 
-テスト用の管理対象サービスは `apps/demo-api` にあります。ビルドと `/services` への登録手順は [apps/demo-api/README.md](./apps/demo-api/README.md) を参照してください。
+テスト用の管理対象サービスは `apps/demo-api` にあります。ビルド、`/services` への登録、`deploy.ps1` による git pull・再ビルド・sys4sys 経由の再起動手順は [apps/demo-api/README.md](./apps/demo-api/README.md) を参照してください。
 
 ## 実装状況
 
