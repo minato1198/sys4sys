@@ -1,5 +1,14 @@
-import "dotenv/config";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { config as loadEnv } from "dotenv";
 import { z } from "zod";
+
+// pnpm --filter は cwd を apps/api にするため、ワークスペース直下の .env を明示的に読む。
+// 既に設定済みの環境変数は dotenv が上書きしないので、テストや CI の指定が優先される。
+loadEnv({
+  path: resolve(dirname(fileURLToPath(import.meta.url)), "../../../.env"),
+  quiet: true,
+});
 
 const envSchema = z.object({
   HOST: z.string().default("127.0.0.1"),
