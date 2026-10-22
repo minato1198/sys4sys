@@ -262,6 +262,18 @@ importers:
         specifier: ^3.2.4
         version: 3.2.7(@types/node@24.19.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1)
 
+  apps/demo-api:
+    devDependencies:
+      '@types/node':
+        specifier: ^24.10.1
+        version: 24.19.2
+      tsx:
+        specifier: ^4.20.6
+        version: 4.23.15
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
   apps/web:
     dependencies:
       '@sys4sys/shared':

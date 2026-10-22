@@ -174,7 +174,8 @@ sys4sys/
 ├─ apps/
 │  ├─ api/        Fastify + Drizzle + SQLite（ポート / サービス / ログ / 監視 / AI / レポート / 監査）
 │  ├─ web/        Next.js ダッシュボード（Ports / Services / Logs / Incidents / Reports / Approvals / Audit / Settings / Hosts / Users）
-│  └─ agent/      Windows / WSL ポートスキャン・プロセス操作
+│  ├─ agent/      Windows / WSL ポートスキャン・プロセス操作
+│  └─ demo-api/   sys4sys のサービス管理を試すための最小 HTTP サービス
 ├─ packages/
 │  ├─ shared/     Zod スキーマ・型
 │  ├─ policy/     自動再起動の決定論的評価
@@ -187,6 +188,8 @@ sys4sys/
 ├─ spike/         検証用スクリプト（M1 スパイク）
 └─ PLAN.md
 ```
+
+テスト用の管理対象サービスは `apps/demo-api` にあります。ビルドと `/services` への登録手順は [apps/demo-api/README.md](./apps/demo-api/README.md) を参照してください。
 
 ## 実装状況
 

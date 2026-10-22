@@ -17,6 +17,8 @@
     "db:generate": "pnpm --filter @sys4sys/api db:generate",
     "db:migrate": "pnpm --filter @sys4sys/api db:migrate",
     "db:backup": "pnpm --filter @sys4sys/api db:backup",
+    "demo:build": "pnpm --filter @sys4sys/demo-api build",
+    "demo:start": "pnpm --filter @sys4sys/demo-api start",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },
