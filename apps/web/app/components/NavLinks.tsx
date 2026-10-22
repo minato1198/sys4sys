@@ -7,15 +7,18 @@ const LINKS = [
   { href: "/", label: "Ports", adminOnly: false },
   { href: "/services", label: "Services", adminOnly: false },
   { href: "/logs", label: "Logs", adminOnly: false },
+  { href: "/incidents", label: "Incidents", adminOnly: false },
+  { href: "/approvals", label: "Approvals", adminOnly: false },
   { href: "/hosts", label: "Hosts", adminOnly: false },
   { href: "/admin/users", label: "Users", adminOnly: true },
+  { href: "/settings", label: "Settings", adminOnly: true },
 ] as const;
 
 export function NavLinks({ role }: { role?: string | null }) {
   const pathname = usePathname();
 
   return (
-    <nav className="flex items-center gap-1 rounded-lg border border-ink-700 bg-ink-900/60 p-1 text-xs">
+    <nav className="flex flex-wrap items-center gap-1 rounded-lg border border-ink-700 bg-ink-900/60 p-1 text-xs">
       {LINKS.filter((link) => !link.adminOnly || role === "admin").map(
         (link) => {
           const active =

@@ -1,6 +1,9 @@
 import { z } from "zod";
 import {
+  approvalStatusSchema,
   hostKindSchema,
+  incidentSeveritySchema,
+  incidentStatusSchema,
   logLevelSchema,
   portScopeSchema,
   protocolSchema,
@@ -164,6 +167,26 @@ export const approvalDecisionSchema = z.object({
   note: z.string().max(500).optional(),
 });
 export type ApprovalDecisionInput = z.infer<typeof approvalDecisionSchema>;
+
+export const incidentQuerySchema = z.object({
+  status: incidentStatusSchema.optional(),
+  severity: incidentSeveritySchema.optional(),
+  serviceId: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  offset: z.coerce.number().int().min(0).default(0),
+});
+export type IncidentQuery = z.infer<typeof incidentQuerySchema>;
+
+export const incidentActionSchema = z.object({
+  note: z.string().max(500).optional(),
+});
+export type IncidentActionInput = z.infer<typeof incidentActionSchema>;
+
+export const approvalQuerySchema = z.object({
+  status: approvalStatusSchema.default("pending"),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+});
+export type ApprovalQuery = z.infer<typeof approvalQuerySchema>;
 
 export const logQuerySchema = z.object({
   hostId: z.string().optional(),

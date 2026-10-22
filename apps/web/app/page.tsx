@@ -7,6 +7,7 @@ import {
   useState,
   type FormEvent,
 } from "react";
+import Link from "next/link";
 import { NavLinks } from "./components/NavLinks";
 
 interface ReservationView {
@@ -82,6 +83,21 @@ interface AuthUser {
   email: string;
   name: string;
   role: "admin" | "operator" | "viewer";
+}
+
+interface OpsIncident {
+  id: string;
+  title: string;
+  severity: "info" | "warning" | "error" | "critical";
+  status: string;
+  startedAt: string;
+  service: { name: string } | null;
+}
+
+interface OpsSummary {
+  openIncidents: number;
+  pendingApprovals: number;
+  incidents: OpsIncident[];
 }
 
 interface Problem {
@@ -202,6 +218,11 @@ export default function DashboardPage() {
   const [historyFor, setHistoryFor] = useState<PortItem | null>(null);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [ops, setOps] = useState<OpsSummary>({
+    openIncidents: 0,
+    pendingApprovals: 0,
+    incidents: [],
+  });
 
   const load = useCallback(async () => {
     try {
@@ -247,11 +268,41 @@ export default function DashboardPage() {
     };
   }, []);
 
+  const loadOps = useCallback(async () => {
+    try {
+      const [incidentResponse, approvalResponse] = await Promise.all([
+        fetch("/api/incidents?status=open&limit=5", { cache: "no-store" }),
+        fetch("/api/approvals?status=pending&limit=1", { cache: "no-store" }),
+      ]);
+      if (incidentResponse.status === 401 || approvalResponse.status === 401) {
+        window.location.href = "/login";
+        return;
+      }
+      if (!incidentResponse.ok || !approvalResponse.ok) return;
+      const incidents = (await incidentResponse.json()) as {
+        items: OpsIncident[];
+        total: number;
+      };
+      const approvals = (await approvalResponse.json()) as { total: number };
+      setOps({
+        openIncidents: incidents.total,
+        pendingApprovals: approvals.total,
+        incidents: incidents.items,
+      });
+    } catch {
+      // ポート画面の主要エラーとは分離する。
+    }
+  }, []);
+
   useEffect(() => {
     void load();
-    const timer = setInterval(() => void load(), 10_000);
+    void loadOps();
+    const timer = setInterval(() => {
+      void load();
+      void loadOps();
+    }, 10_000);
     return () => clearInterval(timer);
-  }, [load]);
+  }, [load, loadOps]);
 
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -476,7 +527,7 @@ export default function DashboardPage() {
               sys4sys
             </h1>
             <p className="text-xs text-mist-400">
-              backend operations / M1 port management
+              backend operations / ports · services · incidents
             </p>
           </div>
         </div>
@@ -554,6 +605,103 @@ export default function DashboardPage() {
           hint={`WSL ${wslCount} ports / 10s polling`}
           tone="warn"
         />
+      </section>
+
+      <section className="mt-6 grid gap-4 lg:grid-cols-2">
+        <div className="rounded-xl border border-ink-700/70 bg-ink-900/60 p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold text-white">
+                Open incidents
+              </h2>
+              <p className="text-[11px] text-mist-400">
+                未解決の監視インシデント
+              </p>
+            </div>
+            <Link
+              href="/incidents"
+              className="rounded-md border border-ink-700 bg-ink-800/80 px-2.5 py-1 text-[11px] text-mist-200 transition hover:border-signal-400/40 hover:text-white"
+            >
+              開く
+            </Link>
+          </div>
+          <div
+            className={`mt-3 font-mono text-3xl tabular-nums ${
+              ops.openIncidents > 0 ? "text-danger-400" : "text-signal-400"
+            }`}
+          >
+            {ops.openIncidents}
+          </div>
+          {ops.incidents.length === 0 ? (
+            <p className="mt-2 text-xs text-mist-400">
+              アクティブなインシデントはありません。
+            </p>
+          ) : (
+            <ul className="mt-3 space-y-2">
+              {ops.incidents.slice(0, 3).map((incident) => (
+                <li key={incident.id}>
+                  <Link
+                    href={`/incidents?focus=${encodeURIComponent(incident.id)}`}
+                    className="flex items-start justify-between gap-3 rounded border border-ink-700/60 bg-ink-950/30 px-2.5 py-2 transition hover:border-danger-400/30"
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate text-xs text-mist-200">
+                        {incident.title}
+                      </span>
+                      <span className="mt-0.5 block text-[10px] text-mist-400">
+                        {incident.service?.name ?? "—"} /{" "}
+                        {formatDate(incident.startedAt)}
+                      </span>
+                    </span>
+                    <span
+                      className={`shrink-0 text-[10px] font-medium uppercase ${
+                        incident.severity === "critical" ||
+                        incident.severity === "error"
+                          ? "text-danger-400"
+                          : incident.severity === "warning"
+                            ? "text-warn-400"
+                            : "text-mist-400"
+                      }`}
+                    >
+                      {incident.severity}
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <div className="rounded-xl border border-ink-700/70 bg-ink-900/60 p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold text-white">
+                Pending approvals
+              </h2>
+              <p className="text-[11px] text-mist-400">
+                承認待ちの再起動リクエスト
+              </p>
+            </div>
+            <Link
+              href="/approvals"
+              className="rounded-md border border-ink-700 bg-ink-800/80 px-2.5 py-1 text-[11px] text-mist-200 transition hover:border-signal-400/40 hover:text-white"
+            >
+              開く
+            </Link>
+          </div>
+          <div
+            className={`mt-3 font-mono text-3xl tabular-nums ${
+              ops.pendingApprovals > 0 ? "text-warn-400" : "text-signal-400"
+            }`}
+          >
+            {ops.pendingApprovals}
+          </div>
+          <p className="mt-2 text-xs text-mist-400">
+            {ops.pendingApprovals > 0
+              ? "operator 以上が承認すると再起動と復旧確認を実行します。"
+              : "承認待ちはありません。"}
+          </p>
+        </div>
       </section>
 
       {conflictCount > 0 ? (

@@ -16,6 +16,7 @@ import { db } from "../db/index.js";
 import { hosts, portReservations, services } from "../db/schema.js";
 import { ingestLog } from "../logs/ingest.js";
 import { isCommandAllowed } from "./allowlist.js";
+import { serviceEvents } from "./events.js";
 
 export type ServiceRow = typeof services.$inferSelect;
 type HostRow = typeof hosts.$inferSelect;
@@ -223,6 +224,7 @@ function handleExit(
   closeRuntime(runtime);
   healthFailures.delete(service.id);
 
+  const exitedAt = new Date();
   const message = `service exited (code=${code ?? "null"}, signal=${
     signal ?? "null"
   })`;
@@ -232,12 +234,23 @@ function handleExit(
       status: wasStopping ? "stopped" : "failed",
       pid: null,
       pidScope: null,
-      lastExitedAt: new Date(),
+      lastExitedAt: exitedAt,
       lastExitCode: code,
       lastError: wasStopping ? null : message,
-      updatedAt: new Date(),
+      updatedAt: exitedAt,
     })
     .where(eq(services.id, service.id))
+    .then(() => {
+      if (!wasStopping) {
+        serviceEvents.emit("exited", {
+          serviceId: service.id,
+          hostId: service.hostId,
+          code,
+          signal,
+          exitedAt: exitedAt.toISOString(),
+        });
+      }
+    })
     .catch((error: unknown) => {
       console.warn(`[services] exit update failed: ${errorMessage(error)}`);
     });
@@ -592,15 +605,14 @@ export async function restartService(id: string): Promise<ServiceRow> {
   const running =
     Boolean(runtime) ||
     Boolean(service.pid) ||
-    ["starting", "running", "degraded"].includes(service.status);
-
-  await db
-    .update(services)
-    .set({ status: "restarting", updatedAt: new Date() })
-    .where(eq(services.id, id));
+    ["starting", "running", "degraded", "restarting"].includes(service.status);
 
   try {
     if (running) {
+      await db
+        .update(services)
+        .set({ status: "restarting", updatedAt: new Date() })
+        .where(eq(services.id, id));
       await stopService(id);
     }
     return await startService(id);
@@ -794,6 +806,12 @@ export async function checkServiceHealth(id: string): Promise<HealthResult> {
           updatedAt: new Date(),
         })
         .where(eq(services.id, id));
+      serviceEvents.emit("degraded", {
+        serviceId: id,
+        detail: result.detail,
+        consecutiveFailures: failures,
+        checkedAt,
+      });
       void ingestLog({
         hostId: service.hostId,
         serviceId: service.id,

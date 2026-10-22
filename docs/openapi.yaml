@@ -646,9 +646,7 @@ paths:
           description: OK
           content:
             application/json:
-              schema:
-                type: array
-                items: { $ref: "#/components/schemas/Incident" }
+              schema: { $ref: "#/components/schemas/IncidentList" }
 
   /incidents/{id}:
     parameters:
@@ -670,12 +668,17 @@ paths:
     post:
       tags: [incidents]
       summary: 確認済みにする（operator 以上）
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/IncidentAction" }
       responses:
         "200":
-          description: 更新済み
+          description: 更新済み（詳細を返す）
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/Incident" }
+              schema: { $ref: "#/components/schemas/IncidentDetail" }
+        "409": { $ref: "#/components/responses/Conflict" }
 
   /incidents/{id}/resolve:
     parameters:
@@ -686,16 +689,13 @@ paths:
       requestBody:
         content:
           application/json:
-            schema:
-              type: object
-              properties:
-                note: { type: string }
+            schema: { $ref: "#/components/schemas/IncidentAction" }
       responses:
         "200":
-          description: 更新済み
+          description: 更新済み（詳細を返す）
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/Incident" }
+              schema: { $ref: "#/components/schemas/IncidentDetail" }
 
   /incidents/{id}/analyze:
     parameters:
@@ -722,15 +722,17 @@ paths:
       parameters:
         - name: status
           in: query
-          schema: { type: string, enum: [pending, approved, rejected, expired] }
+          schema:
+            type: string
+            enum: [pending, approved, rejected, expired]
+            default: pending
+        - $ref: "#/components/parameters/Limit"
       responses:
         "200":
           description: OK
           content:
             application/json:
-              schema:
-                type: array
-                items: { $ref: "#/components/schemas/Approval" }
+              schema: { $ref: "#/components/schemas/ApprovalList" }
 
   /approvals/{id}/approve:
     parameters:
@@ -744,10 +746,10 @@ paths:
             schema: { $ref: "#/components/schemas/ApprovalDecision" }
       responses:
         "202":
-          description: 承認し、アクションを開始
+          description: 承認し、再起動アクションを非同期で開始
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/Action" }
+              schema: { $ref: "#/components/schemas/ApprovalDecisionResult" }
         "409": { $ref: "#/components/responses/Conflict" }
 
   /approvals/{id}/reject:
@@ -765,7 +767,8 @@ paths:
           description: 却下済み
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/Approval" }
+              schema: { $ref: "#/components/schemas/ApprovalDecisionResult" }
+        "409": { $ref: "#/components/responses/Conflict" }
 
   /reports:
     get:
@@ -871,7 +874,7 @@ paths:
           description: OK
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/MailSettings" }
+              schema: { $ref: "#/components/schemas/MailSettingsView" }
     put:
       tags: [settings]
       summary: メール設定の更新（admin のみ）
@@ -879,33 +882,35 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/MailSettings" }
+            schema: { $ref: "#/components/schemas/MailSettingsInput" }
       responses:
         "200":
           description: 更新済み
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/MailSettings" }
+              schema: { $ref: "#/components/schemas/MailSettingsView" }
         "422": { $ref: "#/components/responses/ValidationError" }
 
   /settings/mail/test:
     post:
       tags: [settings]
-      summary: テストメール送信（admin のみ）
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [to]
-              properties:
-                to: { type: string, format: email }
+      summary: 保存済み SMTP 設定でテストメール送信（admin のみ）
       responses:
         "200":
           description: 送信結果
           content:
             application/json:
               schema: { $ref: "#/components/schemas/MailTestResult" }
+        "409":
+          description: SMTP が未設定
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "502":
+          description: SMTP 接続または送信に失敗
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
 
   /settings/ai:
     get:
@@ -1480,6 +1485,29 @@ components:
           additionalProperties: true
         enabled: { type: boolean }
 
+    IncidentService:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        hostId: { type: string }
+        status: { type: string }
+        autoRestartPhase: { type: string, enum: [observe, approve, auto] }
+        lastStartedAt: { type: string, format: date-time, nullable: true }
+        lastExitedAt: { type: string, format: date-time, nullable: true }
+        lastExitCode: { type: integer, nullable: true }
+        lastError: { type: string, nullable: true }
+
+    IncidentHost:
+      type: object
+      properties:
+        id: { type: string }
+        kind: { type: string, enum: [windows, wsl] }
+        name: { type: string }
+        distro: { type: string, nullable: true }
+        defaultUser: { type: string, nullable: true }
+        enabled: { type: boolean }
+
     Incident:
       type: object
       required: [id, serviceId, title, severity, status, startedAt]
@@ -1494,7 +1522,19 @@ components:
         resolvedAt: { type: string, format: date-time, nullable: true }
         detectedBy: { type: string, enum: [rule, health, process, ai] }
         restartAttempts: { type: integer }
-        summary: { type: string }
+        summary: { type: string, nullable: true }
+        pendingApprovalId: { type: string, nullable: true }
+        service: { $ref: "#/components/schemas/IncidentService" }
+        host: { $ref: "#/components/schemas/IncidentHost" }
+
+    IncidentList:
+      type: object
+      required: [items, total]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Incident" }
+        total: { type: integer }
 
     IncidentDetail:
       allOf:
@@ -1504,12 +1544,12 @@ components:
             events:
               type: array
               items: { $ref: "#/components/schemas/IncidentEvent" }
-            analysis: { $ref: "#/components/schemas/AiAnalysis" }
-            report: { $ref: "#/components/schemas/Report" }
+            approvals:
+              type: array
+              items: { $ref: "#/components/schemas/Approval" }
             actions:
               type: array
               items: { $ref: "#/components/schemas/Action" }
-            approval: { $ref: "#/components/schemas/Approval" }
 
     IncidentEvent:
       type: object
@@ -1521,6 +1561,43 @@ components:
         payload:
           type: object
           additionalProperties: true
+          nullable: true
+
+    IncidentAction:
+      type: object
+      properties:
+        note: { type: string }
+
+    ApprovalIncident:
+      type: object
+      nullable: true
+      properties:
+        id: { type: string }
+        serviceId: { type: string }
+        title: { type: string }
+        severity: { type: string, enum: [info, warning, error, critical] }
+        status: { type: string }
+        summary: { type: string, nullable: true }
+        startedAt: { type: string, format: date-time }
+
+    ApprovalService:
+      type: object
+      nullable: true
+      properties:
+        id: { type: string }
+        hostId: { type: string }
+        name: { type: string }
+        status: { type: string }
+        autoRestartPhase: { type: string, enum: [observe, approve, auto] }
+
+    ApprovalHost:
+      type: object
+      nullable: true
+      properties:
+        id: { type: string }
+        kind: { type: string, enum: [windows, wsl] }
+        name: { type: string }
+        distro: { type: string, nullable: true }
 
     Approval:
       type: object
@@ -1534,11 +1611,37 @@ components:
         decidedBy: { type: string, nullable: true }
         decidedAt: { type: string, format: date-time, nullable: true }
         note: { type: string, nullable: true }
+        incident: { $ref: "#/components/schemas/ApprovalIncident" }
+        service: { $ref: "#/components/schemas/ApprovalService" }
+        host: { $ref: "#/components/schemas/ApprovalHost" }
+
+    ApprovalList:
+      type: object
+      required: [items, total]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Approval" }
+        total: { type: integer }
 
     ApprovalDecision:
       type: object
       properties:
         note: { type: string }
+
+    ApprovalDecisionResult:
+      type: object
+      properties:
+        approval: { $ref: "#/components/schemas/Approval" }
+        action:
+          allOf:
+            - $ref: "#/components/schemas/Action"
+          nullable: true
+        incident:
+          type: object
+          properties:
+            id: { type: string }
+            status: { type: string }
 
     Action:
       type: object
@@ -1630,28 +1733,55 @@ components:
         enabled: { type: boolean }
         priority: { type: integer }
 
-    MailSettings:
+    MailSettingsInput:
       type: object
       required: [host, port, from, secure, recipients]
       properties:
         host: { type: string }
-        port: { type: integer }
-        secure: { type: boolean }
+        port: { type: integer, minimum: 1, maximum: 65535, default: 587 }
+        secure: { type: boolean, default: false }
         username: { type: string }
         password:
-          { type: string, description: "書き込み時のみ。取得時はマスク" }
+          {
+            type: string,
+            description: "書き込み時のみ。省略時は保存済みパスワードを維持",
+          }
+        clearPassword:
+          { type: boolean, description: "保存済みパスワードを削除する" }
         from: { type: string, format: email }
         recipients:
           type: array
           items: { type: string, format: email }
+          minItems: 1
         mode: { type: string, enum: [immediate, digest5m], default: immediate }
+
+    MailSettingsView:
+      type: object
+      required: [configured, source, host, port, from, secure, recipients]
+      properties:
+        configured: { type: boolean }
+        source: { type: string, enum: [db, env, none] }
+        host: { type: string }
+        port: { type: integer }
+        secure: { type: boolean }
+        username: { type: string }
+        from: { type: string }
+        recipients:
+          type: array
+          items: { type: string, format: email }
+        mode: { type: string, enum: [immediate, digest5m] }
+        passwordSet: { type: boolean }
 
     MailTestResult:
       type: object
-      required: [ok]
+      required: [accepted, recipients]
       properties:
-        ok: { type: boolean }
-        message: { type: string }
+        accepted:
+          type: array
+          items: { type: string, format: email }
+        recipients:
+          type: array
+          items: { type: string, format: email }
 
     AiSettings:
       type: object

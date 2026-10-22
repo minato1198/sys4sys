@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { appendFile, mkdir, unlink, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { join } from "node:path";
-import { runFile } from "@sys4sys/agent";
+import { runFile, stopProcess } from "@sys4sys/agent";
 import { buildApp } from "./app.js";
 
 process.env.LOG_LEVEL = process.env.LOG_LEVEL ?? "warn";
@@ -740,6 +740,213 @@ try {
           });
         }
         await unlink(logFile).catch(() => undefined);
+      }
+    }
+
+    // --- incidents / approvals (M3) --------------------------------------
+    if (windowsHost) {
+      const incidentServiceName = `smoke-incident-${suffix}`;
+      let incidentServiceId: string | null = null;
+      try {
+        const createIncidentService = await app.inject({
+          method: "POST",
+          url: "/api/services",
+          headers: {
+            cookie: admin.cookie,
+            "content-type": "application/json",
+          },
+          payload: {
+            hostId: windowsHost.id,
+            name: incidentServiceName,
+            command: [
+              process.execPath,
+              "-e",
+              'console.log("m3-ready");setInterval(()=>{},1000);',
+            ],
+            healthCheck: {
+              type: "process",
+              intervalSec: 2,
+              timeoutSec: 2,
+              failures: 2,
+            },
+            autoRestartPhase: "approve",
+          },
+        });
+        check(
+          "admin creates approval-mode service 201",
+          createIncidentService.statusCode === 201,
+        );
+        incidentServiceId = createIncidentService.json<ServiceBody>().id;
+
+        const startIncidentService = await app.inject({
+          method: "POST",
+          url: `/api/services/${incidentServiceId}/start`,
+          headers: { cookie: operatorCookie },
+        });
+        check(
+          "operator starts approval-mode service 202",
+          startIncidentService.statusCode === 202,
+        );
+
+        const incidentServiceRunning = await waitFor(
+          "approval-mode service running",
+          async () => {
+            const body = await fetchService(operatorCookie, incidentServiceId!);
+            return body?.status === "running" && body.pid ? body : null;
+          },
+          15_000,
+          250,
+        );
+        check(
+          "approval-mode service is running with pid",
+          typeof incidentServiceRunning.pid === "number",
+        );
+
+        const killedAt = Date.now();
+        await stopProcess({
+          scope: "windows",
+          pid: incidentServiceRunning.pid!,
+          signal: "KILL",
+          force: true,
+        });
+
+        const incident = await waitFor(
+          "process-exit incident",
+          async () => {
+            const response = await app.inject({
+              method: "GET",
+              url: `/api/incidents?serviceId=${incidentServiceId}&limit=10`,
+              headers: { cookie: operatorCookie },
+            });
+            if (response.statusCode !== 200) return null;
+            const body = response.json<{
+              items: Array<{
+                id: string;
+                serviceId: string;
+                pendingApprovalId: string | null;
+              }>;
+            }>();
+            return (
+              body.items.find((item) => item.serviceId === incidentServiceId) ??
+              null
+            );
+          },
+          15_000,
+          250,
+        );
+        const detectionMs = Date.now() - killedAt;
+        check(`incident detected (${detectionMs}ms)`, detectionMs < 30_000);
+        check(
+          "phase=approve creates a pending approval",
+          Boolean(incident.pendingApprovalId),
+        );
+
+        const viewerApprove = await app.inject({
+          method: "POST",
+          url: `/api/approvals/${incident.pendingApprovalId}/approve`,
+          headers: { cookie: viewerCookie },
+        });
+        check(
+          "viewer cannot approve restart",
+          viewerApprove.statusCode === 403,
+        );
+
+        const pendingApprovals = await app.inject({
+          method: "GET",
+          url: "/api/approvals?status=pending",
+          headers: { cookie: operatorCookie },
+        });
+        const pendingBody = pendingApprovals.json<{
+          items: Array<{ id: string }>;
+        }>();
+        check(
+          "approval queue contains the request",
+          pendingApprovals.statusCode === 200 &&
+            pendingBody.items.some(
+              (item) => item.id === incident.pendingApprovalId,
+            ),
+        );
+
+        const approved = await app.inject({
+          method: "POST",
+          url: `/api/approvals/${incident.pendingApprovalId}/approve`,
+          headers: {
+            cookie: operatorCookie,
+            "content-type": "application/json",
+          },
+          payload: { note: "smoke approval" },
+        });
+        check("operator approves restart 202", approved.statusCode === 202);
+
+        const resolvedIncident = await waitFor(
+          "incident resolved after restart",
+          async () => {
+            const response = await app.inject({
+              method: "GET",
+              url: `/api/incidents/${incident.id}`,
+              headers: { cookie: operatorCookie },
+            });
+            if (response.statusCode !== 200) return null;
+            const body = response.json<{
+              status: string;
+              actions: Array<{ type: string; status: string }>;
+            }>();
+            return body.status === "resolved" ? body : null;
+          },
+          45_000,
+          500,
+        );
+        check(
+          "incident resolved after approved restart",
+          resolvedIncident.status === "resolved",
+        );
+        check(
+          "approved restart action succeeded",
+          resolvedIncident.actions.some(
+            (action) =>
+              action.type === "restart" && action.status === "succeeded",
+          ),
+        );
+
+        const recovered = await fetchService(operatorCookie, incidentServiceId);
+        check(
+          "service is running after approved restart",
+          recovered?.status === "running" && Boolean(recovered.pid),
+        );
+
+        const mailSettings = await app.inject({
+          method: "GET",
+          url: "/api/settings/mail",
+          headers: { cookie: admin.cookie },
+        });
+        check(
+          "admin reads mail settings",
+          mailSettings.statusCode === 200 &&
+            typeof mailSettings.json<{ configured: boolean }>().configured ===
+              "boolean",
+        );
+        const viewerMailSettings = await app.inject({
+          method: "GET",
+          url: "/api/settings/mail",
+          headers: { cookie: viewerCookie },
+        });
+        check(
+          "viewer cannot read mail settings",
+          viewerMailSettings.statusCode === 403,
+        );
+      } finally {
+        if (incidentServiceId) {
+          await app.inject({
+            method: "POST",
+            url: `/api/services/${incidentServiceId}/stop`,
+            headers: { cookie: operatorCookie },
+          });
+          await app.inject({
+            method: "DELETE",
+            url: `/api/services/${incidentServiceId}`,
+            headers: { cookie: admin.cookie },
+          });
+        }
       }
     }
 

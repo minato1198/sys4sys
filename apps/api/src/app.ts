@@ -8,12 +8,16 @@ import { migrateDb } from "./db/migrate.js";
 import { ensureDefaultHosts } from "./hosts/bootstrap.js";
 import { cleanupLogs, startLogRetention } from "./logs/retention.js";
 import { startAllLogTailers, stopAllLogTailers } from "./logs/tailers.js";
+import { startMonitor, stopMonitor } from "./monitoring/engine.js";
+import { approvalRoutes } from "./routes/approvals.js";
 import { authRoutes } from "./routes/auth.js";
 import { healthRoutes } from "./routes/health.js";
 import { hostRoutes } from "./routes/hosts.js";
+import { incidentRoutes } from "./routes/incidents.js";
 import { logRoutes } from "./routes/logs.js";
 import { portRoutes } from "./routes/ports.js";
 import { serviceRoutes } from "./routes/services.js";
+import { settingsRoutes } from "./routes/settings.js";
 import { userRoutes } from "./routes/users.js";
 import { closeServiceWatchers, reconcileServices } from "./services/manager.js";
 
@@ -111,9 +115,11 @@ export async function buildApp() {
   await startAllLogTailers();
   await cleanupLogs();
   const retentionTimer = startLogRetention();
+  startMonitor();
 
   app.addHook("onClose", async () => {
     clearInterval(retentionTimer);
+    stopMonitor();
     stopAllLogTailers();
     closeServiceWatchers();
   });
@@ -174,6 +180,9 @@ export async function buildApp() {
   await app.register(userRoutes, { prefix: "/api" });
   await app.register(serviceRoutes, { prefix: "/api" });
   await app.register(logRoutes, { prefix: "/api" });
+  await app.register(incidentRoutes, { prefix: "/api" });
+  await app.register(approvalRoutes, { prefix: "/api" });
+  await app.register(settingsRoutes, { prefix: "/api" });
 
   return app;
 }

@@ -74,6 +74,56 @@ const envSchema = z.object({
     .string()
     .default("false")
     .transform((value) => value === "true"),
+
+  MONITOR_ENABLED: z
+    .string()
+    .default("true")
+    .transform((value) => value === "true"),
+  MONITOR_INTERVAL_SEC: z.coerce.number().int().min(5).max(3600).default(15),
+  MONITOR_STARTUP_DELAY_SEC: z.coerce.number().int().min(0).max(600).default(5),
+  MONITOR_HEARTBEAT_TIMEOUT_SEC: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(86_400)
+    .default(0),
+  MONITOR_ERROR_LOG_WINDOW_SEC: z.coerce
+    .number()
+    .int()
+    .min(30)
+    .max(86_400)
+    .default(300),
+  MONITOR_ERROR_LOG_THRESHOLD: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(10_000)
+    .default(0),
+  MONITOR_LOG_PATTERN: z.string().default(""),
+
+  INCIDENT_DEDUPE_MINUTES: z.coerce.number().int().min(1).max(1440).default(10),
+  AUTO_RESTART_COOLDOWN_SEC: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(86_400)
+    .default(60),
+  AUTO_RESTART_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(100).default(3),
+  AUTO_RESTART_WINDOW_SEC: z.coerce
+    .number()
+    .int()
+    .min(60)
+    .max(86_400)
+    .default(600),
+  AUTO_RESTART_BACKOFF_SEC: z.string().default("10,30,90"),
+  AUTO_RESTART_VERIFY_TIMEOUT_SEC: z.coerce
+    .number()
+    .int()
+    .min(5)
+    .max(600)
+    .default(30),
+
+  APP_BASE_URL: z.string().url().default("http://127.0.0.1:3000"),
 });
 
 const parsed = envSchema.safeParse(process.env);

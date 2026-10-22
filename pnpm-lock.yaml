@@ -203,6 +203,12 @@ importers:
       '@sys4sys/agent':
         specifier: workspace:*
         version: link:../agent
+      '@sys4sys/mail':
+        specifier: workspace:*
+        version: link:../../packages/mail
+      '@sys4sys/policy':
+        specifier: workspace:*
+        version: link:../../packages/policy
       '@sys4sys/shared':
         specifier: workspace:*
         version: link:../../packages/shared

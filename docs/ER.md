@@ -292,40 +292,55 @@ WSL 3.x では distro 間でネットワーク名前空間が共有されるた�
 ### 2.4 インシデントの重複排除
 
 - 同一 `service_id` + `fingerprint` が既定 10 分以内に再発した場合は既存インシデントに `incident_events` を追加
+- プロセスの異常終了とヘルス劣化は同じ原因として `service-failure:<serviceId>` に集約する
+- ハートビート / エラーログ / パターン監視は `heartbeat:<serviceId>` / `logs:<serviceId>` / `pattern:<serviceId>:<hash>` を使う
 - 解決後も 10 分以内なら再オープン
-- `status` 遷移: `open` → `acked` → `approval` → `resolved`（失敗時は `open` に戻す）
+- `status` 遷移: `open` → `acked` → `approval` → `resolved`（再発・失敗時は `open` に戻す）
 
 ### 2.5 承認とアクション
 
-- `approvals.requested_action` は `{ "type": "restart", "service_id": "..." }` のような JSON
-- 承認後に `actions` を作成し、実行結果を `actions.status` に反映
-- `actions.requested_by` / `approved_by` は `users.id`。システム起因は `NULL` + `audit_logs.actor_label = "system"`
+- `approvals.requested_action` は `{ "type": "restart", "serviceId": "...", "reason": "..." }` の JSON
+- 承認後に `actions` を作成し、実行結果を `actions.status` に反映。承認 API は `202` を返して非同期に再起動する
+- 復旧確認はヘルスチェック成功 + 安定待ち。ヘルスチェックがないサービスは 3 秒間 `running` を維持できるかで判定する
+- `actions.requested_by` / `approved_by` は実装上はメールアドレス文字列。システム起因は `system:auto` / `system:auto-retry`
+- 復旧成功時は同一サービスの未解決インシデントも自動解決する
 
 ### 2.6 設定の秘密値
 
 - `settings.value` に SMTP パスワードや AI API キーを入れる場合、アプリ層で AES-256-GCM 暗号化した文字列を保存
-- 鍵は OS 資格情報ストア（Windows Credential Manager）またはローカル鍵ファイル（`0600` 相当）
-- API 応答では常にマスク（`********`）し、`GET /settings/*` で平文を返さない
+- 暗号鍵は `SESSION_SECRET` から SHA-256 で導出する。`SESSION_SECRET` を変更すると保存済みパスワードは復号できない
+- 保存形式は `v1:<iv>:<tag>:<ciphertext>`（base64）。IV は保存ごとにランダム
+- API 応答では平文を返さず、`passwordSet` などのフラグだけを返す
+- env の SMTP 設定より DB の `settings.mail` を優先する。送信先が空の場合は有効な admin / operator にフォールバックする
+
+### 2.7 自動再起動の安全装置
+
+- 段階は `services.auto_restart_phase` の `observe` / `approve` / `auto`
+- `observe` は通知のみ、`approve` はインシデントごとに `approvals` を作成、`auto` はポリシー評価後に再起動
+- クールダウン、ウィンドウ内の最大試行回数、クラッシュループ（同一サービスが短期間に 3 回異常終了）、前回の復旧確認失敗でエスカレーション
+- 自動再起動は `AUTO_RESTART_BACKOFF_SEC` の指数バックオフに従う
+- 復旧確認に失敗した `auto` の再試行は最大試行回数まで。上限に達したら `critical` に昇格して通知する
 
 ---
 
 ## 3. 制約・インデックス
 
-| テーブル            | 制約 / インデックス                                          |
-| ------------------- | ------------------------------------------------------------ |
-| `users`             | `email` UNIQUE、`role` CHECK                                 |
-| `sessions`          | `token_hash` UNIQUE、`expires_at` INDEX                      |
-| `hosts`             | `(kind, distro)` UNIQUE（WSL）、`kind` CHECK                 |
-| `services`          | `(host_id, name)` UNIQUE                                     |
-| `ports`             | `(scope, protocol, address, port)` UNIQUE、`port` INDEX      |
-| `port_history`      | `(scope, port, opened_at)` INDEX、`closed_at` INDEX          |
-| `port_reservations` | `(protocol, port)` UNIQUE（Windows / WSL 横断）              |
-| `log_events`        | `(host_id, service_id, ts)` INDEX、`(fingerprint, ts)` INDEX |
-| `incidents`         | `(fingerprint, started_at)` INDEX、`status` INDEX            |
-| `approvals`         | `status` INDEX、`incident_id` INDEX                          |
-| `actions`           | `(service_id, started_at)` INDEX                             |
-| `audit_logs`        | `(ts)` INDEX、`actor_user_id` INDEX                          |
-| `settings`          | `key` PK                                                     |
+| テーブル            | 制約 / インデックス                                                   |
+| ------------------- | --------------------------------------------------------------------- |
+| `users`             | `email` UNIQUE、`role` CHECK                                          |
+| `sessions`          | `token_hash` UNIQUE、`expires_at` INDEX                               |
+| `hosts`             | `(kind, distro)` UNIQUE（WSL）、`kind` CHECK                          |
+| `services`          | `(host_id, name)` UNIQUE                                              |
+| `ports`             | `(scope, protocol, address, port)` UNIQUE、`port` INDEX               |
+| `port_history`      | `(scope, port, opened_at)` INDEX、`closed_at` INDEX                   |
+| `port_reservations` | `(protocol, port)` UNIQUE（Windows / WSL 横断）                       |
+| `log_events`        | `(host_id, service_id, ts)` INDEX、`(fingerprint, ts)` INDEX          |
+| `incidents`         | `(fingerprint, started_at)` INDEX、`status` INDEX、`service_id` INDEX |
+| `incident_events`   | `incident_id` INDEX                                                   |
+| `approvals`         | `status` INDEX、`incident_id` INDEX                                   |
+| `actions`           | `(service_id, started_at)` INDEX                                      |
+| `audit_logs`        | `(ts)` INDEX、`actor_user_id` INDEX                                   |
+| `settings`          | `key` PK                                                              |
 
 外部キーは SQLite の `PRAGMA foreign_keys = ON` を前提。削除は原則ソフトデリートではなく、`is_active` / `enabled` で無効化する（ログ・監査の参照整合性を保つ）。
 
