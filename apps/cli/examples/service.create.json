@@ -1,0 +1,36 @@
+{
+  "hostId": "REPLACE_WITH_HOST_ID",
+  "name": "demo-api",
+  "command": ["node.exe", "dist/server.js"],
+  "cwd": "C:\\path\\to\\sys4sys\\apps\\demo-api",
+  "env": {
+    "PORT": "4100",
+    "NODE_ENV": "production"
+  },
+  "expectedPorts": [4100],
+  "healthCheck": {
+    "type": "http",
+    "url": "http://127.0.0.1:4100/health",
+    "intervalSec": 10,
+    "timeoutSec": 3,
+    "failures": 3
+  },
+  "deploy": {
+    "command": [
+      "pwsh.exe",
+      "-NoProfile",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-File",
+      "deploy.ps1",
+      "-SkipPull",
+      "-NoRestart"
+    ],
+    "cwd": "C:\\path\\to\\sys4sys\\apps\\demo-api",
+    "timeoutSec": 900,
+    "restartAfter": true,
+    "healthTimeoutSec": 120
+  },
+  "autoStart": false,
+  "autoRestartPhase": "observe"
+}

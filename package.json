@@ -12,6 +12,7 @@
     "dev:api": "pnpm --filter @sys4sys/api dev",
     "dev:web": "pnpm --filter @sys4sys/web dev",
     "scan": "pnpm --filter @sys4sys/agent scan",
+    "sys4sys": "tsx apps/cli/src/index.ts",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",

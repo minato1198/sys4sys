@@ -1,0 +1,18 @@
+{
+  "deploy": {
+    "command": [
+      "pwsh.exe",
+      "-NoProfile",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-File",
+      "deploy.ps1",
+      "-SkipPull",
+      "-NoRestart"
+    ],
+    "cwd": "C:\\path\\to\\sys4sys\\apps\\demo-api",
+    "timeoutSec": 900,
+    "restartAfter": true,
+    "healthTimeoutSec": 120
+  }
+}

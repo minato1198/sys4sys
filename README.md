@@ -110,12 +110,29 @@ pnpm audit --prod
 | `pnpm dev:api`                     | API のみ起動                 |
 | `pnpm dev:web`                     | Web のみ起動                 |
 | `pnpm scan`                        | ポートスキャン CLI           |
+| `pnpm sys4sys -- --help`           | サービス登録・deploy CLI     |
 | `pnpm db:generate`                 | Drizzle マイグレーション生成 |
 | `pnpm db:migrate`                  | マイグレーション適用         |
 | `pnpm db:backup`                   | SQLite バックアップ          |
 | `pnpm --filter @sys4sys/api smoke` | 統合スモークテスト           |
 
 スモークテストは一時ポートと一時 DB を使用します。WSL やローカル LLM が利用できない環境では、該当するチェックがスキップされます。
+
+## CLI
+
+`@sys4sys/cli` でサービス登録や deploy 設定の登録を JSON から実行できます。
+
+```powershell
+$env:SYS4SYS_API_URL = "http://127.0.0.1:8787"
+$env:SYS4SYS_EMAIL = "admin@example.local"
+$env:SYS4SYS_PASSWORD = "..."
+
+pnpm sys4sys -- services list --json
+pnpm sys4sys -- services create --file apps/cli/examples/service.create.json --dry-run
+pnpm sys4sys -- services deploy <id> --dry-run
+```
+
+`env` / `deploy.env` は既定でマスクされます。詳細は [apps/cli/README.md](./apps/cli/README.md) を参照してください。
 
 ## セキュリティ
 
@@ -133,6 +150,7 @@ apps/
   api/        Fastify API / SQLite / 監視 / AI / デプロイ
   web/        Next.js ダッシュボード
   agent/      Windows / WSL ポートスキャン・プロセス操作
+  cli/        サービス登録・deploy 操作用 CLI
   demo-api/   サービス管理を試すためのデモ API
 packages/
   shared/     Zod スキーマ・共有型
