@@ -7,7 +7,10 @@ export interface AllowlistResult {
 }
 
 function normalizeCommandName(value: string): string {
-  const name = basename(value.trim()).toLowerCase();
+  // Accept both Windows and POSIX separators so the allowlist behaves the same
+  // when tests or deployments run on a different platform.
+  const normalized = value.trim().replace(/\\/g, "/");
+  const name = basename(normalized).toLowerCase();
   return name.replace(/\.(exe|cmd|bat|com)$/i, "");
 }
 
