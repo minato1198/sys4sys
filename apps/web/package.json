@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@sys4sys/shared": "workspace:*",
-    "next": "^15.5.4",
+    "next": "^16.4.2",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"
   },
