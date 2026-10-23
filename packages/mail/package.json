@@ -12,7 +12,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "nodemailer": "~10.0.16"
+    "nodemailer": "~10.1.7"
   },
   "devDependencies": {
     "@types/node": "^24.10.1",
