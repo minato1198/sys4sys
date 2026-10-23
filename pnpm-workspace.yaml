@@ -6,6 +6,9 @@ allowBuilds:
   better-sqlite3: true
   esbuild: true
 
+overrides:
+  postcss: ^8.5.31
+
 permissions:
   dotenv:
     skills: true

@@ -40,20 +40,20 @@ Invoke-RestMethod http://127.0.0.1:4100/health
 
 `/services` の「新しいサービス」で以下を入力します。
 
-| 項目               | 値                                               |
-| ------------------ | ------------------------------------------------ |
-| Host               | 起動済みの Windows ホスト                        |
-| Name               | `demo-api`                                       |
-| Command (JSON)     | `["node.exe","dist/server.js"]`                  |
-| CWD                | `C:\path\to\sys4sys\apps\demo-api` |
-| Env (JSON)         | `{"PORT":"4100","NODE_ENV":"production"}`        |
-| Expected ports     | `4100`                                           |
-| Auto restart phase | まず `observe`（慣れたら `approve` / `auto`）    |
-| autoStart          | 必要なら ON                                      |
-| Health check type  | `http`                                           |
-| Health check URL   | `http://127.0.0.1:4100/health`                   |
-| Interval / Timeout | `10` 秒 / `3` 秒                                 |
-| Failures           | `3`                                              |
+| 項目               | 値                                            |
+| ------------------ | --------------------------------------------- |
+| Host               | 起動済みの Windows ホスト                     |
+| Name               | `demo-api`                                    |
+| Command (JSON)     | `["node.exe","dist/server.js"]`               |
+| CWD                | `C:\path\to\sys4sys\apps\demo-api`            |
+| Env (JSON)         | `{"PORT":"4100","NODE_ENV":"production"}`     |
+| Expected ports     | `4100`                                        |
+| Auto restart phase | まず `observe`（慣れたら `approve` / `auto`） |
+| autoStart          | 必要なら ON                                   |
+| Health check type  | `http`                                        |
+| Health check URL   | `http://127.0.0.1:4100/health`                |
+| Interval / Timeout | `10` 秒 / `3` 秒                              |
+| Failures           | `3`                                           |
 
 登録後に「起動」を押すと、sys4sys が `node.exe dist/server.js` を `cwd` で起動します。
 stdout / stderr は自動的にログへ取り込まれます。
@@ -67,7 +67,7 @@ stdout / stderr は自動的にログへ取り込まれます。
 | 項目           | 推奨値                                                                                                |
 | -------------- | ----------------------------------------------------------------------------------------------------- |
 | Deploy command | `["pwsh.exe","-NoProfile","-ExecutionPolicy","Bypass","-File","deploy.ps1","-SkipPull","-NoRestart"]` |
-| Deploy CWD     | `C:\path\to\sys4sys\apps\demo-api`                                                      |
+| Deploy CWD     | `C:\path\to\sys4sys\apps\demo-api`                                                                    |
 | Timeout (sec)  | `900`                                                                                                 |
 | Restart after  | ON                                                                                                    |
 | Health timeout | `120`                                                                                                 |

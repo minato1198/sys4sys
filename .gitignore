@@ -9,17 +9,25 @@ coverage/
 .agents/
 
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
 
-data/*.db
-data/*.db-*
-data/*.sqlite
-data/*.sqlite-*
-**/data/*.db
-**/data/*.db-*
-**/data/*.sqlite
-**/data/*.sqlite-*
+# Local databases and backups (including SQLite WAL/SHM files)
+**/*.db
+**/*.db-*
+**/*.sqlite
+**/*.sqlite-*
+**/*.sqlite3
+**/*.sqlite3-*
+**/data/backups/
+
+# Local certificates / keys
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
 
 *.log
 .DS_Store

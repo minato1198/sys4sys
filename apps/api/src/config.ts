@@ -10,14 +10,17 @@ loadEnv({
   quiet: true,
 });
 
+const DEFAULT_SESSION_SECRET = "dev-only-session-secret-change-me";
+const INSECURE_SESSION_SECRETS = new Set([
+  DEFAULT_SESSION_SECRET,
+  "change-me-to-a-long-random-string",
+]);
+
 const envSchema = z.object({
   HOST: z.string().default("127.0.0.1"),
   PORT: z.coerce.number().int().min(1).max(65535).default(8787),
   DATABASE_URL: z.string().default("./data/sys4sys.db"),
-  SESSION_SECRET: z
-    .string()
-    .min(16)
-    .default("dev-only-session-secret-change-me"),
+  SESSION_SECRET: z.string().min(16).default(DEFAULT_SESSION_SECRET),
   SESSION_TTL_HOURS: z.coerce.number().int().min(1).max(8760).default(168),
   COOKIE_SECURE: z
     .string()
@@ -153,6 +156,17 @@ if (!parsed.success) {
   for (const issue of parsed.error.issues) {
     console.error(`  ${issue.path.join(".")}: ${issue.message}`);
   }
+  process.exit(1);
+}
+
+if (
+  process.env.NODE_ENV === "production" &&
+  (INSECURE_SESSION_SECRETS.has(parsed.data.SESSION_SECRET) ||
+    parsed.data.SESSION_SECRET.length < 32)
+) {
+  console.error(
+    "SESSION_SECRET must be a random value of at least 32 characters in production",
+  );
   process.exit(1);
 }
 

@@ -16,11 +16,24 @@ export interface OutgoingMail {
   html?: string;
 }
 
+function isLocalHost(host: string): boolean {
+  const normalized = host.trim().toLowerCase();
+  return (
+    normalized === "localhost" ||
+    normalized === "127.0.0.1" ||
+    normalized === "::1" ||
+    normalized.endsWith(".local")
+  );
+}
+
 export function createTransport(config: SmtpConfig): Transporter {
   return nodemailer.createTransport({
     host: config.host,
     port: config.port,
     secure: config.secure,
+    // 非ローカル SMTP では STARTTLS を必須にする。
+    // secure=true (implicit TLS) の場合は requireTLS は不要。
+    requireTLS: !config.secure && !isLocalHost(config.host),
     auth:
       config.username && config.password
         ? { user: config.username, pass: config.password }
@@ -54,7 +67,10 @@ export async function sendMail(
       text: mail.text,
       html: mail.html,
     });
-    return { messageId: info.messageId, accepted: info.accepted.map(String) };
+    return {
+      messageId: info.messageId,
+      accepted: info.accepted?.map(String) ?? [],
+    };
   } finally {
     transport.close();
   }

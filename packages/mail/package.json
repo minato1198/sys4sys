@@ -12,11 +12,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "nodemailer": "^7.0.6"
+    "nodemailer": "~10.0.16"
   },
   "devDependencies": {
     "@types/node": "^24.10.1",
-    "@types/nodemailer": "^7.0.2",
+    "@types/nodemailer": "^8.0.2",
     "typescript": "^5.9.3"
   }
 }

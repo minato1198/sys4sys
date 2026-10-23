@@ -23,6 +23,7 @@
 ```powershell
 pnpm install
 Copy-Item .env.example .env
+# .env の SESSION_SECRET を 32 文字以上のランダム値に変更
 # .env の ADMIN_PASSWORD を 12 文字以上で設定（推奨）
 pnpm dev
 ```
@@ -40,6 +41,7 @@ pnpm dev
 - 初回起動時に `users` が空なら管理者を 1 人作成
   - `ADMIN_EMAIL` / `ADMIN_PASSWORD` を `.env` に設定（本番では `ADMIN_PASSWORD` 必須）
   - 開発時に `ADMIN_PASSWORD` が空ならランダム生成し、起動ログに一度だけ表示
+  - 本番では `SESSION_SECRET` のプレースホルダー値を拒否。HTTPS 運用時は `COOKIE_SECURE=true` を設定
 - ログイン試行制限: `LOGIN_MAX_ATTEMPTS` 回 / `LOGIN_WINDOW_MINUTES` 分（既定 5 回 / 15 分）
 - パスワード変更時は現在のセッション以外を無効化
 - 変更系リクエストは `Origin` / `Sec-Fetch-Site` を検証（`ALLOWED_ORIGINS`、既定は localhost:3000 / 8787）
@@ -93,7 +95,7 @@ pnpm dev
 - **再起動**: 承認後は `actions` に restart を記録して非同期実行し、API は `202` を返す。復旧確認（ヘルスチェック / 3 秒安定）に成功するとインシデントを自動解決
 - **自動復旧**: `observe`（通知のみ）/ `approve`（承認後）/ `auto`（安全装置内で自動）。クールダウン、最大試行、クラッシュループ、復旧確認失敗でエスカレーション
 - **メール**: 検知・承認待ち・承認・却下・復旧・復旧失敗・エスカレーションを通知。SMTP 未設定時は送信をスキップしてログのみ
-- **SMTP 設定**: `/settings`（admin）で登録。DB の設定を env より優先し、パスワードは `SESSION_SECRET` から導出した鍵で AES-256-GCM 暗号化。API は平文を返さない
+- **SMTP 設定**: `/settings`（admin）で登録。DB の設定を env より優先し、パスワードは `SESSION_SECRET` から導出した鍵で AES-256-GCM 暗号化。API は平文を返さない。非ローカル SMTP は STARTTLS 必須（ローカル SMTP のみ例外）
 - **送信先**: `MAIL_RECIPIENTS`。空の場合は有効な admin / operator のメールアドレス
 - **ダイジェスト**: `digest5m` は設定値として保存できるが、現時点では即時送信として扱う
 
@@ -290,3 +292,7 @@ pnpm --filter @sys4sys/api smoke
 ```
 
 `ADMIN_PASSWORD` を設定しない場合、認証以降のチェックはスキップされます。ローカル LLM が起動していない場合、`local OpenAI-compatible API is reachable` が失敗し、AI 分析・レポート・監査・保持期間・バックアップのチェックはスキップされます（M1〜M3 は継続）。WSL の distro は停止中でも、サービス起動時に `wsl.exe -d` で暗黙起動されます。
+
+## License
+
+MIT. See [LICENSE](./LICENSE).
