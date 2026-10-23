@@ -327,8 +327,8 @@ importers:
   packages/mail:
     dependencies:
       nodemailer:
-        specifier: ~10.0.16
-        version: 10.0.16
+        specifier: ~10.1.7
+        version: 10.1.7
     devDependencies:
       '@types/node':
         specifier: ^24.10.1
@@ -1864,8 +1864,8 @@ packages:
     resolution: {integrity: sha512-lLdwkeg2XUVPTHqWjPltTxH81zbQNbUWC+AEb9ni50KjxkUzAAx1HGtMT21sbntzfUGfIphhcklvs3imJeqDXw==}
     engines: {node: '>=10'}
 
-  nodemailer@10.0.16:
-    resolution: {integrity: sha512-VL9xKErxN+el77o8eBOuYKUPMyEx7F9hfnDCuiUKJRp9v3wnWMOudYgP/SWbwSHy8rUL4cylobuXtki1LpQS7A==}
+  nodemailer@10.1.7:
+    resolution: {integrity: sha512-OQa6FDln5fLttmqSbjDiRYvFDOFNrBqfiOwHPlEbURil3b+vPB1v8xpi+Sp46drzNDlsTnNsS502vthmz56r4w==}
     engines: {node: '>=20.0.0'}
 
   on-exit-leak-free@2.1.2:
@@ -3304,7 +3304,7 @@ snapshots:
     dependencies:
       semver: 7.8.5
 
-  nodemailer@10.0.16: {}
+  nodemailer@10.1.7: {}
 
   on-exit-leak-free@2.1.2: {}
 
