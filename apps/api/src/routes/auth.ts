@@ -109,9 +109,28 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     return toAuthUser(user);
   });
 
-  app.get("/auth/me", { preHandler: requireAuth }, async (request) => {
-    return request.authUser ?? null;
-  });
+  app.get(
+    "/auth/me",
+    { preHandler: requireAuth, config: { authOnly: true } },
+    async (request) => {
+      const user = request.authUser;
+      if (!user) return null;
+      return {
+        ...user,
+        authMethod: request.authMethod ?? "session",
+        scopes: request.authScopes ?? [],
+        ...(request.authToken
+          ? {
+              token: {
+                id: request.authToken.id,
+                name: request.authToken.name,
+                prefix: request.authToken.prefix,
+              },
+            }
+          : {}),
+      };
+    },
+  );
 
   app.post("/auth/logout", async (request, reply) => {
     const token = request.cookies[SESSION_COOKIE];

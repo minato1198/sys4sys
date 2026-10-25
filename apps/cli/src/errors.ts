@@ -9,7 +9,10 @@ export class CliError extends Error {
 }
 
 export class UsageError extends CliError {
-  constructor(message: string) {
+  constructor(
+    message: string,
+    readonly details?: Record<string, unknown>,
+  ) {
     super(message, 2);
     this.name = "UsageError";
   }

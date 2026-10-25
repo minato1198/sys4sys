@@ -1,6 +1,7 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { and, eq, gt, lt, ne } from "drizzle-orm";
 import type { FastifyReply, FastifyRequest } from "fastify";
+import { scopesForRole, type TokenScope } from "@sys4sys/shared";
 import { config } from "../config.js";
 import { db } from "../db/index.js";
 import { sessions, users } from "../db/schema.js";
@@ -63,6 +64,7 @@ export function clearSessionCookie(reply: FastifyReply): void {
 export interface SessionContext {
   user: AuthUser;
   sessionId: string;
+  scopes: TokenScope[];
 }
 
 export async function getSession(
@@ -100,6 +102,7 @@ export async function getSession(
       role: row.role,
     },
     sessionId: row.sessionId,
+    scopes: scopesForRole(row.role),
   };
 }
 

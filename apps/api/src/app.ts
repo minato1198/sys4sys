@@ -4,6 +4,7 @@ import { ZodError } from "zod";
 import { stopAnalysisQueue } from "./ai/queue.js";
 import { ensureAdminUser } from "./auth/bootstrap.js";
 import { cleanupExpiredSessions } from "./auth/session.js";
+import { cleanupExpiredTokens } from "./auth/tokens.js";
 import { config } from "./config.js";
 import { migrateDb } from "./db/migrate.js";
 import { ensureDefaultHosts } from "./hosts/bootstrap.js";
@@ -22,6 +23,7 @@ import { portRoutes } from "./routes/ports.js";
 import { reportRoutes } from "./routes/reports.js";
 import { serviceRoutes } from "./routes/services.js";
 import { settingsRoutes } from "./routes/settings.js";
+import { tokenRoutes } from "./routes/tokens.js";
 import { userRoutes } from "./routes/users.js";
 import { reconcileDeployments } from "./services/deploy.js";
 import { closeServiceWatchers, reconcileServices } from "./services/manager.js";
@@ -116,6 +118,7 @@ export async function buildApp() {
     }
   }
   await cleanupExpiredSessions();
+  await cleanupExpiredTokens();
   await reconcileServices();
   await reconcileDeployments();
   await startAllLogTailers();
@@ -182,6 +185,7 @@ export async function buildApp() {
 
   await app.register(healthRoutes, { prefix: "/api" });
   await app.register(authRoutes, { prefix: "/api" });
+  await app.register(tokenRoutes, { prefix: "/api" });
   await app.register(portRoutes, { prefix: "/api" });
   await app.register(hostRoutes, { prefix: "/api" });
   await app.register(userRoutes, { prefix: "/api" });

@@ -23,7 +23,7 @@ function auditResponse(row: typeof auditLogs.$inferSelect) {
 export async function auditRoutes(app: FastifyInstance): Promise<void> {
   app.get(
     "/audit-logs",
-    { preHandler: requireRole("admin") },
+    { preHandler: requireRole("admin"), config: { scopes: ["audit:read"] } },
     async (request) => {
       const query = auditLogQuerySchema.parse(request.query);
       const actor = query.actor?.trim();

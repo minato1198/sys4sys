@@ -1,0 +1,1035 @@
+{
+  "schemaVersion": "1",
+  "cliVersion": "0.1.0",
+  "auth": {
+    "methods": [
+      "token",
+      "session"
+    ],
+    "tokenHeader": "Authorization: Bearer <token>"
+  },
+  "exitCodes": {
+    "0": "success",
+    "1": "general error",
+    "2": "usage error",
+    "3": "auth error",
+    "4": "conflict",
+    "5": "async failure"
+  },
+  "commands": [
+    {
+      "name": "whoami",
+      "summary": "現在の認証ユーザーを表示",
+      "description": "認証方式・ロール・スコープを表示する。トークン全文は表示しない。",
+      "phase": "P0",
+      "mutating": false,
+      "requiresConfirmation": false,
+      "requiredScopes": [],
+      "positionals": [],
+      "options": {
+        "type": "object",
+        "properties": {
+          "api": {
+            "type": "string",
+            "description": "API のルート URL",
+            "default": "http://127.0.0.1:8787"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "JSON で出力"
+          },
+          "help": {
+            "type": "boolean",
+            "description": "ヘルプを表示"
+          }
+        },
+        "additionalProperties": false
+      },
+      "examples": [
+        "sys4sys whoami",
+        "sys4sys whoami --json"
+      ]
+    },
+    {
+      "name": "auth login",
+      "summary": "メール/パスワードでログインして資格情報を保存",
+      "description": "パスワードは --password-stdin または TTY の hidden prompt で受け取る。既存の保存トークンは削除する。",
+      "phase": "P0",
+      "mutating": false,
+      "requiresConfirmation": false,
+      "requiredScopes": [],
+      "positionals": [],
+      "options": {
+        "type": "object",
+        "properties": {
+          "api": {
+            "type": "string",
+            "description": "API のルート URL",
+            "default": "http://127.0.0.1:8787"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "JSON で出力"
+          },
+          "help": {
+            "type": "boolean",
+            "description": "ヘルプを表示"
+          },
+          "email": {
+            "type": "string",
+            "description": "ログインメール"
+          },
+          "password-stdin": {
+            "type": "boolean",
+            "description": "標準入力からパスワードを読む"
+          }
+        },
+        "additionalProperties": false
+      },
+      "examples": [
+        "sys4sys auth login --email admin@example.local --password-stdin"
+      ]
+    },
+    {
+      "name": "auth logout",
+      "summary": "保存済みの資格情報を削除",
+      "description": "保存済みトークンは --revoke-token で API 失効できる。環境変数のトークンは失効しない。",
+      "phase": "P0",
+      "mutating": true,
+      "requiresConfirmation": false,
+      "requiredScopes": [],
+      "positionals": [],
+      "options": {
+        "type": "object",
+        "properties": {
+          "api": {
+            "type": "string",
+            "description": "API のルート URL",
+            "default": "http://127.0.0.1:8787"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "JSON で出力"
+          },
+          "help": {
+            "type": "boolean",
+            "description": "ヘルプを表示"
+          },
+          "revoke-token": {
+            "type": "boolean",
+            "description": "保存済みトークンの API 失効を必須にする"
+          }
+        },
+        "additionalProperties": false
+      },
+      "examples": [
+        "sys4sys auth logout",
+        "sys4sys auth logout --revoke-token"
+      ]
+    },
+    {
+      "name": "auth status",
+      "summary": "認証状態と資格情報の取得元を表示",
+      "phase": "P0",
+      "mutating": false,
+      "requiresConfirmation": false,
+      "requiredScopes": [],
+      "positionals": [],
+      "options": {
+        "type": "object",
+        "properties": {
+          "api": {
+            "type": "string",
+            "description": "API のルート URL",
+            "default": "http://127.0.0.1:8787"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "JSON で出力"
+          },
+          "help": {
+            "type": "boolean",
+            "description": "ヘルプを表示"
+          }
+        },
+        "additionalProperties": false
+      },
+      "examples": [
+        "sys4sys auth status",
+        "sys4sys auth status --json"
+      ]
+    },
+    {
+      "name": "hosts list",
+      "summary": "ホスト一覧を表示",
+      "phase": "P0",
+      "mutating": false,
+      "requiresConfirmation": false,
+      "requiredScopes": [
+        "hosts:read"
+      ],
+      "positionals": [],
+      "options": {
+        "type": "object",
+        "properties": {
+          "api": {
+            "type": "string",
+            "description": "API のルート URL",
+            "default": "http://127.0.0.1:8787"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "JSON で出力"
+          },
+          "help": {
+            "type": "boolean",
+            "description": "ヘルプを表示"
+          }
+        },
+        "additionalProperties": false
+      },
+      "examples": [
+        "sys4sys hosts list",
+        "sys4sys hosts list --json"
+      ]
+    },
+    {
+      "name": "services list",
+      "summary": "サービス一覧を表示",
+      "phase": "P0",
+      "mutating": false,
+      "requiresConfirmation": false,
+      "requiredScopes": [
+        "services:read"
+      ],
+      "positionals": [],
+      "options": {
+        "type": "object",
+        "properties": {
+          "api": {
+            "type": "string",
+            "description": "API のルート URL",
+            "default": "http://127.0.0.1:8787"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "JSON で出力"
+          },
+          "help": {
+            "type": "boolean",
+            "description": "ヘルプを表示"
+          },
+          "host": {
+            "type": "string",
+            "description": "ホスト ID で絞り込む"
+          },
+          "status": {
+            "type": "string",
+            "description": "ステータスで絞り込む"
+          },
+          "show-env": {
+            "type": "boolean",
+            "description": "env / deploy.env の値を表示（既定はマスク）"
+          }
+        },
+        "additionalProperties": false
+      },
+      "examples": [
+        "sys4sys services list",
+        "sys4sys services list --host <host-id> --status running --json"
+      ]
+    },
+    {
+      "name": "services get",
+      "summary": "サービスの詳細を表示",
+      "phase": "P0",
+      "mutating": false,
+      "requiresConfirmation": false,
+      "requiredScopes": [
+        "services:read"
+      ],
+      "positionals": [
+        {
+          "name": "id",
+          "required": true,
+          "description": "サービス ID"
+        }
+      ],
+      "options": {
+        "type": "object",
+        "properties": {
+          "api": {
+            "type": "string",
+            "description": "API のルート URL",
+            "default": "http://127.0.0.1:8787"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "JSON で出力"
+          },
+          "help": {
+            "type": "boolean",
+            "description": "ヘルプを表示"
+          },
+          "show-env": {
+            "type": "boolean",
+            "description": "env / deploy.env の値を表示（既定はマスク）"
+          }
+        },
+        "additionalProperties": false
+      },
+      "examples": [
+        "sys4sys services get <id>",
+        "sys4sys services get <id> --json"
+      ]
+    },
+    {
+      "name": "services create",
+      "summary": "サービスを作成",
+      "phase": "P0",
+      "mutating": true,
+      "requiresConfirmation": false,
+      "requiredScopes": [
+        "services:write"
+      ],
+      "positionals": [],
+      "options": {
+        "type": "object",
+        "properties": {
+          "api": {
+            "type": "string",
+            "description": "API のルート URL",
+            "default": "http://127.0.0.1:8787"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "JSON で出力"
+          },
+          "help": {
+            "type": "boolean",
+            "description": "ヘルプを表示"
+          },
+          "file": {
+            "type": "string",
+            "description": "サービス定義 JSON（- は標準入力）"
+          },
+          "dry-run": {
+            "type": "boolean",
+            "description": "API を変更せず検証・表示のみ"
+          },
+          "show-env": {
+            "type": "boolean",
+            "description": "env / deploy.env の値を表示（既定はマスク）"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "additionalProperties": false
+      },
+      "examples": [
+        "sys4sys services create --file service.json --dry-run",
+        "sys4sys services create --file - < service.json"
+      ]
+    },
+    {
+      "name": "services update",
+      "summary": "サービスを更新",
+      "phase": "P0",
+      "mutating": true,
+      "requiresConfirmation": false,
+      "requiredScopes": [
+        "services:write"
+      ],
+      "positionals": [
+        {
+          "name": "id",
+          "required": true,
+          "description": "サービス ID"
+        }
+      ],
+      "options": {
+        "type": "object",
+        "properties": {
+          "api": {
+            "type": "string",
+            "description": "API のルート URL",
+            "default": "http://127.0.0.1:8787"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "JSON で出力"
+          },
+          "help": {
+            "type": "boolean",
+            "description": "ヘルプを表示"
+          },
+          "file": {
+            "type": "string",
+            "description": "更新内容の JSON（- は標準入力）"
+          },
+          "dry-run": {
+            "type": "boolean",
+            "description": "API を変更せず検証・表示のみ"
+          },
+          "show-env": {
+            "type": "boolean",
+            "description": "env / deploy.env の値を表示（既定はマスク）"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "additionalProperties": false
+      },
+      "examples": [
+        "sys4sys services update <id> --file patch.json --dry-run"
+      ]
+    },
+    {
+      "name": "services deploy",
+      "summary": "サービスをデプロイ",
+      "phase": "P0",
+      "mutating": true,
+      "requiresConfirmation": true,
+      "requiredScopes": [
+        "deploy:execute"
+      ],
+      "positionals": [
+        {
+          "name": "id",
+          "required": true,
+          "description": "サービス ID"
+        }
+      ],
+      "options": {
+        "type": "object",
+        "properties": {
+          "api": {
+            "type": "string",
+            "description": "API のルート URL",
+            "default": "http://127.0.0.1:8787"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "JSON で出力"
+          },
+          "help": {
+            "type": "boolean",
+            "description": "ヘルプを表示"
+          },
+          "dry-run": {
+            "type": "boolean",
+            "description": "API を変更せず検証・表示のみ"
+          },
+          "yes": {
+            "type": "boolean",
+            "description": "確認を省略"
+          },
+          "wait": {
+            "type": "boolean",
+            "description": "完了まで待つ"
+          },
+          "timeout": {
+            "type": "string",
+            "description": "待ち時間のタイムアウト秒",
+            "default": "60"
+          },
+          "show-env": {
+            "type": "boolean",
+            "description": "env / deploy.env の値を表示（既定はマスク）"
+          }
+        },
+        "additionalProperties": false
+      },
+      "examples": [
+        "sys4sys services deploy <id> --dry-run",
+        "sys4sys services deploy <id> --yes --wait --timeout 120"
+      ]
+    },
+    {
+      "name": "services start",
+      "summary": "サービスを開始",
+      "phase": "P0",
+      "mutating": true,
+      "requiresConfirmation": false,
+      "requiredScopes": [
+        "services:operate"
+      ],
+      "positionals": [
+        {
+          "name": "id",
+          "required": true,
+          "description": "サービス ID"
+        }
+      ],
+      "options": {
+        "type": "object",
+        "properties": {
+          "api": {
+            "type": "string",
+            "description": "API のルート URL",
+            "default": "http://127.0.0.1:8787"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "JSON で出力"
+          },
+          "help": {
+            "type": "boolean",
+            "description": "ヘルプを表示"
+          },
+          "wait": {
+            "type": "boolean",
+            "description": "完了まで待つ"
+          },
+          "timeout": {
+            "type": "string",
+            "description": "待ち時間のタイムアウト秒",
+            "default": "60"
+          }
+        },
+        "additionalProperties": false
+      },
+      "examples": [
+        "sys4sys services start <id> --wait --json"
+      ]
+    },
+    {
+      "name": "services stop",
+      "summary": "サービスを停止",
+      "phase": "P0",
+      "mutating": true,
+      "requiresConfirmation": true,
+      "requiredScopes": [
+        "services:operate"
+      ],
+      "positionals": [
+        {
+          "name": "id",
+          "required": true,
+          "description": "サービス ID"
+        }
+      ],
+      "options": {
+        "type": "object",
+        "properties": {
+          "api": {
+            "type": "string",
+            "description": "API のルート URL",
+            "default": "http://127.0.0.1:8787"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "JSON で出力"
+          },
+          "help": {
+            "type": "boolean",
+            "description": "ヘルプを表示"
+          },
+          "yes": {
+            "type": "boolean",
+            "description": "確認を省略"
+          },
+          "dry-run": {
+            "type": "boolean",
+            "description": "API を変更せず検証・表示のみ"
+          },
+          "wait": {
+            "type": "boolean",
+            "description": "完了まで待つ"
+          },
+          "timeout": {
+            "type": "string",
+            "description": "待ち時間のタイムアウト秒",
+            "default": "60"
+          }
+        },
+        "additionalProperties": false
+      },
+      "examples": [
+        "sys4sys services stop <id> --yes --wait"
+      ]
+    },
+    {
+      "name": "services restart",
+      "summary": "サービスを再起動",
+      "phase": "P0",
+      "mutating": true,
+      "requiresConfirmation": true,
+      "requiredScopes": [
+        "services:operate"
+      ],
+      "positionals": [
+        {
+          "name": "id",
+          "required": true,
+          "description": "サービス ID"
+        }
+      ],
+      "options": {
+        "type": "object",
+        "properties": {
+          "api": {
+            "type": "string",
+            "description": "API のルート URL",
+            "default": "http://127.0.0.1:8787"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "JSON で出力"
+          },
+          "help": {
+            "type": "boolean",
+            "description": "ヘルプを表示"
+          },
+          "yes": {
+            "type": "boolean",
+            "description": "確認を省略"
+          },
+          "dry-run": {
+            "type": "boolean",
+            "description": "API を変更せず検証・表示のみ"
+          },
+          "wait": {
+            "type": "boolean",
+            "description": "完了まで待つ"
+          },
+          "timeout": {
+            "type": "string",
+            "description": "待ち時間のタイムアウト秒",
+            "default": "60"
+          }
+        },
+        "additionalProperties": false
+      },
+      "examples": [
+        "sys4sys services restart <id> --yes --wait"
+      ]
+    },
+    {
+      "name": "services delete",
+      "summary": "サービスを削除",
+      "phase": "P0",
+      "mutating": true,
+      "requiresConfirmation": true,
+      "requiredScopes": [
+        "services:write"
+      ],
+      "positionals": [
+        {
+          "name": "id",
+          "required": true,
+          "description": "サービス ID"
+        }
+      ],
+      "options": {
+        "type": "object",
+        "properties": {
+          "api": {
+            "type": "string",
+            "description": "API のルート URL",
+            "default": "http://127.0.0.1:8787"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "JSON で出力"
+          },
+          "help": {
+            "type": "boolean",
+            "description": "ヘルプを表示"
+          },
+          "yes": {
+            "type": "boolean",
+            "description": "確認を省略"
+          },
+          "dry-run": {
+            "type": "boolean",
+            "description": "API を変更せず検証・表示のみ"
+          }
+        },
+        "additionalProperties": false
+      },
+      "examples": [
+        "sys4sys services delete <id> --dry-run",
+        "sys4sys services delete <id> --yes"
+      ]
+    },
+    {
+      "name": "services actions",
+      "summary": "サービスのアクション履歴を表示",
+      "phase": "P0",
+      "mutating": false,
+      "requiresConfirmation": false,
+      "requiredScopes": [
+        "services:read"
+      ],
+      "positionals": [
+        {
+          "name": "id",
+          "required": true,
+          "description": "サービス ID"
+        }
+      ],
+      "options": {
+        "type": "object",
+        "properties": {
+          "api": {
+            "type": "string",
+            "description": "API のルート URL",
+            "default": "http://127.0.0.1:8787"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "JSON で出力"
+          },
+          "help": {
+            "type": "boolean",
+            "description": "ヘルプを表示"
+          },
+          "limit": {
+            "type": "string",
+            "description": "取得件数（1〜200）",
+            "default": "50"
+          },
+          "cursor": {
+            "type": "string",
+            "description": "次ページカーソル（<startedAt>|<id>）"
+          }
+        },
+        "additionalProperties": false
+      },
+      "examples": [
+        "sys4sys services actions <id> --limit 10 --json"
+      ]
+    },
+    {
+      "name": "tokens list",
+      "summary": "API トークン一覧を表示",
+      "description": "トークン全文は表示しない。他ユーザーの一覧には tokens:manage が必要。",
+      "phase": "P0",
+      "mutating": false,
+      "requiresConfirmation": false,
+      "requiredScopes": [
+        "tokens:manage"
+      ],
+      "positionals": [],
+      "options": {
+        "type": "object",
+        "properties": {
+          "api": {
+            "type": "string",
+            "description": "API のルート URL",
+            "default": "http://127.0.0.1:8787"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "JSON で出力"
+          },
+          "help": {
+            "type": "boolean",
+            "description": "ヘルプを表示"
+          },
+          "user": {
+            "type": "string",
+            "description": "ユーザー ID を指定"
+          }
+        },
+        "additionalProperties": false
+      },
+      "examples": [
+        "sys4sys tokens list",
+        "sys4sys tokens list --user <user-id> --json"
+      ]
+    },
+    {
+      "name": "tokens create",
+      "summary": "API トークンを発行",
+      "description": "トークン全文が表示されるのは発行時だけ。",
+      "phase": "P0",
+      "mutating": true,
+      "requiresConfirmation": false,
+      "requiredScopes": [
+        "tokens:manage"
+      ],
+      "positionals": [],
+      "options": {
+        "type": "object",
+        "properties": {
+          "api": {
+            "type": "string",
+            "description": "API のルート URL",
+            "default": "http://127.0.0.1:8787"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "JSON で出力"
+          },
+          "help": {
+            "type": "boolean",
+            "description": "ヘルプを表示"
+          },
+          "name": {
+            "type": "string",
+            "description": "トークン名"
+          },
+          "scope": {
+            "type": "array",
+            "description": "スコープ（複数回またはカンマ区切り）",
+            "items": {
+              "type": "string"
+            }
+          },
+          "expires-in": {
+            "type": "string",
+            "description": "有効日数（1〜365）",
+            "default": "90"
+          },
+          "user": {
+            "type": "string",
+            "description": "対象ユーザー ID（tokens:manage が必要）"
+          },
+          "save": {
+            "type": "boolean",
+            "description": "発行したトークンを資格情報ストアに保存"
+          }
+        },
+        "required": [
+          "name",
+          "scope"
+        ],
+        "additionalProperties": false
+      },
+      "examples": [
+        "sys4sys tokens create --name ci --scope services:read --scope logs:read",
+        "sys4sys tokens create --name ci --scope services:read,logs:read --save"
+      ]
+    },
+    {
+      "name": "tokens revoke",
+      "summary": "API トークンを失効",
+      "phase": "P0",
+      "mutating": true,
+      "requiresConfirmation": true,
+      "requiredScopes": [
+        "tokens:manage"
+      ],
+      "positionals": [
+        {
+          "name": "id",
+          "required": true,
+          "description": "トークン ID"
+        }
+      ],
+      "options": {
+        "type": "object",
+        "properties": {
+          "api": {
+            "type": "string",
+            "description": "API のルート URL",
+            "default": "http://127.0.0.1:8787"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "JSON で出力"
+          },
+          "help": {
+            "type": "boolean",
+            "description": "ヘルプを表示"
+          },
+          "yes": {
+            "type": "boolean",
+            "description": "確認を省略"
+          }
+        },
+        "additionalProperties": false
+      },
+      "examples": [
+        "sys4sys tokens revoke <token-id> --yes"
+      ]
+    },
+    {
+      "name": "logs query",
+      "summary": "ログを検索",
+      "description": "ログ本文には秘密情報が含まれ得る。外部 AI に渡す前に内容を確認する。",
+      "phase": "P0",
+      "mutating": false,
+      "requiresConfirmation": false,
+      "requiredScopes": [
+        "logs:read"
+      ],
+      "positionals": [],
+      "options": {
+        "type": "object",
+        "properties": {
+          "api": {
+            "type": "string",
+            "description": "API のルート URL",
+            "default": "http://127.0.0.1:8787"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "JSON で出力"
+          },
+          "help": {
+            "type": "boolean",
+            "description": "ヘルプを表示"
+          },
+          "host": {
+            "type": "string",
+            "description": "ホスト ID"
+          },
+          "service": {
+            "type": "string",
+            "description": "サービス ID"
+          },
+          "level": {
+            "type": "string",
+            "description": "ログレベル"
+          },
+          "grep": {
+            "type": "string",
+            "description": "本文の部分一致"
+          },
+          "since": {
+            "type": "string",
+            "description": "開始時刻（ISO または 15m / 2h / 1d）"
+          },
+          "until": {
+            "type": "string",
+            "description": "終了時刻（ISO のみ）"
+          },
+          "limit": {
+            "type": "string",
+            "description": "取得件数（1〜500）",
+            "default": "100"
+          },
+          "cursor": {
+            "type": "string",
+            "description": "次ページカーソル（ISO）"
+          },
+          "no-truncate": {
+            "type": "boolean",
+            "description": "メッセージを切り詰めない"
+          }
+        },
+        "additionalProperties": false
+      },
+      "examples": [
+        "sys4sys logs query --service <id> --level error --since 2h",
+        "sys4sys logs query --grep \"ECONNRESET\" --limit 20 --json"
+      ]
+    },
+    {
+      "name": "logs tail",
+      "summary": "ログをリアルタイムに追う（SSE）",
+      "description": "Ctrl+C で終了する。切断時は指数バックオフで再接続する。ログ本文には秘密情報が含まれ得る。",
+      "phase": "P0",
+      "mutating": false,
+      "requiresConfirmation": false,
+      "requiredScopes": [
+        "logs:read"
+      ],
+      "positionals": [],
+      "options": {
+        "type": "object",
+        "properties": {
+          "api": {
+            "type": "string",
+            "description": "API のルート URL",
+            "default": "http://127.0.0.1:8787"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "JSON で出力"
+          },
+          "help": {
+            "type": "boolean",
+            "description": "ヘルプを表示"
+          },
+          "host": {
+            "type": "string",
+            "description": "ホスト ID"
+          },
+          "service": {
+            "type": "string",
+            "description": "サービス ID"
+          },
+          "level": {
+            "type": "string",
+            "description": "ログレベル"
+          },
+          "grep": {
+            "type": "string",
+            "description": "本文の部分一致"
+          },
+          "since": {
+            "type": "string",
+            "description": "開始時刻（ISO または 15m / 2h / 1d）"
+          },
+          "until": {
+            "type": "string",
+            "description": "終了時刻（ISO のみ）"
+          },
+          "no-reconnect": {
+            "type": "boolean",
+            "description": "切断時に再接続しない"
+          },
+          "no-truncate": {
+            "type": "boolean",
+            "description": "メッセージを切り詰めない"
+          }
+        },
+        "additionalProperties": false
+      },
+      "examples": [
+        "sys4sys logs tail --service <id>",
+        "sys4sys logs tail --level error --json"
+      ]
+    },
+    {
+      "name": "schema",
+      "summary": "CLI の機械可読なコマンド契約を出力",
+      "description": "既定は Markdown。AI / MCP は --json を使う。",
+      "phase": "P0",
+      "mutating": false,
+      "requiresConfirmation": false,
+      "requiredScopes": [],
+      "positionals": [
+        {
+          "name": "command",
+          "required": false,
+          "description": "完全名（例: services list）"
+        }
+      ],
+      "options": {
+        "type": "object",
+        "properties": {
+          "api": {
+            "type": "string",
+            "description": "API のルート URL",
+            "default": "http://127.0.0.1:8787"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "JSON で出力"
+          },
+          "help": {
+            "type": "boolean",
+            "description": "ヘルプを表示"
+          },
+          "md": {
+            "type": "boolean",
+            "description": "Markdown で出力（既定）"
+          }
+        },
+        "additionalProperties": false
+      },
+      "examples": [
+        "sys4sys schema",
+        "sys4sys schema services list --json",
+        "sys4sys schema --md"
+      ]
+    }
+  ]
+}

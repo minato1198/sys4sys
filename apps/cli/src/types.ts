@@ -13,6 +13,7 @@ export interface Problem {
   status?: number;
   detail?: string;
   instance?: string;
+  requiredScope?: string;
   errors?: Array<{ path: string; message: string }>;
 }
 
@@ -48,6 +49,18 @@ export interface Action {
   startedAt: string | null;
   finishedAt: string | null;
   error: string | null;
+}
+
+export interface LogEvent {
+  id: string;
+  hostId: string;
+  serviceId: string;
+  ts: string;
+  level: "debug" | "info" | "warn" | "error" | "fatal";
+  stream: string;
+  message: string;
+  fields: Record<string, unknown> | null;
+  fingerprint: string;
 }
 
 export interface Health {

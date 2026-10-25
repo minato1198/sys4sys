@@ -33,13 +33,18 @@ function problem(
 }
 
 export async function aiRoutes(app: FastifyInstance): Promise<void> {
-  app.get("/settings/ai", { preHandler: requireRole("admin") }, async () =>
-    getAiSettingsView(),
+  app.get(
+    "/settings/ai",
+    { preHandler: requireRole("admin"), config: { scopes: ["settings:read"] } },
+    async () => getAiSettingsView(),
   );
 
   app.put(
     "/settings/ai",
-    { preHandler: requireRole("admin") },
+    {
+      preHandler: requireRole("admin"),
+      config: { scopes: ["settings:write"] },
+    },
     async (request, reply) => {
       const body = aiSettingsUpdateSchema.parse(request.body);
       const user = request.authUser;
@@ -73,7 +78,10 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
 
   app.post(
     "/ai/test",
-    { preHandler: requireRole("admin") },
+    {
+      preHandler: requireRole("admin"),
+      config: { scopes: ["settings:write"] },
+    },
     async (request, reply) => {
       const user = request.authUser;
       if (!user) return reply.code(401).send();
@@ -109,7 +117,10 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
 
   app.post(
     "/incidents/:id/analyze",
-    { preHandler: requireRole("operator") },
+    {
+      preHandler: requireRole("operator"),
+      config: { scopes: ["incidents:write"] },
+    },
     async (request, reply) => {
       const { id } = idParamsSchema.parse(request.params);
       const [incident] = await db
@@ -142,7 +153,7 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
 
   app.get(
     "/incidents/:id/analysis",
-    { preHandler: requireAuth },
+    { preHandler: requireAuth, config: { scopes: ["incidents:read"] } },
     async (request, reply) => {
       const { id } = idParamsSchema.parse(request.params);
       const [incident] = await db

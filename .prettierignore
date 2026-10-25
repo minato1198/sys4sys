@@ -6,3 +6,9 @@ pnpm-lock.yaml
 apps/api/drizzle
 apps/api/data
 spike/forwarding-test.json
+
+# Local agent configuration (may contain provider/network settings)
+opencode.json
+
+# Generated CLI contract (kept byte-stable for CI drift checks)
+docs/cli-schema.json

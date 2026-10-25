@@ -76,49 +76,53 @@ function matchesStream(query: z.infer<typeof logStreamQuerySchema>) {
 }
 
 export async function logRoutes(app: FastifyInstance): Promise<void> {
-  app.get("/logs", { preHandler: requireAuth }, async (request) => {
-    const query = logQuerySchema.parse(request.query);
-    const conditions = [
-      query.hostId ? eq(logEvents.hostId, query.hostId) : undefined,
-      query.serviceId ? eq(logEvents.serviceId, query.serviceId) : undefined,
-      query.level ? eq(logEvents.level, query.level) : undefined,
-      query.q ? like(logEvents.message, `%${query.q}%`) : undefined,
-      query.from ? gte(logEvents.ts, new Date(query.from)) : undefined,
-      query.to ? lte(logEvents.ts, new Date(query.to)) : undefined,
-      query.cursor ? lt(logEvents.ts, new Date(query.cursor)) : undefined,
-    ];
+  app.get(
+    "/logs",
+    { preHandler: requireAuth, config: { scopes: ["logs:read"] } },
+    async (request) => {
+      const query = logQuerySchema.parse(request.query);
+      const conditions = [
+        query.hostId ? eq(logEvents.hostId, query.hostId) : undefined,
+        query.serviceId ? eq(logEvents.serviceId, query.serviceId) : undefined,
+        query.level ? eq(logEvents.level, query.level) : undefined,
+        query.q ? like(logEvents.message, `%${query.q}%`) : undefined,
+        query.from ? gte(logEvents.ts, new Date(query.from)) : undefined,
+        query.to ? lte(logEvents.ts, new Date(query.to)) : undefined,
+        query.cursor ? lt(logEvents.ts, new Date(query.cursor)) : undefined,
+      ];
 
-    const rows = await db
-      .select()
-      .from(logEvents)
-      .where(and(...conditions))
-      .orderBy(desc(logEvents.ts))
-      .limit(query.limit);
+      const rows = await db
+        .select()
+        .from(logEvents)
+        .where(and(...conditions))
+        .orderBy(desc(logEvents.ts))
+        .limit(query.limit);
 
-    const items = rows.map((row) => ({
-      id: row.id,
-      hostId: row.hostId,
-      serviceId: row.serviceId,
-      ts: row.ts.toISOString(),
-      level: row.level,
-      stream: row.stream,
-      message: row.message,
-      fields: row.fields ?? null,
-      fingerprint: row.fingerprint,
-    }));
+      const items = rows.map((row) => ({
+        id: row.id,
+        hostId: row.hostId,
+        serviceId: row.serviceId,
+        ts: row.ts.toISOString(),
+        level: row.level,
+        stream: row.stream,
+        message: row.message,
+        fields: row.fields ?? null,
+        fingerprint: row.fingerprint,
+      }));
 
-    return {
-      items,
-      nextCursor:
-        items.length === query.limit
-          ? (items[items.length - 1]?.ts ?? null)
-          : null,
-    };
-  });
+      return {
+        items,
+        nextCursor:
+          items.length === query.limit
+            ? (items[items.length - 1]?.ts ?? null)
+            : null,
+      };
+    },
+  );
 
   app.get(
     "/logs/stream",
-    { preHandler: requireAuth },
+    { preHandler: requireAuth, config: { scopes: ["logs:read"] } },
     async (request, reply) => {
       const query = logStreamQuerySchema.parse(request.query);
       const matches = matchesStream(query);
@@ -165,24 +169,28 @@ export async function logRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
-  app.get("/logs/sources", { preHandler: requireAuth }, async () => {
-    const rows = await db.select().from(logSources);
-    const hostRows = await db.select().from(hosts);
-    const serviceRows = await db.select().from(services);
-    const hostMap = new Map(hostRows.map((row) => [row.id, row]));
-    const serviceMap = new Map(serviceRows.map((row) => [row.id, row.name]));
-    return rows.map((row) =>
-      logSourceResponse(
-        row,
-        hostMap.get(row.hostId),
-        row.serviceId ? (serviceMap.get(row.serviceId) ?? null) : null,
-      ),
-    );
-  });
+  app.get(
+    "/logs/sources",
+    { preHandler: requireAuth, config: { scopes: ["logs:read"] } },
+    async () => {
+      const rows = await db.select().from(logSources);
+      const hostRows = await db.select().from(hosts);
+      const serviceRows = await db.select().from(services);
+      const hostMap = new Map(hostRows.map((row) => [row.id, row]));
+      const serviceMap = new Map(serviceRows.map((row) => [row.id, row.name]));
+      return rows.map((row) =>
+        logSourceResponse(
+          row,
+          hostMap.get(row.hostId),
+          row.serviceId ? (serviceMap.get(row.serviceId) ?? null) : null,
+        ),
+      );
+    },
+  );
 
   app.post(
     "/logs/sources",
-    { preHandler: requireRole("admin") },
+    { preHandler: requireRole("admin"), config: { scopes: ["logs:manage"] } },
     async (request, reply) => {
       const body = logSourceCreateSchema.parse(request.body);
       const user = actor(request);
@@ -293,7 +301,7 @@ export async function logRoutes(app: FastifyInstance): Promise<void> {
 
   app.patch(
     "/logs/sources/:id",
-    { preHandler: requireRole("admin") },
+    { preHandler: requireRole("admin"), config: { scopes: ["logs:manage"] } },
     async (request, reply) => {
       const { id } = idParamsSchema.parse(request.params);
       const body = logSourceUpdateSchema.parse(request.body);
@@ -370,7 +378,7 @@ export async function logRoutes(app: FastifyInstance): Promise<void> {
 
   app.delete(
     "/logs/sources/:id",
-    { preHandler: requireRole("admin") },
+    { preHandler: requireRole("admin"), config: { scopes: ["logs:manage"] } },
     async (request, reply) => {
       const { id } = idParamsSchema.parse(request.params);
       const user = actor(request);

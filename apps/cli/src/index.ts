@@ -1,11 +1,12 @@
 import { pathToFileURL } from "node:url";
 import { ZodError } from "zod";
 import { parseCliArgs } from "./args.js";
+import { createCredentialStore, resolveCredentials } from "./auth/store.js";
 import { ApiClient, ApiError } from "./client.js";
-import { whoami } from "./commands/auth.js";
+import { authLogin, authLogout, authStatus, whoami } from "./commands/auth.js";
 import { listHosts } from "./commands/hosts.js";
 import {
-  createService,
+  createService as createServiceCommand,
   deployService,
   getService,
   listServices,
@@ -14,13 +15,13 @@ import {
 } from "./commands/services.js";
 import { CliError, UsageError } from "./errors.js";
 import { printHelp } from "./help.js";
-import { printError } from "./output.js";
+import { printError, printJson, writeOut, type CliOutput } from "./output.js";
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function exitCodeFor(error: unknown): number {
+export function exitCodeFor(error: unknown): number {
   if (error instanceof ApiError) {
     if (error.status === 401 || error.status === 403) return 3;
     if (error.status === 409) return 4;
@@ -32,14 +33,26 @@ function exitCodeFor(error: unknown): number {
   return 1;
 }
 
-function printFailure(error: unknown, json: boolean): void {
+export function printFailure(
+  error: unknown,
+  json: boolean,
+  output?: CliOutput,
+): void {
   if (error instanceof ApiError) {
-    printError(`${error.status} ${error.title}: ${error.detail}`, json, {
-      status: error.status,
-      title: error.title,
-      detail: error.detail,
-      errors: error.problem?.errors,
-    });
+    const scope = error.problem?.requiredScope;
+    const suffix = scope ? ` (required scope: ${scope})` : "";
+    printError(
+      `${error.status} ${error.title}: ${error.detail}${suffix}`,
+      json,
+      {
+        status: error.status,
+        title: error.title,
+        detail: error.detail,
+        requiredScope: scope,
+        errors: error.problem?.errors,
+      },
+      output,
+    );
     return;
   }
 
@@ -50,16 +63,26 @@ function printFailure(error: unknown, json: boolean): void {
         return `${path}: ${issue.message}`;
       })
       .join("; ");
-    printError(`入力が不正です: ${details}`, json);
+    printError(`入力が不正です: ${details}`, json, undefined, output);
+    return;
+  }
+
+  if (error instanceof UsageError && error.details) {
+    printError(error.message, json, error.details, output);
     return;
   }
 
   if (error instanceof CliError) {
-    printError(error.message, json);
+    printError(error.message, json, undefined, output);
     return;
   }
 
-  printError(`予期しないエラー: ${errorMessage(error)}`, json);
+  printError(
+    `予期しないエラー: ${errorMessage(error)}`,
+    json,
+    undefined,
+    output,
+  );
 }
 
 function expectNoExtraPositionals(
@@ -73,7 +96,10 @@ function expectNoExtraPositionals(
   }
 }
 
-export async function main(argv: string[]): Promise<number> {
+export async function main(
+  argv: string[],
+  cliOutput?: CliOutput,
+): Promise<number> {
   const parsed = parseCliArgs(argv);
 
   if (
@@ -81,7 +107,11 @@ export async function main(argv: string[]): Promise<number> {
     parsed.positionals.length === 0 ||
     parsed.positionals[0] === "help"
   ) {
-    printHelp();
+    const target =
+      parsed.positionals[0] === "help"
+        ? parsed.positionals.slice(1).join(" ")
+        : undefined;
+    printHelp(target || undefined);
     return 0;
   }
 
@@ -101,22 +131,172 @@ export async function main(argv: string[]): Promise<number> {
     host: parsed.values.host,
     status: parsed.values.status,
     timeout: parsed.values.timeout,
+    limit: parsed.values.limit,
+    cursor: parsed.values.cursor,
+    service: parsed.values.service,
+    level: parsed.values.level,
+    grep: parsed.values.grep,
+    since: parsed.values.since,
+    until: parsed.values.until,
+    noTruncate: Boolean(parsed.values["no-truncate"]),
+    noReconnect: Boolean(parsed.values["no-reconnect"]),
+    md: Boolean(parsed.values.md),
+    email: parsed.values.email,
+    passwordStdin: Boolean(parsed.values["password-stdin"]),
+    revokeToken: Boolean(parsed.values["revoke-token"]),
+    user: parsed.values.user,
+    name: parsed.values.name,
+    scope: parsed.values.scope,
+    expiresIn: parsed.values["expires-in"],
+    save: Boolean(parsed.values.save),
+    output: cliOutput,
   };
 
-  const client = new ApiClient({
-    apiUrl: parsed.values.api ?? process.env.SYS4SYS_API_URL,
-    email: process.env.SYS4SYS_EMAIL,
-    password: process.env.SYS4SYS_PASSWORD,
-    sessionCookie: process.env.SYS4SYS_SESSION_COOKIE,
-  });
+  if (group === "schema") {
+    const { printSchema } = await import("./commands/schema.js");
+    const target = [sub, ...rest].filter(Boolean).join(" ");
+    const text = printSchema(target || undefined, options);
+    await writeOut(options.output, text);
+    return 0;
+  }
+
+  if (group === "auth") {
+    const store = createCredentialStore();
+    const explicitApiUrl = parsed.values.api ?? process.env.SYS4SYS_API_URL;
+
+    if (sub === "login") {
+      expectNoExtraPositionals(rest, "auth login");
+      const client = new ApiClient({ apiUrl: explicitApiUrl });
+      await authLogin(client, {
+        email: options.email,
+        passwordStdin: Boolean(options.passwordStdin),
+        json: options.json,
+        store,
+        output: options.output,
+      });
+      return 0;
+    }
+
+    if (sub === "logout") {
+      expectNoExtraPositionals(rest, "auth logout");
+      await authLogout({
+        apiUrl: explicitApiUrl,
+        revokeToken: Boolean(options.revokeToken),
+        json: options.json,
+        store,
+        output: options.output,
+      });
+      return 0;
+    }
+
+    if (sub === "status") {
+      expectNoExtraPositionals(rest, "auth status");
+      const resolved = await resolveCredentials({
+        apiUrl: explicitApiUrl,
+        store,
+      });
+      if (resolved.source === "none") {
+        if (options.json) {
+          printJson(
+            {
+              apiUrl: resolved.apiUrl ?? null,
+              authMethod: null,
+              source: "none",
+            },
+            options.output,
+          );
+        } else {
+          await writeOut(
+            options.output,
+            "未ログインです。`sys4sys auth login` を実行してください。\n",
+          );
+        }
+        return 0;
+      }
+      const client = clientFor(resolved);
+      await authStatus(client, resolved, options.json, options.output);
+      return 0;
+    }
+
+    throw new UsageError(
+      "auth のサブコマンドは login / logout / status です。",
+    );
+  }
 
   if (group === "whoami") {
     const extras = [sub, ...rest].filter((value): value is string =>
       Boolean(value),
     );
     expectNoExtraPositionals(extras, "whoami");
-    await whoami(client, options.json);
+    const resolved = await resolveCredentials({
+      apiUrl: parsed.values.api ?? process.env.SYS4SYS_API_URL,
+    });
+    await whoami(clientFor(resolved), options.json, options.output);
     return 0;
+  }
+
+  if (group === "tokens") {
+    const store = createCredentialStore();
+    const resolved = await resolveCredentials({
+      apiUrl: parsed.values.api ?? process.env.SYS4SYS_API_URL,
+      store,
+    });
+    if (resolved.source === "none") {
+      throw new CliError(
+        "認証情報がありません。`sys4sys auth login` を実行してください。",
+        3,
+      );
+    }
+    const client = clientFor(resolved);
+    const tokens = await import("./commands/tokens.js");
+
+    if (sub === "list") {
+      expectNoExtraPositionals(rest, "tokens list");
+      await tokens.listTokens(client, options);
+      return 0;
+    }
+    if (sub === "create") {
+      expectNoExtraPositionals(rest, "tokens create");
+      await tokens.createToken(client, options, {
+        store,
+        resolved,
+      });
+      return 0;
+    }
+    if (sub === "revoke") {
+      await tokens.revokeToken(client, rest, options);
+      return 0;
+    }
+
+    throw new UsageError(
+      "tokens のサブコマンドは list / create / revoke です。",
+    );
+  }
+
+  if (group === "logs") {
+    const resolved = await resolveCredentials({
+      apiUrl: parsed.values.api ?? process.env.SYS4SYS_API_URL,
+    });
+    if (resolved.source === "none") {
+      throw new CliError(
+        "認証情報がありません。`sys4sys auth login` を実行してください。",
+        3,
+      );
+    }
+    const client = clientFor(resolved);
+    const logs = await import("./commands/logs.js");
+
+    if (sub === "query") {
+      expectNoExtraPositionals(rest, "logs query");
+      await logs.queryLogs(client, options);
+      return 0;
+    }
+    if (sub === "tail") {
+      expectNoExtraPositionals(rest, "logs tail");
+      return await logs.tailLogs(client, options);
+    }
+
+    throw new UsageError("logs のサブコマンドは query / tail です。");
   }
 
   if (group === "hosts") {
@@ -124,11 +304,25 @@ export async function main(argv: string[]): Promise<number> {
       throw new UsageError("hosts のサブコマンドは list のみです。");
     }
     expectNoExtraPositionals(rest, "hosts list");
-    await listHosts(client, options.json);
+    const resolved = await resolveCredentials({
+      apiUrl: parsed.values.api ?? process.env.SYS4SYS_API_URL,
+    });
+    await listHosts(clientFor(resolved), options.json, options.output);
     return 0;
   }
 
   if (group === "services") {
+    const resolved = await resolveCredentials({
+      apiUrl: parsed.values.api ?? process.env.SYS4SYS_API_URL,
+    });
+    if (resolved.source === "none") {
+      throw new CliError(
+        "認証情報がありません。`sys4sys auth login` を実行してください。",
+        3,
+      );
+    }
+    const client = clientFor(resolved);
+
     switch (sub) {
       case "list":
         expectNoExtraPositionals(rest, "services list");
@@ -139,16 +333,24 @@ export async function main(argv: string[]): Promise<number> {
         return 0;
       case "create":
         expectNoExtraPositionals(rest, "services create");
-        await createService(client, options);
+        await createServiceCommand(client, options);
         return 0;
       case "update":
         await updateService(client, rest, options);
         return 0;
       case "deploy":
         return await deployService(client, rest, options);
+      case "start":
+      case "stop":
+      case "restart":
+      case "delete":
+      case "actions": {
+        const lifecycle = await import("./commands/services.js");
+        return await lifecycle.runServiceLifecycle(sub, client, rest, options);
+      }
       default:
         throw new UsageError(
-          "services のサブコマンドは list / get / create / update / deploy です。",
+          "services のサブコマンドは list / get / create / update / deploy / start / stop / restart / delete / actions です。",
         );
     }
   }
@@ -156,12 +358,24 @@ export async function main(argv: string[]): Promise<number> {
   throw new UsageError(`不明なコマンドです: ${group}`);
 }
 
-export async function run(argv: string[]): Promise<number> {
+function clientFor(
+  resolved: Awaited<ReturnType<typeof resolveCredentials>>,
+): ApiClient {
+  return new ApiClient({
+    apiUrl: resolved.apiUrl,
+    token: resolved.token,
+    sessionCookie: resolved.sessionCookie,
+    email: resolved.email,
+    password: resolved.password,
+  });
+}
+
+export async function run(argv: string[], output?: CliOutput): Promise<number> {
   const json = argv.includes("--json") || argv.includes("-j");
   try {
-    return await main(argv);
+    return await main(argv, output);
   } catch (error) {
-    printFailure(error, json);
+    printFailure(error, json, output);
     return exitCodeFor(error);
   }
 }

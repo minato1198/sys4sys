@@ -1,15 +1,16 @@
 import type { ApiClient } from "../client.js";
 import type { Host } from "../types.js";
-import { printJson, printTable, shortId } from "../output.js";
+import { printJson, printTable, shortId, type CliOutput } from "../output.js";
 
 export async function listHosts(
   client: ApiClient,
   json: boolean,
+  output?: CliOutput,
 ): Promise<void> {
   const hosts = await client.request<Host[]>("GET", "/api/hosts");
 
   if (json) {
-    printJson(hosts);
+    printJson(hosts, output);
     return;
   }
 
@@ -22,5 +23,6 @@ export async function listHosts(
       host.state ?? "-",
       host.distro ?? "-",
     ]),
+    output,
   );
 }

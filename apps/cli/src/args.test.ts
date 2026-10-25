@@ -34,6 +34,30 @@ test("parses deploy flags", () => {
   assert.equal(parsed.values.timeout, "120");
 });
 
+test("parses repeatable token scopes and auth flags", () => {
+  const parsed = parseCliArgs([
+    "tokens",
+    "create",
+    "--name",
+    "ci",
+    "--scope",
+    "services:read",
+    "--scope",
+    "logs:read",
+    "--expires-in",
+    "30",
+    "--save",
+  ]);
+
+  assert.deepEqual(parsed.values.scope, ["services:read", "logs:read"]);
+  assert.equal(parsed.values.name, "ci");
+  assert.equal(parsed.values["expires-in"], "30");
+  assert.equal(parsed.values.save, true);
+
+  const login = parseCliArgs(["auth", "login", "--password-stdin"]);
+  assert.equal(login.values["password-stdin"], true);
+});
+
 test("rejects unknown options", () => {
   assert.throws(
     () => parseCliArgs(["services", "list", "--unknown"]),

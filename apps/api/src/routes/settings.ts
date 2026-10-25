@@ -34,13 +34,18 @@ function problem(
 }
 
 export async function settingsRoutes(app: FastifyInstance): Promise<void> {
-  app.get("/settings/mail", { preHandler: requireRole("admin") }, async () =>
-    getMailSettingsView(),
+  app.get(
+    "/settings/mail",
+    { preHandler: requireRole("admin"), config: { scopes: ["settings:read"] } },
+    async () => getMailSettingsView(),
   );
 
   app.put(
     "/settings/mail",
-    { preHandler: requireRole("admin") },
+    {
+      preHandler: requireRole("admin"),
+      config: { scopes: ["settings:write"] },
+    },
     async (request, reply) => {
       const body = mailUpdateSchema.parse(request.body);
       const user = request.authUser;
@@ -72,7 +77,10 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
 
   app.post(
     "/settings/mail/test",
-    { preHandler: requireRole("admin") },
+    {
+      preHandler: requireRole("admin"),
+      config: { scopes: ["settings:write"] },
+    },
     async (request, reply) => {
       const user = request.authUser;
       if (!user) return reply.code(401).send();
@@ -105,13 +113,16 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
 
   app.get(
     "/settings/retention",
-    { preHandler: requireRole("admin") },
+    { preHandler: requireRole("admin"), config: { scopes: ["settings:read"] } },
     async () => getRetentionSettings(),
   );
 
   app.put(
     "/settings/retention",
-    { preHandler: requireRole("admin") },
+    {
+      preHandler: requireRole("admin"),
+      config: { scopes: ["settings:write"] },
+    },
     async (request, reply) => {
       const body = retentionSettingsSchema.parse(request.body);
       const user = request.authUser;

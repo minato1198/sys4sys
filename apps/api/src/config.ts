@@ -22,6 +22,8 @@ const envSchema = z.object({
   DATABASE_URL: z.string().default("./data/sys4sys.db"),
   SESSION_SECRET: z.string().min(16).default(DEFAULT_SESSION_SECRET),
   SESSION_TTL_HOURS: z.coerce.number().int().min(1).max(8760).default(168),
+  TOKEN_DEFAULT_TTL_DAYS: z.coerce.number().int().min(1).max(365).default(90),
+  TOKEN_MAX_TTL_DAYS: z.coerce.number().int().min(1).max(365).default(365),
   COOKIE_SECURE: z
     .string()
     .default("false")

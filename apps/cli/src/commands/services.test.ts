@@ -9,11 +9,14 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { ApiClient } from "../client.js";
+import { ApiClient, ApiError } from "../client.js";
 import { UsageError } from "../errors.js";
+import { memoryOutput } from "../test-output.js";
 import {
   createService,
   deployService,
+  parseLimit,
+  runServiceLifecycle,
   type CommandOptions,
 } from "./services.js";
 
@@ -100,6 +103,7 @@ function options(file: string): CommandOptions {
     yes: false,
     wait: false,
     file,
+    output: memoryOutput().output,
   };
 }
 
@@ -218,6 +222,359 @@ test("services deploy returns a failure exit code when the action fails", async 
   } finally {
     await server.close();
   }
+});
+
+function actionResponse(status = "succeeded"): Record<string, unknown> {
+  return {
+    id: "action-1",
+    incidentId: null,
+    serviceId: "service-1",
+    type: "start",
+    status,
+    requestedBy: "user-1",
+    approvedBy: null,
+    policyId: null,
+    startedAt: "2026-01-01T00:00:00.000Z",
+    finishedAt: status === "running" ? null : "2026-01-01T00:00:05.000Z",
+    error: status === "failed" ? "failed to start" : null,
+  };
+}
+
+test("services start returns the action without --yes", async () => {
+  let posted = "";
+  const server = await startServer((request, response) => {
+    if (request.url === "/api/services/service-1" && request.method === "GET") {
+      json(response, serviceResponse());
+      return;
+    }
+    if (
+      request.url === "/api/services/service-1/start" &&
+      request.method === "POST"
+    ) {
+      posted = request.url;
+      json(response, actionResponse());
+      return;
+    }
+    response.statusCode = 404;
+    response.end();
+  });
+
+  try {
+    const client = new ApiClient({
+      apiUrl: server.url,
+      sessionCookie: "test-token",
+    });
+    const exitCode = await runServiceLifecycle("start", client, ["service-1"], {
+      ...options("unused.json"),
+      dryRun: false,
+    });
+    assert.equal(exitCode, 0);
+    assert.equal(posted, "/api/services/service-1/start");
+  } finally {
+    await server.close();
+  }
+});
+
+test("services stop refuses a non-interactive run without --yes", async () => {
+  let posted = 0;
+  const server = await startServer((request, response) => {
+    if (request.url === "/api/services/service-1" && request.method === "GET") {
+      json(response, serviceResponse());
+      return;
+    }
+    if (
+      request.url === "/api/services/service-1/stop" &&
+      request.method === "POST"
+    ) {
+      posted += 1;
+      json(response, actionResponse());
+      return;
+    }
+    response.statusCode = 404;
+    response.end();
+  });
+
+  try {
+    const client = new ApiClient({
+      apiUrl: server.url,
+      sessionCookie: "test-token",
+    });
+    await assert.rejects(
+      () =>
+        runServiceLifecycle("stop", client, ["service-1"], {
+          ...options("unused.json"),
+          dryRun: false,
+          json: true,
+        }),
+      UsageError,
+    );
+    assert.equal(posted, 0);
+  } finally {
+    await server.close();
+  }
+});
+
+test("services restart --dry-run never mutates", async () => {
+  let posted = 0;
+  const server = await startServer((request, response) => {
+    if (request.url === "/api/services/service-1" && request.method === "GET") {
+      json(response, serviceResponse());
+      return;
+    }
+    if (request.method === "POST") posted += 1;
+    response.statusCode = 404;
+    response.end();
+  });
+
+  try {
+    const client = new ApiClient({
+      apiUrl: server.url,
+      sessionCookie: "test-token",
+    });
+    const exitCode = await runServiceLifecycle(
+      "restart",
+      client,
+      ["service-1"],
+      {
+        ...options("unused.json"),
+        dryRun: true,
+        json: true,
+      },
+    );
+    assert.equal(exitCode, 0);
+    assert.equal(posted, 0);
+  } finally {
+    await server.close();
+  }
+});
+
+test("services stop --wait polls the actions API by action id", async () => {
+  let actionPolls = 0;
+  const server = await startServer((request, response) => {
+    if (request.url === "/api/services/service-1" && request.method === "GET") {
+      json(response, serviceResponse());
+      return;
+    }
+    if (
+      request.url === "/api/services/service-1/stop" &&
+      request.method === "POST"
+    ) {
+      json(response, actionResponse("running"));
+      return;
+    }
+    if (
+      request.url?.startsWith("/api/services/service-1/actions?") &&
+      request.method === "GET"
+    ) {
+      actionPolls += 1;
+      json(response, {
+        items: [actionResponse("succeeded"), actionResponse("running")],
+        nextCursor: null,
+      });
+      return;
+    }
+    response.statusCode = 404;
+    response.end();
+  });
+
+  try {
+    const client = new ApiClient({
+      apiUrl: server.url,
+      sessionCookie: "test-token",
+    });
+    const exitCode = await runServiceLifecycle("stop", client, ["service-1"], {
+      ...options("unused.json"),
+      dryRun: false,
+      yes: true,
+      wait: true,
+      json: true,
+      timeout: "1",
+    });
+    assert.equal(exitCode, 0);
+    assert.equal(actionPolls, 1);
+  } finally {
+    await server.close();
+  }
+});
+
+test("services restart --wait returns exit 5 when the action fails", async () => {
+  const server = await startServer((request, response) => {
+    if (request.url === "/api/services/service-1" && request.method === "GET") {
+      json(response, serviceResponse());
+      return;
+    }
+    if (
+      request.url === "/api/services/service-1/restart" &&
+      request.method === "POST"
+    ) {
+      json(response, actionResponse("running"));
+      return;
+    }
+    if (
+      request.url?.startsWith("/api/services/service-1/actions?") &&
+      request.method === "GET"
+    ) {
+      json(response, {
+        items: [actionResponse("failed")],
+        nextCursor: null,
+      });
+      return;
+    }
+    response.statusCode = 404;
+    response.end();
+  });
+
+  try {
+    const client = new ApiClient({
+      apiUrl: server.url,
+      sessionCookie: "test-token",
+    });
+    const exitCode = await runServiceLifecycle(
+      "restart",
+      client,
+      ["service-1"],
+      {
+        ...options("unused.json"),
+        dryRun: false,
+        yes: true,
+        wait: true,
+        json: true,
+        timeout: "1",
+      },
+    );
+    assert.equal(exitCode, 5);
+  } finally {
+    await server.close();
+  }
+});
+
+test("services actions sends limit and cursor and preserves JSON output", async () => {
+  let url: string | undefined;
+  const server = await startServer((request, response) => {
+    url = request.url;
+    json(response, {
+      items: [actionResponse()],
+      nextCursor: "2026-01-01T00:00:00.000Z|action-1",
+    });
+  });
+
+  const capture = memoryOutput();
+  try {
+    const client = new ApiClient({
+      apiUrl: server.url,
+      sessionCookie: "test-token",
+    });
+    const exitCode = await runServiceLifecycle(
+      "actions",
+      client,
+      ["service-1"],
+      {
+        ...options("unused.json"),
+        dryRun: false,
+        limit: "10",
+        cursor: "2026-01-02T00:00:00.000Z|action-2",
+        json: true,
+        output: capture.output,
+      },
+    );
+    assert.equal(exitCode, 0);
+    assert.equal(
+      url,
+      "/api/services/service-1/actions?limit=10&cursor=2026-01-02T00%3A00%3A00.000Z%7Caction-2",
+    );
+
+    const output = JSON.parse(capture.out) as {
+      items: unknown[];
+      nextCursor: string;
+    };
+    assert.equal(output.items.length, 1);
+    assert.equal(output.nextCursor, "2026-01-01T00:00:00.000Z|action-1");
+  } finally {
+    await server.close();
+  }
+});
+
+test("services delete --dry-run never calls DELETE", async () => {
+  let deleted = 0;
+  const server = await startServer((request, response) => {
+    if (request.url === "/api/services/service-1" && request.method === "GET") {
+      json(response, serviceResponse());
+      return;
+    }
+    if (request.method === "DELETE") deleted += 1;
+    response.statusCode = 404;
+    response.end();
+  });
+
+  try {
+    const client = new ApiClient({
+      apiUrl: server.url,
+      sessionCookie: "test-token",
+    });
+    const exitCode = await runServiceLifecycle(
+      "delete",
+      client,
+      ["service-1"],
+      {
+        ...options("unused.json"),
+        dryRun: true,
+        json: true,
+      },
+    );
+    assert.equal(exitCode, 0);
+    assert.equal(deleted, 0);
+  } finally {
+    await server.close();
+  }
+});
+
+test("services delete surfaces a 409 conflict", async () => {
+  const server = await startServer((request, response) => {
+    if (request.url === "/api/services/service-1" && request.method === "GET") {
+      json(response, serviceResponse());
+      return;
+    }
+    response.statusCode = 409;
+    response.setHeader("Content-Type", "application/problem+json");
+    response.end(
+      JSON.stringify({
+        type: "about:blank",
+        title: "Conflict",
+        status: 409,
+        detail: "実行中のサービスは削除できません",
+      }),
+    );
+  });
+
+  try {
+    const client = new ApiClient({
+      apiUrl: server.url,
+      sessionCookie: "test-token",
+    });
+    await assert.rejects(
+      () =>
+        runServiceLifecycle("delete", client, ["service-1"], {
+          ...options("unused.json"),
+          dryRun: false,
+          yes: true,
+          json: true,
+        }),
+      (error: unknown) => {
+        assert.ok(error instanceof ApiError);
+        assert.equal(error.status, 409);
+        return true;
+      },
+    );
+  } finally {
+    await server.close();
+  }
+});
+
+test("validates lifecycle limits", () => {
+  assert.equal(parseLimit(undefined, 50, 200), 50);
+  assert.equal(parseLimit("10", 50, 200), 10);
+  assert.throws(() => parseLimit("0", 50, 200), UsageError);
+  assert.throws(() => parseLimit("201", 50, 200), UsageError);
 });
 
 test("services deploy validates --timeout before starting a deploy", async () => {

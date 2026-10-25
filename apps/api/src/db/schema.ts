@@ -411,3 +411,23 @@ export const settings = sqliteTable("settings", {
   value: text("value", { mode: "json" }).$type<unknown>().notNull(),
   updatedAt: timestamp("updated_at").notNull(),
 });
+
+export const apiTokens = sqliteTable(
+  "api_tokens",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    name: text("name").notNull(),
+    tokenHash: text("token_hash").notNull().unique(),
+    prefix: text("prefix").notNull(),
+    scopes: text("scopes", { mode: "json" }).$type<string[]>().notNull(),
+    createdAt: timestamp("created_at").notNull(),
+    expiresAt: timestamp("expires_at").notNull(),
+    lastUsedAt: timestamp("last_used_at"),
+    revokedAt: timestamp("revoked_at"),
+  },
+  (table) => [
+    index("api_tokens_user_id_idx").on(table.userId),
+    index("api_tokens_expires_at_idx").on(table.expiresAt),
+  ],
+);

@@ -91,115 +91,131 @@ function reservationResponse(view: ReservationView) {
 }
 
 export async function portRoutes(app: FastifyInstance): Promise<void> {
-  app.get("/ports", { preHandler: requireAuth }, async (request) => {
-    const query = listQuerySchema.parse(request.query);
-    const { scan, reservationViews } = await scanAndPersist({
-      scope: query.scope,
-    });
+  app.get(
+    "/ports",
+    { preHandler: requireAuth, config: { scopes: ["ports:read"] } },
+    async (request) => {
+      const query = listQuerySchema.parse(request.query);
+      const { scan, reservationViews } = await scanAndPersist({
+        scope: query.scope,
+      });
 
-    const persisted = await db.select().from(ports);
-    const persistedByKey = new Map(
-      persisted.map((row) => [endpointKey(row), row]),
-    );
-
-    const needle = query.q?.toLowerCase();
-    const items = scan.rows
-      .filter((row) =>
-        query.protocol ? row.protocol === query.protocol : true,
-      )
-      .filter((row) => (query.port ? row.port === query.port : true))
-      .filter((row) => {
-        if (!needle) return true;
-        return (
-          (row.process ?? "").toLowerCase().includes(needle) ||
-          (row.commandLine ?? "").toLowerCase().includes(needle)
-        );
-      })
-      .map((row) => {
-        const reservation =
-          findReservationView(reservationViews, row.protocol, row.port) ?? null;
-        const stored = persistedByKey.get(endpointKey(row));
-        return {
-          id: endpointKey(row),
-          scope: row.scope,
-          pidScope: row.pidScope ?? null,
-          seenIn: row.seenIn ?? [],
-          protocol: row.protocol,
-          address: row.address,
-          port: row.port,
-          pid: row.pid,
-          ppid: row.ppid ?? null,
-          process: row.process,
-          processPath: row.processPath ?? null,
-          commandLine: row.commandLine,
-          startedAt: row.startedAt ?? null,
-          likelyWslForward: row.likelyWslForward ?? false,
-          serviceId: reservation?.serviceId ?? stored?.serviceId ?? null,
-          firstSeen: stored?.firstSeen.toISOString() ?? null,
-          lastSeen: stored?.lastSeen.toISOString() ?? null,
-          reservation,
-          conflict: Boolean(reservation),
-          status: reservation ? "conflict" : "in_use",
-        };
-      })
-      .filter((item) =>
-        query.serviceId ? item.serviceId === query.serviceId : true,
+      const persisted = await db.select().from(ports);
+      const persistedByKey = new Map(
+        persisted.map((row) => [endpointKey(row), row]),
       );
 
-    return {
-      scannedAt: scan.scannedAt,
-      items,
-      reservations: reservationViews,
-      conflicts: reservationViews.filter(
-        (reservation) => reservation.status === "conflict",
-      ),
-      skipped: scan.skipped,
-      distros: scan.distros,
-    };
-  });
+      const needle = query.q?.toLowerCase();
+      const items = scan.rows
+        .filter((row) =>
+          query.protocol ? row.protocol === query.protocol : true,
+        )
+        .filter((row) => (query.port ? row.port === query.port : true))
+        .filter((row) => {
+          if (!needle) return true;
+          return (
+            (row.process ?? "").toLowerCase().includes(needle) ||
+            (row.commandLine ?? "").toLowerCase().includes(needle)
+          );
+        })
+        .map((row) => {
+          const reservation =
+            findReservationView(reservationViews, row.protocol, row.port) ??
+            null;
+          const stored = persistedByKey.get(endpointKey(row));
+          return {
+            id: endpointKey(row),
+            scope: row.scope,
+            pidScope: row.pidScope ?? null,
+            seenIn: row.seenIn ?? [],
+            protocol: row.protocol,
+            address: row.address,
+            port: row.port,
+            pid: row.pid,
+            ppid: row.ppid ?? null,
+            process: row.process,
+            processPath: row.processPath ?? null,
+            commandLine: row.commandLine,
+            startedAt: row.startedAt ?? null,
+            likelyWslForward: row.likelyWslForward ?? false,
+            serviceId: reservation?.serviceId ?? stored?.serviceId ?? null,
+            firstSeen: stored?.firstSeen.toISOString() ?? null,
+            lastSeen: stored?.lastSeen.toISOString() ?? null,
+            reservation,
+            conflict: Boolean(reservation),
+            status: reservation ? "conflict" : "in_use",
+          };
+        })
+        .filter((item) =>
+          query.serviceId ? item.serviceId === query.serviceId : true,
+        );
 
-  app.get("/ports/history", { preHandler: requireAuth }, async (request) => {
-    const query = portHistoryQuerySchema.parse(request.query);
-    const rows = await db
-      .select()
-      .from(portHistory)
-      .where(
-        and(
-          eq(portHistory.scope, query.scope),
-          eq(portHistory.port, query.port),
-          query.protocol ? eq(portHistory.protocol, query.protocol) : undefined,
-          query.from
-            ? gte(portHistory.openedAt, new Date(query.from))
-            : undefined,
-          query.to ? lte(portHistory.openedAt, new Date(query.to)) : undefined,
+      return {
+        scannedAt: scan.scannedAt,
+        items,
+        reservations: reservationViews,
+        conflicts: reservationViews.filter(
+          (reservation) => reservation.status === "conflict",
         ),
-      )
-      .orderBy(desc(portHistory.openedAt))
-      .limit(query.limit);
+        skipped: scan.skipped,
+        distros: scan.distros,
+      };
+    },
+  );
 
-    return rows.map((row) => ({
-      id: row.id,
-      scope: row.scope,
-      pidScope: row.pidHostId,
-      protocol: row.protocol,
-      address: row.address,
-      port: row.port,
-      pid: row.pid,
-      ppid: row.ppid,
-      process: row.processName,
-      processPath: row.processPath,
-      commandLine: row.commandLine,
-      startedAt: row.startedAt?.toISOString() ?? null,
-      serviceId: row.serviceId,
-      openedAt: row.openedAt.toISOString(),
-      closedAt: row.closedAt?.toISOString() ?? null,
-      releasedBy: row.releasedBy,
-    }));
-  });
+  app.get(
+    "/ports/history",
+    { preHandler: requireAuth, config: { scopes: ["ports:read"] } },
+    async (request) => {
+      const query = portHistoryQuerySchema.parse(request.query);
+      const rows = await db
+        .select()
+        .from(portHistory)
+        .where(
+          and(
+            eq(portHistory.scope, query.scope),
+            eq(portHistory.port, query.port),
+            query.protocol
+              ? eq(portHistory.protocol, query.protocol)
+              : undefined,
+            query.from
+              ? gte(portHistory.openedAt, new Date(query.from))
+              : undefined,
+            query.to
+              ? lte(portHistory.openedAt, new Date(query.to))
+              : undefined,
+          ),
+        )
+        .orderBy(desc(portHistory.openedAt))
+        .limit(query.limit);
+
+      return rows.map((row) => ({
+        id: row.id,
+        scope: row.scope,
+        pidScope: row.pidHostId,
+        protocol: row.protocol,
+        address: row.address,
+        port: row.port,
+        pid: row.pid,
+        ppid: row.ppid,
+        process: row.processName,
+        processPath: row.processPath,
+        commandLine: row.commandLine,
+        startedAt: row.startedAt?.toISOString() ?? null,
+        serviceId: row.serviceId,
+        openedAt: row.openedAt.toISOString(),
+        closedAt: row.closedAt?.toISOString() ?? null,
+        releasedBy: row.releasedBy,
+      }));
+    },
+  );
 
   app.post(
     "/ports/reserve",
-    { preHandler: requireRole("operator", "admin") },
+    {
+      preHandler: requireRole("operator", "admin"),
+      config: { scopes: ["ports:operate"] },
+    },
     async (request, reply) => {
       const body = reservationCreateSchema.parse(request.body);
       const user = actor(request);
@@ -281,7 +297,10 @@ export async function portRoutes(app: FastifyInstance): Promise<void> {
 
   app.delete(
     "/ports/reserve/:id",
-    { preHandler: requireRole("operator", "admin") },
+    {
+      preHandler: requireRole("operator", "admin"),
+      config: { scopes: ["ports:operate"] },
+    },
     async (request, reply) => {
       const { id } = idParamsSchema.parse(request.params);
       const user = actor(request);
@@ -322,7 +341,10 @@ export async function portRoutes(app: FastifyInstance): Promise<void> {
 
   app.get(
     "/ports/:port/kill-token",
-    { preHandler: requireRole("operator", "admin") },
+    {
+      preHandler: requireRole("operator", "admin"),
+      config: { scopes: ["ports:operate"] },
+    },
     async (request, reply) => {
       const { port } = portParamsSchema.parse(request.params);
       const query = killTokenQuerySchema.parse(request.query);
@@ -401,7 +423,10 @@ export async function portRoutes(app: FastifyInstance): Promise<void> {
 
   app.post(
     "/ports/:port/kill",
-    { preHandler: requireRole("operator", "admin") },
+    {
+      preHandler: requireRole("operator", "admin"),
+      config: { scopes: ["ports:operate"] },
+    },
     async (request, reply) => {
       const { port } = portParamsSchema.parse(request.params);
       const body = killRequestSchema.parse(request.body);

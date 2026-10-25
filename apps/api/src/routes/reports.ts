@@ -41,39 +41,43 @@ function reportListRow(row: {
 }
 
 export async function reportRoutes(app: FastifyInstance): Promise<void> {
-  app.get("/reports", { preHandler: requireAuth }, async (request) => {
-    const query = reportQuerySchema.parse(request.query);
-    const where = query.incidentId
-      ? eq(reports.incidentId, query.incidentId)
-      : undefined;
-    const rows = await db
-      .select({
-        report: reports,
-        incident: incidents,
-        service: services,
-      })
-      .from(reports)
-      .leftJoin(incidents, eq(reports.incidentId, incidents.id))
-      .leftJoin(services, eq(incidents.serviceId, services.id))
-      .where(where)
-      .orderBy(desc(reports.createdAt))
-      .limit(query.limit)
-      .offset(query.offset);
-    const totalRows = await db
-      .select({ id: reports.id })
-      .from(reports)
-      .where(where);
-    return {
-      items: rows.map(reportListRow),
-      total: totalRows.length,
-      limit: query.limit,
-      offset: query.offset,
-    };
-  });
+  app.get(
+    "/reports",
+    { preHandler: requireAuth, config: { scopes: ["reports:read"] } },
+    async (request) => {
+      const query = reportQuerySchema.parse(request.query);
+      const where = query.incidentId
+        ? eq(reports.incidentId, query.incidentId)
+        : undefined;
+      const rows = await db
+        .select({
+          report: reports,
+          incident: incidents,
+          service: services,
+        })
+        .from(reports)
+        .leftJoin(incidents, eq(reports.incidentId, incidents.id))
+        .leftJoin(services, eq(incidents.serviceId, services.id))
+        .where(where)
+        .orderBy(desc(reports.createdAt))
+        .limit(query.limit)
+        .offset(query.offset);
+      const totalRows = await db
+        .select({ id: reports.id })
+        .from(reports)
+        .where(where);
+      return {
+        items: rows.map(reportListRow),
+        total: totalRows.length,
+        limit: query.limit,
+        offset: query.offset,
+      };
+    },
+  );
 
   app.get(
     "/reports/:id",
-    { preHandler: requireAuth },
+    { preHandler: requireAuth, config: { scopes: ["reports:read"] } },
     async (request, reply) => {
       const { id } = idParamsSchema.parse(request.params);
       const context = await getReportWithContext(id);
@@ -104,7 +108,7 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
 
   app.get(
     "/reports/:id/export",
-    { preHandler: requireAuth },
+    { preHandler: requireAuth, config: { scopes: ["reports:read"] } },
     async (request, reply) => {
       const { id } = idParamsSchema.parse(request.params);
       const query = reportExportQuerySchema.parse(request.query);

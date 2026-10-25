@@ -1,36 +1,110 @@
-export function printHelp(): void {
-  console.log(`sys4sys CLI
+import {
+  COMMANDS,
+  GLOBAL_OPTIONS,
+  allOptionsFor,
+  findCommand,
+  type CommandDefinition,
+  type CommandOption,
+} from "./commands/registry.js";
 
-Usage:
-  sys4sys --help
-  sys4sys whoami [--json]
-  sys4sys hosts list [--json]
-  sys4sys services list [--host <id>] [--status <status>] [--json]
-  sys4sys services get <id> [--json]
-  sys4sys services create --file <service.json|-> [--dry-run] [--json]
-  sys4sys services update <id> --file <patch.json|-> [--dry-run] [--json]
-  sys4sys services deploy <id> [--dry-run] [--yes] [--wait] [--timeout <sec>] [--json]
+function usageFor(command: CommandDefinition): string {
+  const parts = ["sys4sys", command.name];
+  for (const positional of command.positionals) {
+    parts.push(
+      positional.required ? `<${positional.name}>` : `[${positional.name}]`,
+    );
+  }
+  if (command.options.length > 0) parts.push("[options]");
+  return parts.join(" ");
+}
 
-Options:
-  --api <url>        API のルート URL (default: http://127.0.0.1:8787)
-  --json, -j         JSON で出力
-  --show-env         env / deploy.env の値を表示（既定はマスク）
-  --dry-run          API を変更せず検証・表示のみ
-  --yes, -y          deploy の確認を省略
-  --wait             deploy の完了まで待つ
-  --timeout <sec>    deploy 待ちのタイムアウト
-  --help, -h         このヘルプ
+function optionLabel(option: CommandOption): string {
+  const flag = `${option.short ? `-${option.short}, ` : ""}--${option.name}`;
+  return option.type === "boolean"
+    ? flag
+    : `${flag} <${option.valueName ?? option.name}>`;
+}
 
-Environment:
-  SYS4SYS_API_URL           API のルート URL
-  SYS4SYS_EMAIL             ログインメール
-  SYS4SYS_PASSWORD          ログインパスワード
-  SYS4SYS_SESSION_COOKIE    既存の sys4sys_session Cookie
+function optionLine(option: CommandOption): string {
+  const suffix = [
+    option.required ? "required" : null,
+    option.default ? `default: ${option.default}` : null,
+  ]
+    .filter(Boolean)
+    .join(", ");
+  const description = suffix
+    ? `${option.description} (${suffix})`
+    : option.description;
+  return `  ${optionLabel(option).padEnd(28)} ${description}`;
+}
 
-Examples:
-  pnpm sys4sys -- whoami --json
-  pnpm sys4sys -- hosts list --json
-  pnpm sys4sys -- services list --json
-  pnpm sys4sys -- services create --file apps/cli/examples/service.create.json --dry-run
-  pnpm sys4sys -- services deploy <id> --dry-run`);
+function commandHelpLines(command: CommandDefinition): string[] {
+  const lines = [`sys4sys ${command.name}`, "", command.summary];
+  if (command.description) lines.push("", command.description);
+  lines.push("", "Usage:", `  ${usageFor(command)}`);
+
+  if (command.positionals.length > 0) {
+    lines.push("", "Arguments:");
+    for (const positional of command.positionals) {
+      lines.push(
+        `  ${positional.name.padEnd(12)} ${positional.description}${positional.required ? " (required)" : ""}`,
+      );
+    }
+  }
+
+  lines.push("", "Options:");
+  for (const option of allOptionsFor(command)) lines.push(optionLine(option));
+
+  lines.push("", "Examples:");
+  for (const example of command.examples) lines.push(`  ${example}`);
+  return lines;
+}
+
+function globalHelpLines(): string[] {
+  const lines = [
+    "sys4sys CLI",
+    "",
+    "Usage:",
+    "  sys4sys <command> [options]",
+    "  sys4sys <group> <subcommand> [options]",
+    "  sys4sys --help",
+    "  sys4sys help <command>",
+    "",
+    "Commands:",
+  ];
+  for (const command of COMMANDS) {
+    lines.push(`  ${command.name.padEnd(28)} ${command.summary}`);
+  }
+  lines.push("", "Options:");
+  for (const option of GLOBAL_OPTIONS) lines.push(optionLine(option));
+  lines.push(
+    "",
+    "Environment:",
+    "  SYS4SYS_API_URL           API のルート URL",
+    "  SYS4SYS_TOKEN             API トークン（最優先）",
+    "  SYS4SYS_TOKEN_FILE        API トークンを書いたファイル",
+    "  SYS4SYS_EMAIL             ログインメール",
+    "  SYS4SYS_PASSWORD          ログインパスワード",
+    "  SYS4SYS_SESSION_COOKIE    既存の sys4sys_session Cookie",
+    "  SYS4SYS_CONFIG_DIR        資格情報ファイルの保存先",
+    "",
+    "Examples:",
+    "  pnpm sys4sys -- whoami --json",
+    "  pnpm sys4sys -- services list",
+    "  pnpm sys4sys -- logs query --service <id> --level error --since 2h",
+  );
+  return lines;
+}
+
+export function formatHelp(commandName?: string): string {
+  if (commandName) {
+    const command = findCommand(commandName);
+    if (!command) return `不明なコマンドです: ${commandName}\n`;
+    return `${commandHelpLines(command).join("\n")}\n`;
+  }
+  return `${globalHelpLines().join("\n")}\n`;
+}
+
+export function printHelp(commandName?: string): void {
+  process.stdout.write(formatHelp(commandName));
 }

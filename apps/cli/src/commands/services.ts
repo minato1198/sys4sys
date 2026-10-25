@@ -13,7 +13,15 @@ import {
 import { ZodError } from "zod";
 import type { ApiClient } from "../client.js";
 import { CliError, UsageError } from "../errors.js";
-import { printJson, printTable, redactEnvFields, shortId } from "../output.js";
+import {
+  printJson,
+  printTable,
+  redactEnvFields,
+  shortId,
+  writeErr,
+  writeOut,
+  type CliOutput,
+} from "../output.js";
 import type { Action, DeployConfig, Host, Service } from "../types.js";
 
 export interface CommandOptions {
@@ -26,11 +34,46 @@ export interface CommandOptions {
   host?: string;
   status?: string;
   timeout?: string;
+  limit?: string;
+  cursor?: string;
+  service?: string;
+  level?: string;
+  grep?: string;
+  since?: string;
+  until?: string;
+  noTruncate?: boolean;
+  noReconnect?: boolean;
+  md?: boolean;
+  email?: string;
+  passwordStdin?: boolean;
+  revokeToken?: boolean;
+  user?: string;
+  name?: string;
+  scope?: string[];
+  expiresIn?: string;
+  save?: boolean;
+  signal?: AbortSignal;
+  output?: CliOutput;
+  reconnectDelayMs?: number;
+  maxReconnectAttempts?: number;
+}
+
+function out(options: CommandOptions, text: string): void {
+  void writeOut(options.output, text);
+}
+
+function err(options: CommandOptions, text: string): void {
+  writeErr(options.output, text);
 }
 
 interface DeployResult {
   action: Action;
   service: Service;
+}
+
+interface ActionPage {
+  items: Action[];
+  nextCursor: string | null;
 }
 
 function errorMessage(error: unknown): string {
@@ -134,44 +177,52 @@ function requireId(positionals: string[], command: string): string {
 
 function printService(service: Service, options: CommandOptions): void {
   if (options.json) {
-    printJson(redactEnvFields(service, options.showEnv));
+    printJson(redactEnvFields(service, options.showEnv), options.output);
     return;
   }
 
-  console.log(`ID:      ${service.id}`);
-  console.log(`Name:    ${service.name}`);
-  console.log(`Host:    ${service.host?.name ?? service.hostId}`);
-  console.log(`Status:  ${service.status}`);
-  console.log(`Health:  ${service.health?.status ?? "unknown"}`);
-  console.log(`PID:     ${service.pid ?? "-"}`);
-  console.log(`Command: ${service.command.join(" ")}`);
-  console.log(`CWD:     ${service.cwd ?? "-"}`);
-  console.log(
-    `Ports:   ${service.expectedPorts.length > 0 ? service.expectedPorts.join(", ") : "-"}`,
+  out(options, `ID:      ${service.id}\n`);
+  out(options, `Name:    ${service.name}\n`);
+  out(options, `Host:    ${service.host?.name ?? service.hostId}\n`);
+  out(options, `Status:  ${service.status}\n`);
+  out(options, `Health:  ${service.health?.status ?? "unknown"}\n`);
+  out(options, `PID:     ${service.pid ?? "-"}\n`);
+  out(options, `Command: ${service.command.join(" ")}\n`);
+  out(options, `CWD:     ${service.cwd ?? "-"}\n`);
+  out(
+    options,
+    `Ports:   ${service.expectedPorts.length > 0 ? service.expectedPorts.join(", ") : "-"}\n`,
   );
   if (options.showEnv) {
-    console.log(`Env:     ${service.env ? JSON.stringify(service.env) : "-"}`);
+    out(
+      options,
+      `Env:     ${service.env ? JSON.stringify(service.env) : "-"}\n`,
+    );
   }
-  console.log(`Deploy:  ${service.deploy ? "configured" : "not configured"}`);
+  out(
+    options,
+    `Deploy:  ${service.deploy ? "configured" : "not configured"}\n`,
+  );
   if (service.deploy) {
-    console.log(`  command: ${service.deploy.command.join(" ")}`);
-    console.log(`  cwd:     ${service.deploy.cwd ?? "-"}`);
-    console.log(`  timeout: ${service.deploy.timeoutSec}s`);
-    console.log(`  restart: ${service.deploy.restartAfter ? "yes" : "no"}`);
-    console.log(`  health:  ${service.deploy.healthTimeoutSec}s`);
+    out(options, `  command: ${service.deploy.command.join(" ")}\n`);
+    out(options, `  cwd:     ${service.deploy.cwd ?? "-"}\n`);
+    out(options, `  timeout: ${service.deploy.timeoutSec}s\n`);
+    out(options, `  restart: ${service.deploy.restartAfter ? "yes" : "no"}\n`);
+    out(options, `  health:  ${service.deploy.healthTimeoutSec}s\n`);
     if (options.showEnv) {
-      console.log(
-        `  env:     ${service.deploy.env ? JSON.stringify(service.deploy.env) : "-"}`,
+      out(
+        options,
+        `  env:     ${service.deploy.env ? JSON.stringify(service.deploy.env) : "-"}\n`,
       );
     }
   }
-  console.log(`Last deploy: ${service.lastDeployStatus ?? "-"}`);
+  out(options, `Last deploy: ${service.lastDeployStatus ?? "-"}\n`);
   if (service.lastDeployError) {
-    console.log(`Deploy error: ${service.lastDeployError}`);
+    out(options, `Deploy error: ${service.lastDeployError}\n`);
   }
 }
 
-function printServiceList(services: Service[]): void {
+function printServiceList(services: Service[], options: CommandOptions): void {
   printTable(
     ["ID", "NAME", "STATUS", "HEALTH", "HOST", "PORTS", "DEPLOY"],
     services.map((service) => [
@@ -183,30 +234,31 @@ function printServiceList(services: Service[]): void {
       service.expectedPorts.length > 0 ? service.expectedPorts.join(",") : "-",
       service.deploy ? "yes" : "-",
     ]),
+    options.output,
   );
 }
 
 function printDeployPlan(
   service: Service,
   deploy: DeployConfig,
-  showEnv: boolean,
+  options: CommandOptions,
 ): void {
-  console.log(`Service: ${service.name} (${service.id})`);
-  console.log(`Command: ${deploy.command.join(" ")}`);
-  console.log(`CWD:     ${deploy.cwd ?? "-"}`);
-  console.log(`Timeout: ${deploy.timeoutSec}s`);
-  console.log(`Restart: ${deploy.restartAfter ? "yes" : "no"}`);
-  console.log(`Health:  ${deploy.healthTimeoutSec}s`);
-  if (showEnv) {
-    console.log(`Env:     ${deploy.env ? JSON.stringify(deploy.env) : "-"}`);
+  out(options, `Service: ${service.name} (${service.id})\n`);
+  out(options, `Command: ${deploy.command.join(" ")}\n`);
+  out(options, `CWD:     ${deploy.cwd ?? "-"}\n`);
+  out(options, `Timeout: ${deploy.timeoutSec}s\n`);
+  out(options, `Restart: ${deploy.restartAfter ? "yes" : "no"}\n`);
+  out(options, `Health:  ${deploy.healthTimeoutSec}s\n`);
+  if (options.showEnv) {
+    out(options, `Env:     ${deploy.env ? JSON.stringify(deploy.env) : "-"}\n`);
   }
 }
 
-function printAction(action: Action): void {
-  console.log(`Action:  ${action.id}`);
-  console.log(`Type:    ${action.type}`);
-  console.log(`Status:  ${action.status}`);
-  if (action.error) console.log(`Error:   ${action.error}`);
+function printAction(action: Action, options: CommandOptions): void {
+  out(options, `Action:  ${action.id}\n`);
+  out(options, `Type:    ${action.type}\n`);
+  out(options, `Status:  ${action.status}\n`);
+  if (action.error) out(options, `Error:   ${action.error}\n`);
 }
 
 async function confirmDeploy(
@@ -326,10 +378,10 @@ export async function listServices(
   );
 
   if (options.json) {
-    printJson(redactEnvFields(services, options.showEnv));
+    printJson(redactEnvFields(services, options.showEnv), options.output);
     return;
   }
-  printServiceList(services);
+  printServiceList(services, options);
 }
 
 export async function getService(
@@ -356,13 +408,15 @@ export async function createService(
   if (options.dryRun) {
     const preview = { dryRun: true, service: input };
     if (options.json) {
-      printJson(redactEnvFields(preview, options.showEnv));
+      printJson(redactEnvFields(preview, options.showEnv), options.output);
     } else {
-      console.log(
-        "dry-run: 入力スキーマと hostId を確認しました（command allowlist は API 実行時に検証されます）。",
+      out(
+        options,
+        "dry-run: 入力スキーマと hostId を確認しました（command allowlist は API 実行時に検証されます）。\n",
       );
-      console.log(
-        JSON.stringify(redactEnvFields(input, options.showEnv), null, 2),
+      out(
+        options,
+        `${JSON.stringify(redactEnvFields(input, options.showEnv), null, 2)}\n`,
       );
     }
     return;
@@ -370,9 +424,9 @@ export async function createService(
 
   const created = await client.request<Service>("POST", "/api/services", input);
   if (options.json) {
-    printJson(redactEnvFields(created, options.showEnv));
+    printJson(redactEnvFields(created, options.showEnv), options.output);
   } else {
-    console.log("service created.");
+    out(options, "service created.\n");
     printService(created, options);
   }
 }
@@ -397,13 +451,15 @@ export async function updateService(
   if (options.dryRun) {
     const preview = { dryRun: true, serviceId: id, patch };
     if (options.json) {
-      printJson(redactEnvFields(preview, options.showEnv));
+      printJson(redactEnvFields(preview, options.showEnv), options.output);
     } else {
-      console.log(
-        "dry-run: 更新内容のスキーマとサービスIDを確認しました（command allowlist は API 実行時に検証されます）。",
+      out(
+        options,
+        "dry-run: 更新内容のスキーマとサービスIDを確認しました（command allowlist は API 実行時に検証されます）。\n",
       );
-      console.log(
-        JSON.stringify(redactEnvFields(patch, options.showEnv), null, 2),
+      out(
+        options,
+        `${JSON.stringify(redactEnvFields(patch, options.showEnv), null, 2)}\n`,
       );
     }
     return;
@@ -415,9 +471,9 @@ export async function updateService(
     patch,
   );
   if (options.json) {
-    printJson(redactEnvFields(updated, options.showEnv));
+    printJson(redactEnvFields(updated, options.showEnv), options.output);
   } else {
-    console.log("service updated.");
+    out(options, "service updated.\n");
     printService(updated, options);
   }
 }
@@ -449,12 +505,14 @@ export async function deployService(
           },
           options.showEnv,
         ),
+        options.output,
       );
     } else {
-      console.log(
-        "dry-run: deploy は実行しません（command allowlist は API 実行時に検証されます）。",
+      out(
+        options,
+        "dry-run: deploy は実行しません（command allowlist は API 実行時に検証されます）。\n",
       );
-      printDeployPlan(service, deploy, options.showEnv);
+      printDeployPlan(service, deploy, options);
     }
     return 0;
   }
@@ -469,9 +527,9 @@ export async function deployService(
 
   if (!options.wait) {
     if (options.json) {
-      printJson(action);
+      printJson(action, options.output);
     } else {
-      printAction(action);
+      printAction(action, options);
     }
     return action.status === "failed" ? 5 : 0;
   }
@@ -480,15 +538,296 @@ export async function deployService(
   const exitCode = result.action.status === "succeeded" ? 0 : 5;
 
   if (options.json) {
-    printJson({
-      action: result.action,
-      service: redactEnvFields(result.service, options.showEnv),
-    });
+    printJson(
+      {
+        action: result.action,
+        service: redactEnvFields(result.service, options.showEnv),
+      },
+      options.output,
+    );
     return exitCode;
   }
 
-  printAction(result.action);
-  console.log("");
+  printAction(result.action, options);
+  out(options, "\n");
   printService(result.service, { ...options, json: false });
   return exitCode;
+}
+
+function parseWaitTimeout(value: string | undefined, defaultSec = 60): number {
+  if (value === undefined) return defaultSec;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new UsageError("--timeout は 1 以上の整数（秒）で指定してください。");
+  }
+  return parsed;
+}
+
+async function confirmLifecycleAction(
+  service: Service,
+  verb: string,
+  options: CommandOptions,
+): Promise<void> {
+  if (options.yes) return;
+  if (options.json || !process.stdin.isTTY) {
+    throw new UsageError(
+      `非対話環境で ${verb} を実行するには --yes を指定してください。`,
+    );
+  }
+
+  const rl = createInterface({
+    input: process.stdin,
+    output: process.stderr,
+  });
+  try {
+    const answer = await rl.question(
+      `service ${service.name} (${service.id}) を${verb}します。よろしいですか? [y/N] `,
+    );
+    if (!/^y(es)?$/i.test(answer.trim())) {
+      throw new CliError(`${verb} をキャンセルしました。`, 1);
+    }
+  } finally {
+    rl.close();
+  }
+}
+
+function printLifecyclePlan(
+  service: Service,
+  verb: string,
+  dryRun: boolean,
+  options: CommandOptions,
+): void {
+  out(options, `Service: ${service.name} (${service.id})\n`);
+  out(options, `Status:  ${service.status}\n`);
+  out(options, `Action:  ${verb}\n`);
+  if (dryRun) {
+    out(options, "dry-run: API は変更しません。\n");
+    if (verb === "delete" && isRunningStatus(service.status)) {
+      out(
+        options,
+        "注意: 実行中のため、実際の削除は API が 409 Conflict を返します。\n",
+      );
+    }
+  }
+}
+
+function isRunningStatus(status: string): boolean {
+  return ["starting", "running", "degraded", "restarting"].includes(status);
+}
+
+async function waitForAction(
+  client: ApiClient,
+  serviceId: string,
+  action: Action,
+  timeoutSec: number,
+): Promise<Action> {
+  if (action.status === "succeeded" || action.status === "failed") {
+    return action;
+  }
+
+  const deadline = Date.now() + timeoutSec * 1000;
+  let lastStatus = action.status;
+  while (Date.now() < deadline) {
+    await sleep(Math.min(2000, Math.max(0, deadline - Date.now())));
+    const page = await client.request<ActionPage>(
+      "GET",
+      `/api/services/${encodeURIComponent(serviceId)}/actions?limit=50`,
+    );
+    const current = page.items.find((candidate) => candidate.id === action.id);
+    if (current) {
+      lastStatus = current.status;
+      if (current.status === "succeeded" || current.status === "failed") {
+        return current;
+      }
+    }
+  }
+
+  throw new CliError(
+    `アクションがタイムアウトしました (action=${action.id}, last=${lastStatus})`,
+    5,
+  );
+}
+
+function printLifecycleResult(
+  action: Action,
+  service: Service,
+  options: CommandOptions,
+): number {
+  const exitCode = action.status === "failed" ? 5 : 0;
+  if (options.json) {
+    printJson(
+      { action, service: redactEnvFields(service, options.showEnv) },
+      options.output,
+    );
+    return exitCode;
+  }
+  printAction(action, options);
+  out(options, `Service status: ${service.status}\n`);
+  return exitCode;
+}
+
+async function runAction(
+  client: ApiClient,
+  positionals: string[],
+  options: CommandOptions,
+  verb: "start" | "stop" | "restart",
+): Promise<number> {
+  const id = requireId(positionals, `services ${verb}`);
+  const service = await fetchService(client, id);
+
+  if (options.dryRun) {
+    if (options.json) {
+      printJson(
+        {
+          dryRun: true,
+          action: verb,
+          service: {
+            id: service.id,
+            name: service.name,
+            status: service.status,
+          },
+        },
+        options.output,
+      );
+    } else {
+      printLifecyclePlan(service, verb, true, options);
+    }
+    return 0;
+  }
+
+  if (verb !== "start") {
+    await confirmLifecycleAction(service, verb, options);
+  }
+
+  const action = await client.request<Action>(
+    "POST",
+    `/api/services/${encodeURIComponent(id)}/${verb}`,
+  );
+
+  if (!options.wait) {
+    if (options.json) printJson(action, options.output);
+    else printAction(action, options);
+    return action.status === "failed" ? 5 : 0;
+  }
+
+  const timeoutSec = parseWaitTimeout(options.timeout);
+  const finished = await waitForAction(client, id, action, timeoutSec);
+  const updated = await fetchService(client, id);
+  return printLifecycleResult(finished, updated, options);
+}
+
+async function deleteService(
+  client: ApiClient,
+  positionals: string[],
+  options: CommandOptions,
+): Promise<number> {
+  const id = requireId(positionals, "services delete");
+  const service = await fetchService(client, id);
+
+  if (options.dryRun) {
+    if (options.json) {
+      printJson(
+        {
+          dryRun: true,
+          action: "delete",
+          service: {
+            id: service.id,
+            name: service.name,
+            status: service.status,
+          },
+        },
+        options.output,
+      );
+    } else {
+      printLifecyclePlan(service, "delete", true, options);
+    }
+    return 0;
+  }
+
+  await confirmLifecycleAction(service, "delete", options);
+  await client.request<void>(
+    "DELETE",
+    `/api/services/${encodeURIComponent(id)}`,
+  );
+
+  if (options.json) {
+    printJson({ deleted: true, id }, options.output);
+  } else {
+    out(options, `service deleted: ${id}\n`);
+  }
+  return 0;
+}
+
+async function listServiceActions(
+  client: ApiClient,
+  positionals: string[],
+  options: CommandOptions,
+): Promise<number> {
+  const id = requireId(positionals, "services actions");
+  const limit = parseLimit(options.limit, 50, 200);
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (options.cursor) params.set("cursor", options.cursor);
+
+  const page = await client.request<ActionPage>(
+    "GET",
+    `/api/services/${encodeURIComponent(id)}/actions?${params.toString()}`,
+  );
+
+  if (options.json) {
+    printJson(page, options.output);
+    return 0;
+  }
+
+  if (page.items.length === 0) {
+    out(options, "アクション履歴はありません。\n");
+    return 0;
+  }
+
+  printTable(
+    ["ID", "TYPE", "STATUS", "STARTED", "FINISHED", "ERROR"],
+    page.items.map((action) => [
+      shortId(action.id),
+      action.type,
+      action.status,
+      action.startedAt ?? "-",
+      action.finishedAt ?? "-",
+      action.error ?? "-",
+    ]),
+    options.output,
+  );
+  if (page.nextCursor) {
+    err(options, `next: --cursor ${page.nextCursor}\n`);
+  }
+  return 0;
+}
+
+export function parseLimit(
+  value: string | undefined,
+  defaultValue: number,
+  maximum: number,
+): number {
+  if (value === undefined) return defaultValue;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > maximum) {
+    throw new UsageError(`--limit は 1〜${maximum} の整数で指定してください。`);
+  }
+  return parsed;
+}
+
+export async function runServiceLifecycle(
+  verb: "start" | "stop" | "restart" | "delete" | "actions",
+  client: ApiClient,
+  positionals: string[],
+  options: CommandOptions,
+): Promise<number> {
+  switch (verb) {
+    case "start":
+    case "stop":
+    case "restart":
+      return runAction(client, positionals, options, verb);
+    case "delete":
+      return deleteService(client, positionals, options);
+    case "actions":
+      return listServiceActions(client, positionals, options);
+  }
 }

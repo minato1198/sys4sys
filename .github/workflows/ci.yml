@@ -29,6 +29,14 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
+      - name: CLI schema is up to date
+        run: |
+          pnpm schema:generate
+          git diff --exit-code -- docs/cli-schema.json
+
+      - name: CLI tests
+        run: pnpm --filter @sys4sys/cli test
+
       - name: Test
         run: pnpm test
 

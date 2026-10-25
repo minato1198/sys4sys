@@ -160,75 +160,79 @@ async function detailForId(id: string) {
 }
 
 export async function incidentRoutes(app: FastifyInstance): Promise<void> {
-  app.get("/incidents", { preHandler: requireAuth }, async (request) => {
-    const query = incidentQuerySchema.parse(request.query);
-    const where = and(
-      query.status ? eq(incidents.status, query.status) : undefined,
-      query.severity ? eq(incidents.severity, query.severity) : undefined,
-      query.serviceId ? eq(incidents.serviceId, query.serviceId) : undefined,
-    );
-    const [rows, all] = await Promise.all([
-      db
-        .select()
-        .from(incidents)
-        .where(where)
-        .orderBy(desc(incidents.startedAt))
-        .limit(query.limit)
-        .offset(query.offset),
-      db.select({ id: incidents.id }).from(incidents).where(where),
-    ]);
+  app.get(
+    "/incidents",
+    { preHandler: requireAuth, config: { scopes: ["incidents:read"] } },
+    async (request) => {
+      const query = incidentQuerySchema.parse(request.query);
+      const where = and(
+        query.status ? eq(incidents.status, query.status) : undefined,
+        query.severity ? eq(incidents.severity, query.severity) : undefined,
+        query.serviceId ? eq(incidents.serviceId, query.serviceId) : undefined,
+      );
+      const [rows, all] = await Promise.all([
+        db
+          .select()
+          .from(incidents)
+          .where(where)
+          .orderBy(desc(incidents.startedAt))
+          .limit(query.limit)
+          .offset(query.offset),
+        db.select({ id: incidents.id }).from(incidents).where(where),
+      ]);
 
-    const serviceIds = [...new Set(rows.map((row) => row.serviceId))];
-    const serviceRows =
-      serviceIds.length > 0
-        ? await db
-            .select()
-            .from(services)
-            .where(inArray(services.id, serviceIds))
-        : [];
-    const serviceMap = new Map(serviceRows.map((row) => [row.id, row]));
-    const hostIds = [
-      ...new Set(serviceRows.map((row) => row.hostId).filter(Boolean)),
-    ];
-    const hostRows =
-      hostIds.length > 0
-        ? await db.select().from(hosts).where(inArray(hosts.id, hostIds))
-        : [];
-    const hostMap = new Map(hostRows.map((row) => [row.id, row]));
-    const incidentIds = rows.map((row) => row.id);
-    const pending =
-      incidentIds.length > 0
-        ? await db
-            .select()
-            .from(approvals)
-            .where(
-              and(
-                inArray(approvals.incidentId, incidentIds),
-                eq(approvals.status, "pending"),
-              ),
-            )
-        : [];
-    const approvalByIncident = new Map(
-      pending.map((row) => [row.incidentId, row.id]),
-    );
+      const serviceIds = [...new Set(rows.map((row) => row.serviceId))];
+      const serviceRows =
+        serviceIds.length > 0
+          ? await db
+              .select()
+              .from(services)
+              .where(inArray(services.id, serviceIds))
+          : [];
+      const serviceMap = new Map(serviceRows.map((row) => [row.id, row]));
+      const hostIds = [
+        ...new Set(serviceRows.map((row) => row.hostId).filter(Boolean)),
+      ];
+      const hostRows =
+        hostIds.length > 0
+          ? await db.select().from(hosts).where(inArray(hosts.id, hostIds))
+          : [];
+      const hostMap = new Map(hostRows.map((row) => [row.id, row]));
+      const incidentIds = rows.map((row) => row.id);
+      const pending =
+        incidentIds.length > 0
+          ? await db
+              .select()
+              .from(approvals)
+              .where(
+                and(
+                  inArray(approvals.incidentId, incidentIds),
+                  eq(approvals.status, "pending"),
+                ),
+              )
+          : [];
+      const approvalByIncident = new Map(
+        pending.map((row) => [row.incidentId, row.id]),
+      );
 
-    return {
-      items: rows.map((row) => {
-        const service = serviceMap.get(row.serviceId) ?? null;
-        return incidentResponse(
-          row,
-          service,
-          service ? (hostMap.get(service.hostId) ?? null) : null,
-          approvalByIncident.get(row.id) ?? null,
-        );
-      }),
-      total: all.length,
-    };
-  });
+      return {
+        items: rows.map((row) => {
+          const service = serviceMap.get(row.serviceId) ?? null;
+          return incidentResponse(
+            row,
+            service,
+            service ? (hostMap.get(service.hostId) ?? null) : null,
+            approvalByIncident.get(row.id) ?? null,
+          );
+        }),
+        total: all.length,
+      };
+    },
+  );
 
   app.get(
     "/incidents/:id",
-    { preHandler: requireAuth },
+    { preHandler: requireAuth, config: { scopes: ["incidents:read"] } },
     async (request, reply) => {
       const { id } = idParamsSchema.parse(request.params);
       const detail = await detailForId(id);
@@ -241,7 +245,10 @@ export async function incidentRoutes(app: FastifyInstance): Promise<void> {
 
   app.post(
     "/incidents/:id/ack",
-    { preHandler: requireRole("operator") },
+    {
+      preHandler: requireRole("operator"),
+      config: { scopes: ["incidents:write"] },
+    },
     async (request, reply) => {
       const { id } = idParamsSchema.parse(request.params);
       const body = incidentActionSchema.parse(request.body ?? {});
@@ -266,7 +273,10 @@ export async function incidentRoutes(app: FastifyInstance): Promise<void> {
 
   app.post(
     "/incidents/:id/resolve",
-    { preHandler: requireRole("operator") },
+    {
+      preHandler: requireRole("operator"),
+      config: { scopes: ["incidents:write"] },
+    },
     async (request, reply) => {
       const { id } = idParamsSchema.parse(request.params);
       const body = incidentActionSchema.parse(request.body ?? {});

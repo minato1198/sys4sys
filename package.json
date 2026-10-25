@@ -19,6 +19,7 @@
     "db:generate": "pnpm --filter @sys4sys/api db:generate",
     "db:migrate": "pnpm --filter @sys4sys/api db:migrate",
     "db:backup": "pnpm --filter @sys4sys/api db:backup",
+    "schema:generate": "tsx apps/cli/src/scripts/generate-schema.ts --write docs/cli-schema.json",
     "demo:build": "pnpm --filter @sys4sys/demo-api build",
     "demo:start": "pnpm --filter @sys4sys/demo-api start",
     "format": "prettier --write .",

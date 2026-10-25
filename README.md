@@ -110,7 +110,8 @@ pnpm audit --prod
 | `pnpm dev:api`                     | API のみ起動                 |
 | `pnpm dev:web`                     | Web のみ起動                 |
 | `pnpm scan`                        | ポートスキャン CLI           |
-| `pnpm sys4sys -- --help`           | サービス登録・deploy CLI     |
+| `pnpm sys4sys -- --help`           | sys4sys CLI                  |
+| `pnpm schema:generate`             | CLI Schema 生成              |
 | `pnpm db:generate`                 | Drizzle マイグレーション生成 |
 | `pnpm db:migrate`                  | マイグレーション適用         |
 | `pnpm db:backup`                   | SQLite バックアップ          |
@@ -120,19 +121,31 @@ pnpm audit --prod
 
 ## CLI
 
-`@sys4sys/cli` でサービス登録や deploy 設定の登録を JSON から実行できます。
+`@sys4sys/cli` でサービス・ログ・API トークン・デプロイを操作できます。CLI は SQLite を直接操作せず、必ず API 経由で実行します。
 
 ```powershell
 $env:SYS4SYS_API_URL = "http://127.0.0.1:8787"
-$env:SYS4SYS_EMAIL = "admin@example.local"
-$env:SYS4SYS_PASSWORD = "..."
+$env:SYS4SYS_TOKEN = "s4s_..."
 
+pnpm sys4sys -- whoami --json
 pnpm sys4sys -- services list --json
-pnpm sys4sys -- services create --file apps/cli/examples/service.create.json --dry-run
-pnpm sys4sys -- services deploy <id> --dry-run
+pnpm sys4sys -- logs query --service <id> --since 30m --json
+pnpm sys4sys -- services restart <id> --dry-run
+pnpm sys4sys -- services restart <id> --yes --wait --json
 ```
 
-`env` / `deploy.env` は既定でマスクされます。詳細は [apps/cli/README.md](./apps/cli/README.md) を参照してください。
+対話環境では `sys4sys auth login` でログインできます。資格情報の優先順位は `SYS4SYS_TOKEN` > `SYS4SYS_TOKEN_FILE` > 保存済みトークン > `SYS4SYS_SESSION_COOKIE` > 保存済み Cookie > メール/パスワードです。
+
+- `env` / `deploy.env` は既定でマスクされます。`--show-env` は原則使わないでください。
+- `stop` / `restart` / `delete` / `tokens revoke` / `deploy` は非対話環境で `--yes` が必須です。`--dry-run` で対象を確認してください。
+- 終了コード: 0 成功、1 一般エラー、2 引数エラー、3 認証/権限エラー、4 競合、5 非同期処理の失敗。
+- P0 時点ではサーバー側の env マスク・暗号化保存は未実装です。インシデント・承認・レポートの CLI は P1 以降です。
+
+詳細:
+
+- [CLI README](./apps/cli/README.md)
+- [AI エージェント向け SKILL.md](./apps/cli/SKILL.md)
+- [CLI Schema](./docs/cli-schema.json)
 
 ## セキュリティ
 

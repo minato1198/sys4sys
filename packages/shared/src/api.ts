@@ -181,6 +181,12 @@ export const serviceListQuerySchema = z.object({
 });
 export type ServiceListQuery = z.infer<typeof serviceListQuerySchema>;
 
+export const serviceActionsQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  cursor: z.string().min(1).optional(),
+});
+export type ServiceActionsQuery = z.infer<typeof serviceActionsQuerySchema>;
+
 export const approvalDecisionSchema = z.object({
   note: z.string().max(500).optional(),
 });

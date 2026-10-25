@@ -2,12 +2,13 @@ import { randomUUID } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import {
   deployConfigSchema,
+  serviceActionsQuerySchema,
   serviceCreateSchema,
   serviceListQuerySchema,
   serviceUpdateSchema,
   type DeployConfigInput,
 } from "@sys4sys/shared";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, lt, or } from "drizzle-orm";
 import { z } from "zod";
 import { writeAudit } from "../audit.js";
 import { requireAuth, requireRole } from "../auth/guard.js";
@@ -117,6 +118,24 @@ function actionResponse(row: ActionRow) {
   };
 }
 
+export function encodeActionsCursor(row: {
+  id: string;
+  startedAt: Date;
+}): string {
+  return `${row.startedAt.toISOString()}|${row.id}`;
+}
+
+export function decodeActionsCursor(
+  cursor: string,
+): { startedAt: Date; id: string } | null {
+  const separator = cursor.indexOf("|");
+  if (separator <= 0 || separator === cursor.length - 1) return null;
+  const startedAt = new Date(cursor.slice(0, separator));
+  const id = cursor.slice(separator + 1);
+  if (Number.isNaN(startedAt.getTime()) || !id) return null;
+  return { startedAt, id };
+}
+
 async function findService(id: string): Promise<ServiceRow | undefined> {
   const [row] = await db
     .select()
@@ -153,27 +172,31 @@ function deployAuditValue(deploy: DeployConfigInput | null | undefined) {
 }
 
 export async function serviceRoutes(app: FastifyInstance): Promise<void> {
-  app.get("/services", { preHandler: requireAuth }, async (request) => {
-    const query = serviceListQuerySchema.parse(request.query);
-    const rows = await db
-      .select()
-      .from(services)
-      .where(
-        and(
-          eq(services.isActive, true),
-          query.hostId ? eq(services.hostId, query.hostId) : undefined,
-          query.status ? eq(services.status, query.status) : undefined,
-        ),
-      )
-      .orderBy(services.name);
-    const hostRows = await db.select().from(hosts);
-    const hostMap = new Map(hostRows.map((row) => [row.id, row]));
-    return rows.map((row) => serviceResponse(row, hostMap.get(row.hostId)));
-  });
+  app.get(
+    "/services",
+    { preHandler: requireAuth, config: { scopes: ["services:read"] } },
+    async (request) => {
+      const query = serviceListQuerySchema.parse(request.query);
+      const rows = await db
+        .select()
+        .from(services)
+        .where(
+          and(
+            eq(services.isActive, true),
+            query.hostId ? eq(services.hostId, query.hostId) : undefined,
+            query.status ? eq(services.status, query.status) : undefined,
+          ),
+        )
+        .orderBy(services.name);
+      const hostRows = await db.select().from(hosts);
+      const hostMap = new Map(hostRows.map((row) => [row.id, row]));
+      return rows.map((row) => serviceResponse(row, hostMap.get(row.hostId)));
+    },
+  );
 
   app.get(
     "/services/:id",
-    { preHandler: requireAuth },
+    { preHandler: requireAuth, config: { scopes: ["services:read"] } },
     async (request, reply) => {
       const { id } = idParamsSchema.parse(request.params);
       const service = await findService(id);
@@ -200,7 +223,10 @@ export async function serviceRoutes(app: FastifyInstance): Promise<void> {
 
   app.post(
     "/services",
-    { preHandler: requireRole("admin") },
+    {
+      preHandler: requireRole("admin"),
+      config: { scopes: ["services:write"] },
+    },
     async (request, reply) => {
       const body = serviceCreateSchema.parse(request.body);
       const user = actor(request);
@@ -324,7 +350,10 @@ export async function serviceRoutes(app: FastifyInstance): Promise<void> {
 
   app.patch(
     "/services/:id",
-    { preHandler: requireRole("admin") },
+    {
+      preHandler: requireRole("admin"),
+      config: { scopes: ["services:write"] },
+    },
     async (request, reply) => {
       const { id } = idParamsSchema.parse(request.params);
       const body = serviceUpdateSchema.parse(request.body);
@@ -442,7 +471,10 @@ export async function serviceRoutes(app: FastifyInstance): Promise<void> {
 
   app.delete(
     "/services/:id",
-    { preHandler: requireRole("admin") },
+    {
+      preHandler: requireRole("admin"),
+      config: { scopes: ["services:write"] },
+    },
     async (request, reply) => {
       const { id } = idParamsSchema.parse(request.params);
       const user = actor(request);
@@ -606,7 +638,10 @@ export async function serviceRoutes(app: FastifyInstance): Promise<void> {
 
   app.post(
     "/services/:id/start",
-    { preHandler: requireRole("operator", "admin") },
+    {
+      preHandler: requireRole("operator", "admin"),
+      config: { scopes: ["services:operate"] },
+    },
     async (request, reply) =>
       performAction(request, reply, "start", () => {
         const { id } = idParamsSchema.parse(request.params);
@@ -616,7 +651,10 @@ export async function serviceRoutes(app: FastifyInstance): Promise<void> {
 
   app.post(
     "/services/:id/stop",
-    { preHandler: requireRole("operator", "admin") },
+    {
+      preHandler: requireRole("operator", "admin"),
+      config: { scopes: ["services:operate"] },
+    },
     async (request, reply) =>
       performAction(request, reply, "stop", () => {
         const { id } = idParamsSchema.parse(request.params);
@@ -626,7 +664,10 @@ export async function serviceRoutes(app: FastifyInstance): Promise<void> {
 
   app.post(
     "/services/:id/restart",
-    { preHandler: requireRole("operator", "admin") },
+    {
+      preHandler: requireRole("operator", "admin"),
+      config: { scopes: ["services:operate"] },
+    },
     async (request, reply) =>
       performAction(request, reply, "restart", () => {
         const { id } = idParamsSchema.parse(request.params);
@@ -636,7 +677,10 @@ export async function serviceRoutes(app: FastifyInstance): Promise<void> {
 
   app.post(
     "/services/:id/deploy",
-    { preHandler: requireRole("operator", "admin") },
+    {
+      preHandler: requireRole("operator", "admin"),
+      config: { scopes: ["deploy:execute"] },
+    },
     async (request, reply) => {
       const { id } = idParamsSchema.parse(request.params);
       const user = actor(request);
@@ -702,8 +746,59 @@ export async function serviceRoutes(app: FastifyInstance): Promise<void> {
   );
 
   app.get(
+    "/services/:id/actions",
+    { preHandler: requireAuth, config: { scopes: ["services:read"] } },
+    async (request, reply) => {
+      const { id } = idParamsSchema.parse(request.params);
+      const query = serviceActionsQuerySchema.parse(request.query);
+      const service = await findService(id);
+      if (!service) {
+        return problem(reply, 404, "Not Found", "サービスが見つかりません");
+      }
+
+      const cursor = query.cursor ? decodeActionsCursor(query.cursor) : null;
+      if (query.cursor && !cursor) {
+        return problem(
+          reply,
+          422,
+          "Unprocessable Entity",
+          "cursor の形式が不正です（<startedAt>|<id>）",
+        );
+      }
+
+      const conditions = [eq(actions.serviceId, id)];
+      if (cursor) {
+        conditions.push(
+          or(
+            lt(actions.startedAt, cursor.startedAt),
+            and(
+              eq(actions.startedAt, cursor.startedAt),
+              lt(actions.id, cursor.id),
+            ),
+          )!,
+        );
+      }
+
+      const rows = await db
+        .select()
+        .from(actions)
+        .where(and(...conditions))
+        .orderBy(desc(actions.startedAt), desc(actions.id))
+        .limit(query.limit + 1);
+
+      const hasMore = rows.length > query.limit;
+      const items = hasMore ? rows.slice(0, query.limit) : rows;
+      const last = items[items.length - 1];
+      return {
+        items: items.map(actionResponse),
+        nextCursor: hasMore && last ? encodeActionsCursor(last) : null,
+      };
+    },
+  );
+
+  app.get(
     "/services/:id/health",
-    { preHandler: requireAuth },
+    { preHandler: requireAuth, config: { scopes: ["services:read"] } },
     async (request, reply) => {
       const { id } = idParamsSchema.parse(request.params);
       try {

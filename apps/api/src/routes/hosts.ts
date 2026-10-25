@@ -55,23 +55,30 @@ function problem(
 }
 
 export async function hostRoutes(app: FastifyInstance): Promise<void> {
-  app.get("/hosts", { preHandler: requireAuth }, async () => {
-    const rows = await db.select().from(hosts).orderBy(hosts.kind, hosts.name);
-    let distros: WslDistro[] = [];
-    try {
-      distros = await detectDistros();
-    } catch {
-      distros = [];
-    }
-    const byName = new Map(distros.map((distro) => [distro.name, distro]));
-    return rows.map((row) =>
-      hostResponse(row, row.distro ? byName.get(row.distro) : undefined),
-    );
-  });
+  app.get(
+    "/hosts",
+    { preHandler: requireAuth, config: { scopes: ["hosts:read"] } },
+    async () => {
+      const rows = await db
+        .select()
+        .from(hosts)
+        .orderBy(hosts.kind, hosts.name);
+      let distros: WslDistro[] = [];
+      try {
+        distros = await detectDistros();
+      } catch {
+        distros = [];
+      }
+      const byName = new Map(distros.map((distro) => [distro.name, distro]));
+      return rows.map((row) =>
+        hostResponse(row, row.distro ? byName.get(row.distro) : undefined),
+      );
+    },
+  );
 
   app.post(
     "/hosts/wsl/detect",
-    { preHandler: requireRole("admin") },
+    { preHandler: requireRole("admin"), config: { scopes: ["hosts:write"] } },
     async (_request, reply) => {
       try {
         const [distros, registered] = await Promise.all([
@@ -97,7 +104,7 @@ export async function hostRoutes(app: FastifyInstance): Promise<void> {
 
   app.post(
     "/hosts",
-    { preHandler: requireRole("admin") },
+    { preHandler: requireRole("admin"), config: { scopes: ["hosts:write"] } },
     async (request, reply) => {
       const body = hostCreateSchema.parse(request.body);
       const user = request.authUser;
@@ -203,7 +210,7 @@ export async function hostRoutes(app: FastifyInstance): Promise<void> {
 
   app.patch(
     "/hosts/:id",
-    { preHandler: requireRole("admin") },
+    { preHandler: requireRole("admin"), config: { scopes: ["hosts:write"] } },
     async (request, reply) => {
       const { id } = idParamsSchema.parse(request.params);
       const body = hostUpdateSchema.parse(request.body);

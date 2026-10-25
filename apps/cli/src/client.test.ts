@@ -114,6 +114,162 @@ test("accepts an existing session cookie", async () => {
   }
 });
 
+test("sends a bearer token instead of a session cookie", async () => {
+  let authorization: string | undefined;
+  let cookie: string | undefined;
+  const server = await startServer((request, response) => {
+    authorization = request.headers.authorization;
+    cookie = request.headers.cookie;
+    json(response, 200, {
+      id: "user-1",
+      email: "ai@example.local",
+      name: "AI",
+      role: "admin",
+      authMethod: "token",
+      scopes: ["services:read"],
+      token: { id: "token-1", name: "ci", prefix: "s4s_abcd" },
+    });
+  });
+
+  try {
+    const client = new ApiClient({
+      apiUrl: server.url,
+      token: "s4s_token",
+      sessionCookie: "old-session",
+    });
+    await client.whoami();
+    assert.equal(authorization, "Bearer s4s_token");
+    assert.equal(cookie, undefined);
+  } finally {
+    await server.close();
+  }
+});
+
+test("does not re-login on 401 when using a token", async () => {
+  let logins = 0;
+  const server = await startServer((request, response) => {
+    if (request.url === "/api/auth/login") {
+      logins += 1;
+      response.setHeader("Set-Cookie", "sys4sys_session=new; Path=/");
+      json(response, 200, {
+        id: "user-1",
+        email: "ai@example.local",
+        name: "AI",
+        role: "admin",
+      });
+      return;
+    }
+    response.statusCode = 401;
+    response.setHeader("Content-Type", "application/problem+json");
+    response.end(
+      JSON.stringify({
+        type: "about:blank",
+        title: "Unauthorized",
+        status: 401,
+        detail: "トークンが無効です",
+      }),
+    );
+  });
+
+  try {
+    const client = new ApiClient({
+      apiUrl: server.url,
+      token: "s4s_invalid",
+      email: "ai@example.local",
+      password: "secret-password",
+    });
+    await assert.rejects(
+      () => client.whoami(),
+      (error: unknown) => {
+        assert.ok(error instanceof ApiError);
+        assert.equal(error.status, 401);
+        return true;
+      },
+    );
+    assert.equal(logins, 0);
+  } finally {
+    await server.close();
+  }
+});
+
+test("re-logins exactly once on 401 for a session", async () => {
+  let logins = 0;
+  let meCalls = 0;
+  const server = await startServer((request, response) => {
+    if (request.url === "/api/auth/login" && request.method === "POST") {
+      logins += 1;
+      response.setHeader("Set-Cookie", "sys4sys_session=fresh; Path=/");
+      json(response, 200, {
+        id: "user-1",
+        email: "ai@example.local",
+        name: "AI",
+        role: "admin",
+      });
+      return;
+    }
+
+    meCalls += 1;
+    if (meCalls === 1) {
+      response.statusCode = 401;
+      response.end();
+      return;
+    }
+    json(response, 200, {
+      id: "user-1",
+      email: "ai@example.local",
+      name: "AI",
+      role: "admin",
+      authMethod: "session",
+      scopes: ["services:read"],
+    });
+  });
+
+  try {
+    const client = new ApiClient({
+      apiUrl: server.url,
+      sessionCookie: "stale",
+      email: "ai@example.local",
+      password: "secret-password",
+    });
+    const me = await client.whoami();
+    assert.equal(me.authMethod, "session");
+    assert.equal(logins, 1);
+    assert.equal(meCalls, 2);
+  } finally {
+    await server.close();
+  }
+});
+
+test("retains requiredScope from 403 problem details", async () => {
+  const server = await startServer((request, response) => {
+    response.statusCode = 403;
+    response.setHeader("Content-Type", "application/problem+json");
+    response.end(
+      JSON.stringify({
+        type: "about:blank",
+        title: "Forbidden",
+        status: 403,
+        detail: "この操作には services:write スコープが必要です",
+        requiredScope: "services:write",
+      }),
+    );
+  });
+
+  try {
+    const client = new ApiClient({ apiUrl: server.url, token: "s4s_token" });
+    await assert.rejects(
+      () => client.request("POST", "/api/services", {}),
+      (error: unknown) => {
+        assert.ok(error instanceof ApiError);
+        assert.equal(error.problem?.requiredScope, "services:write");
+        return true;
+      },
+    );
+  } finally {
+    await server.close();
+  }
+});
+
 test("normalizes API URLs and rejects unsupported protocols", () => {
   assert.equal(
     normalizeApiUrl("http://127.0.0.1:8787/api/"),

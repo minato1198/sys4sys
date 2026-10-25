@@ -116,62 +116,66 @@ function handleError(reply: FastifyReply, error: unknown) {
 }
 
 export async function approvalRoutes(app: FastifyInstance): Promise<void> {
-  app.get("/approvals", { preHandler: requireAuth }, async (request) => {
-    const query = approvalQuerySchema.parse(request.query);
-    const [rows, all] = await Promise.all([
-      db
-        .select()
-        .from(approvals)
-        .where(eq(approvals.status, query.status))
-        .orderBy(desc(approvals.requestedAt))
-        .limit(query.limit),
-      db
-        .select({ id: approvals.id })
-        .from(approvals)
-        .where(eq(approvals.status, query.status)),
-    ]);
+  app.get(
+    "/approvals",
+    { preHandler: requireAuth, config: { scopes: ["approvals:read"] } },
+    async (request) => {
+      const query = approvalQuerySchema.parse(request.query);
+      const [rows, all] = await Promise.all([
+        db
+          .select()
+          .from(approvals)
+          .where(eq(approvals.status, query.status))
+          .orderBy(desc(approvals.requestedAt))
+          .limit(query.limit),
+        db
+          .select({ id: approvals.id })
+          .from(approvals)
+          .where(eq(approvals.status, query.status)),
+      ]);
 
-    const incidentIds = [...new Set(rows.map((row) => row.incidentId))];
-    const incidentRows =
-      incidentIds.length > 0
-        ? await db
-            .select()
-            .from(incidents)
-            .where(inArray(incidents.id, incidentIds))
-        : [];
-    const incidentMap = new Map(incidentRows.map((row) => [row.id, row]));
-    const serviceIds = [...new Set(incidentRows.map((row) => row.serviceId))];
-    const serviceRows =
-      serviceIds.length > 0
-        ? await db
-            .select()
-            .from(services)
-            .where(inArray(services.id, serviceIds))
-        : [];
-    const serviceMap = new Map(serviceRows.map((row) => [row.id, row]));
-    const hostIds = [...new Set(serviceRows.map((row) => row.hostId))];
-    const hostRows =
-      hostIds.length > 0
-        ? await db.select().from(hosts).where(inArray(hosts.id, hostIds))
-        : [];
-    const hostMap = new Map(hostRows.map((row) => [row.id, row]));
+      const incidentIds = [...new Set(rows.map((row) => row.incidentId))];
+      const incidentRows =
+        incidentIds.length > 0
+          ? await db
+              .select()
+              .from(incidents)
+              .where(inArray(incidents.id, incidentIds))
+          : [];
+      const incidentMap = new Map(incidentRows.map((row) => [row.id, row]));
+      const serviceIds = [...new Set(incidentRows.map((row) => row.serviceId))];
+      const serviceRows =
+        serviceIds.length > 0
+          ? await db
+              .select()
+              .from(services)
+              .where(inArray(services.id, serviceIds))
+          : [];
+      const serviceMap = new Map(serviceRows.map((row) => [row.id, row]));
+      const hostIds = [...new Set(serviceRows.map((row) => row.hostId))];
+      const hostRows =
+        hostIds.length > 0
+          ? await db.select().from(hosts).where(inArray(hosts.id, hostIds))
+          : [];
+      const hostMap = new Map(hostRows.map((row) => [row.id, row]));
 
-    return {
-      items: rows.map((row) => {
-        const incident = incidentMap.get(row.incidentId) ?? null;
-        const service = incident
-          ? (serviceMap.get(incident.serviceId) ?? null)
-          : null;
-        return approvalResponse(
-          row,
-          incident,
-          service,
-          service ? (hostMap.get(service.hostId) ?? null) : null,
-        );
-      }),
-      total: all.length,
-    };
-  });
+      return {
+        items: rows.map((row) => {
+          const incident = incidentMap.get(row.incidentId) ?? null;
+          const service = incident
+            ? (serviceMap.get(incident.serviceId) ?? null)
+            : null;
+          return approvalResponse(
+            row,
+            incident,
+            service,
+            service ? (hostMap.get(service.hostId) ?? null) : null,
+          );
+        }),
+        total: all.length,
+      };
+    },
+  );
 
   const decide =
     (decision: "approved" | "rejected") =>
@@ -204,12 +208,18 @@ export async function approvalRoutes(app: FastifyInstance): Promise<void> {
 
   app.post(
     "/approvals/:id/approve",
-    { preHandler: requireRole("operator") },
+    {
+      preHandler: requireRole("operator"),
+      config: { scopes: ["approvals:decide"] },
+    },
     decide("approved"),
   );
   app.post(
     "/approvals/:id/reject",
-    { preHandler: requireRole("operator") },
+    {
+      preHandler: requireRole("operator"),
+      config: { scopes: ["approvals:decide"] },
+    },
     decide("rejected"),
   );
 }
