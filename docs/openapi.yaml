@@ -850,7 +850,7 @@ paths:
       - $ref: "#/components/parameters/Id"
     post:
       tags: [incidents]
-      summary: 確認済みにする（operator 以上）
+      summary: 確認済みにする（operator / admin）
       requestBody:
         content:
           application/json:
@@ -861,6 +861,9 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/IncidentDetail" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
 
   /incidents/{id}/resolve:
@@ -868,7 +871,7 @@ paths:
       - $ref: "#/components/parameters/Id"
     post:
       tags: [incidents]
-      summary: 解決済みにする（operator 以上）
+      summary: 解決済みにする（operator / admin）
       requestBody:
         content:
           application/json:
@@ -879,19 +882,25 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/IncidentDetail" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
 
   /incidents/{id}/analyze:
     parameters:
       - $ref: "#/components/parameters/Id"
     post:
       tags: [incidents]
-      summary: AI 分析を非同期キューへ投入（operator 以上）
+      summary: AI 分析を非同期キューへ投入（operator / admin）
       responses:
         "202":
           description: 分析ジョブを受け付け
           content:
             application/json:
               schema: { $ref: "#/components/schemas/AiAnalysisQueued" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
 
   /incidents/{id}/analysis:

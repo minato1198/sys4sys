@@ -100,9 +100,9 @@ sys4sys tokens revoke <token-id> --yes
 - `approvals approve` / `reject` は `approvals:decide` が必要です。`requestedBy` が自分と一致する承認は 403 になります。監視エンジン由来の `requestedBy = null` は system 承認として扱われます。
 - `hosts create` / `hosts update` / `hosts detect` は `hosts:write`、一覧・詳細は `hosts:read` です。`--disable` は非対話で `--yes` が必要です。
 - `ports reserve` / `release` / `kill` は `ports:operate`、一覧・履歴は `ports:read` です。
-- `incidents ack` / `resolve` / `analyze` は `incidents:write`、一覧・詳細は `incidents:read` です。
+- `incidents ack` / `resolve` / `analyze` は operator / admin 権限と `incidents:write`、一覧・詳細は `incidents:read` です。
 - `reports list` / `get` / `export` は `reports:read`、`audit list` は `audit:read`、設定系は `settings:read` / `settings:write` です。
-- トークン認証では API のスコープが適用されます。403 の場合は `requiredScope` を確認してください。
+- トークン認証では API のスコープが適用されます。admin ロールでも、トークンに必要なスコープを明示的に付与していないと 403 になることがあります。403 の場合は `requiredScope` と `sys4sys whoami --json` の `scopes` を確認してください。
 - `services:secrets`（復号済み env の閲覧）は admin 専用です。CLI の `--show-env` はこの権限がないと成功しません。
 
 ## コマンド

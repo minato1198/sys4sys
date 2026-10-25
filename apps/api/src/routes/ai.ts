@@ -118,7 +118,7 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
   app.post(
     "/incidents/:id/analyze",
     {
-      preHandler: requireRole("operator"),
+      preHandler: requireRole("operator", "admin"),
       config: { scopes: ["incidents:write"] },
     },
     async (request, reply) => {

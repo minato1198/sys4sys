@@ -200,3 +200,35 @@ describe("approvals requestedBy and decisions", () => {
     expect(approve.json()).toMatchObject({ title: "Not Found" });
   });
 });
+
+describe("incident route role access", () => {
+  it("allows admin to ack, analyze, and resolve incidents", async () => {
+    const { incidentId } = await seedApproval(null);
+
+    const ack = await app.inject({
+      method: "POST",
+      url: `/api/incidents/${incidentId}/ack`,
+      headers: { cookie: adminCookie },
+      payload: { note: "admin ack" },
+    });
+    expect(ack.statusCode).toBe(200);
+    expect((ack.json() as any).status).toBe("acked");
+
+    const analyze = await app.inject({
+      method: "POST",
+      url: `/api/incidents/${incidentId}/analyze`,
+      headers: { cookie: adminCookie },
+    });
+    expect(analyze.statusCode).toBe(202);
+    expect((analyze.json() as any).status).toBe("queued");
+
+    const resolve = await app.inject({
+      method: "POST",
+      url: `/api/incidents/${incidentId}/resolve`,
+      headers: { cookie: adminCookie },
+      payload: { note: "admin resolve" },
+    });
+    expect(resolve.statusCode).toBe(200);
+    expect((resolve.json() as any).status).toBe("resolved");
+  });
+});

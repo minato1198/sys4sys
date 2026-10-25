@@ -247,7 +247,7 @@ export async function incidentRoutes(app: FastifyInstance): Promise<void> {
   app.post(
     "/incidents/:id/ack",
     {
-      preHandler: requireRole("operator"),
+      preHandler: requireRole("operator", "admin"),
       config: { scopes: ["incidents:write"] },
     },
     async (request, reply) => {
@@ -275,7 +275,7 @@ export async function incidentRoutes(app: FastifyInstance): Promise<void> {
   app.post(
     "/incidents/:id/resolve",
     {
-      preHandler: requireRole("operator"),
+      preHandler: requireRole("operator", "admin"),
       config: { scopes: ["incidents:write"] },
     },
     async (request, reply) => {
