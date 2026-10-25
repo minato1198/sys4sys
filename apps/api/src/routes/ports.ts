@@ -2,10 +2,14 @@ import { randomUUID } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { stopProcess } from "@sys4sys/agent";
 import {
+  aggregatePortRows,
   killRequestSchema,
   killTokenQuerySchema,
   portHistoryQuerySchema,
+  portOwnerFromRow,
   reservationCreateSchema,
+  type PortOwner,
+  type PortRow,
 } from "@sys4sys/shared";
 import { and, desc, eq, gte, isNull, lte } from "drizzle-orm";
 import { z } from "zod";
@@ -44,6 +48,71 @@ function endpointKey(row: {
   port: number;
 }): string {
   return [row.scope, row.protocol, row.address, row.port].join(":");
+}
+
+function ownersFromPortRow(row: PortRow): PortOwner[] {
+  return row.owners?.length ? row.owners : [portOwnerFromRow(row)];
+}
+
+function toPortOwnerResponse(owner: PortOwner) {
+  return {
+    pidScope: owner.pidScope ?? null,
+    pid: owner.pid ?? null,
+    ppid: owner.ppid ?? null,
+    process: owner.process ?? null,
+    processPath: owner.processPath ?? null,
+    commandLine: owner.commandLine ?? null,
+    startedAt: owner.startedAt ?? null,
+    likelyWslForward: owner.likelyWslForward ?? false,
+  };
+}
+
+type KillCandidate = PortRow & { pid: number };
+
+function killCandidatesFromScan(rows: PortRow[]): KillCandidate[] {
+  const candidates: KillCandidate[] = [];
+  const seen = new Set<string>();
+
+  for (const row of rows) {
+    for (const owner of ownersFromPortRow(row)) {
+      const pid = owner.pid ?? row.pid;
+      if (pid === null) continue;
+
+      const candidate: KillCandidate = {
+        scope: row.scope,
+        protocol: row.protocol,
+        address: row.address,
+        port: row.port,
+        pid,
+        pidScope: owner.pidScope ?? row.pidScope ?? null,
+        ppid: owner.ppid ?? row.ppid ?? null,
+        process: owner.process ?? row.process ?? null,
+        processPath: owner.processPath ?? row.processPath ?? null,
+        commandLine: owner.commandLine ?? row.commandLine ?? null,
+        startedAt: owner.startedAt ?? row.startedAt ?? null,
+        likelyWslForward:
+          owner.likelyWslForward || row.likelyWslForward || false,
+      };
+
+      const key = [
+        candidate.scope,
+        candidate.protocol,
+        candidate.address,
+        candidate.port,
+        candidate.pid,
+        candidate.pidScope ?? "",
+        candidate.startedAt ?? "",
+        candidate.process ?? "",
+      ].join("\u0000");
+
+      if (!seen.has(key)) {
+        seen.add(key);
+        candidates.push(candidate);
+      }
+    }
+  }
+
+  return candidates;
 }
 
 function endpointLabel(scope: string, protocol: string, port: number): string {
@@ -105,17 +174,28 @@ export async function portRoutes(app: FastifyInstance): Promise<void> {
         persisted.map((row) => [endpointKey(row), row]),
       );
 
+      const rows = aggregatePortRows(scan.rows);
       const needle = query.q?.toLowerCase();
-      const items = scan.rows
+      const items = rows
         .filter((row) =>
           query.protocol ? row.protocol === query.protocol : true,
         )
         .filter((row) => (query.port ? row.port === query.port : true))
         .filter((row) => {
           if (!needle) return true;
-          return (
-            (row.process ?? "").toLowerCase().includes(needle) ||
-            (row.commandLine ?? "").toLowerCase().includes(needle)
+          const values = [
+            row.process,
+            row.commandLine,
+            row.pidScope,
+            ...(row.owners ?? []).flatMap((owner) => [
+              owner.process,
+              owner.commandLine,
+              owner.pidScope,
+            ]),
+          ];
+          return values.some(
+            (value) =>
+              typeof value === "string" && value.toLowerCase().includes(needle),
           );
         })
         .map((row) => {
@@ -123,21 +203,30 @@ export async function portRoutes(app: FastifyInstance): Promise<void> {
             findReservationView(reservationViews, row.protocol, row.port) ??
             null;
           const stored = persistedByKey.get(endpointKey(row));
+          const owners = (
+            row.owners?.length ? row.owners : [portOwnerFromRow(row)]
+          ).map(toPortOwnerResponse);
+          const primary =
+            owners[0] ?? toPortOwnerResponse(portOwnerFromRow(row));
+
           return {
             id: endpointKey(row),
             scope: row.scope,
-            pidScope: row.pidScope ?? null,
+            pidScope: primary.pidScope ?? row.pidScope ?? null,
             seenIn: row.seenIn ?? [],
             protocol: row.protocol,
             address: row.address,
             port: row.port,
-            pid: row.pid,
-            ppid: row.ppid ?? null,
-            process: row.process,
-            processPath: row.processPath ?? null,
-            commandLine: row.commandLine,
-            startedAt: row.startedAt ?? null,
-            likelyWslForward: row.likelyWslForward ?? false,
+            pid: primary.pid ?? row.pid ?? null,
+            ppid: primary.ppid ?? row.ppid ?? null,
+            process: primary.process ?? row.process ?? null,
+            processPath: primary.processPath ?? row.processPath ?? null,
+            commandLine: primary.commandLine ?? row.commandLine ?? null,
+            startedAt: primary.startedAt ?? row.startedAt ?? null,
+            likelyWslForward:
+              row.likelyWslForward ?? primary.likelyWslForward ?? false,
+            owners,
+            ownerCount: owners.length,
             serviceId: reservation?.serviceId ?? stored?.serviceId ?? null,
             firstSeen: stored?.firstSeen.toISOString() ?? null,
             lastSeen: stored?.lastSeen.toISOString() ?? null,
@@ -350,14 +439,13 @@ export async function portRoutes(app: FastifyInstance): Promise<void> {
       const query = killTokenQuerySchema.parse(request.query);
       const { scan } = await scanAndPersist({ scope: query.scope });
 
-      const candidates = scan.rows.filter(
-        (row) =>
-          row.scope === query.scope &&
-          row.port === port &&
-          row.pid !== null &&
-          (query.pid === undefined || row.pid === query.pid) &&
+      const candidates = killCandidatesFromScan(scan.rows).filter(
+        (candidate) =>
+          candidate.scope === query.scope &&
+          candidate.port === port &&
+          (query.pid === undefined || candidate.pid === query.pid) &&
           (query.pidScope === undefined ||
-            (row.pidScope ?? null) === query.pidScope),
+            (candidate.pidScope ?? null) === query.pidScope),
       );
 
       if (candidates.length === 0) {
@@ -380,7 +468,7 @@ export async function portRoutes(app: FastifyInstance): Promise<void> {
       }
 
       const target = candidates[0];
-      if (!target || target.pid === null) {
+      if (!target) {
         return problem(
           reply,
           409,
@@ -459,13 +547,19 @@ export async function portRoutes(app: FastifyInstance): Promise<void> {
       const { scan, reservations } = await scanAndPersist({
         scope: token.scope,
       });
-      const target = scan.rows.find(
-        (row) =>
-          row.scope === token.scope &&
-          row.port === port &&
-          row.pid === token.pid &&
-          (row.pidScope ?? null) === token.pidScope,
+      const matchingCandidates = killCandidatesFromScan(scan.rows).filter(
+        (candidate) =>
+          candidate.scope === token.scope &&
+          candidate.port === port &&
+          candidate.pid === token.pid &&
+          (candidate.pidScope ?? null) === token.pidScope,
       );
+      const target =
+        token.scope === "windows"
+          ? (matchingCandidates.find(
+              (candidate) => (candidate.startedAt ?? null) === token.startedAt,
+            ) ?? matchingCandidates[0])
+          : matchingCandidates[0];
 
       if (!target) {
         return problem(

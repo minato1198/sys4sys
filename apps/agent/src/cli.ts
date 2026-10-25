@@ -30,7 +30,11 @@ function printTable(rows: PortRow[]): void {
   console.log("-".repeat(header.length));
 
   for (const row of rows) {
-    const command = `${row.commandLine ?? ""}${row.likelyWslForward ? "  [likely WSL forward]" : ""}`;
+    const ownerCount = row.owners?.length ?? 1;
+    const extraOwners = ownerCount > 1 ? `+${ownerCount - 1}` : "";
+    const command = `${row.commandLine ?? ""}${
+      row.likelyWslForward ? "  [likely WSL forward]" : ""
+    }`;
     console.log(
       [
         pad(row.scope, 9),
@@ -38,8 +42,8 @@ function printTable(rows: PortRow[]): void {
         pad(row.protocol, 5),
         pad(row.address, 18),
         pad(row.port, 6),
-        pad(row.pid, 7),
-        pad(row.process, 22),
+        pad(`${row.pid ?? "-"}${extraOwners}`, 7),
+        pad(`${row.process ?? "-"}${extraOwners}`, 22),
         command.slice(0, 140),
       ].join(" "),
     );

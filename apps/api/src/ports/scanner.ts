@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 import type { DetailedScanResult, ScanOptions } from "@sys4sys/agent";
 import { scanPorts } from "@sys4sys/agent";
+import {
+  portOwnerFromRow,
+  type PortOwner,
+  type PortRow,
+} from "@sys4sys/shared";
 import { eq, isNull } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { portHistory, portReservations, ports } from "../db/schema.js";
@@ -61,6 +66,23 @@ function wasScanned(row: PortHistoryDbRow, scan: DetailedScanResult): boolean {
   return Boolean(scan.timings[`wsl:${row.pidHostId}`]);
 }
 
+function ownersForScanRow(row: PortRow): PortOwner[] {
+  return row.owners?.length ? row.owners : [portOwnerFromRow(row)];
+}
+
+function primaryOwnerForRow(row: PortRow, owners: PortOwner[]): PortOwner {
+  const rowPid = row.pid ?? null;
+  const rowPidScope = row.pidScope ?? null;
+  return (
+    owners.find(
+      (owner) => owner.pid === rowPid && owner.pidScope === rowPidScope,
+    ) ??
+    owners.find((owner) => owner.pid !== null) ??
+    owners[0] ??
+    portOwnerFromRow(row)
+  );
+}
+
 async function persistScan(scan: DetailedScanResult): Promise<PersistedScan> {
   const now = toDate(scan.scannedAt) ?? new Date();
   const reservations = await db.select().from(portReservations);
@@ -78,8 +100,10 @@ async function persistScan(scan: DetailedScanResult): Promise<PersistedScan> {
 
   for (const row of scan.rows) {
     const reservation = findReservationForRow(reservations, row);
-    const pidHostId = row.pidScope ?? null;
-    const startedAt = toDate(row.startedAt ?? null);
+    const owners = ownersForScanRow(row);
+    const primary = primaryOwnerForRow(row, owners);
+    const pidHostId = row.pidScope ?? primary.pidScope ?? null;
+    const startedAt = toDate(primary.startedAt);
     const serviceId = reservation?.serviceId ?? null;
     const key = endpointKey(row);
 
@@ -92,11 +116,11 @@ async function persistScan(scan: DetailedScanResult): Promise<PersistedScan> {
         protocol: row.protocol,
         address: row.address,
         port: row.port,
-        pid: row.pid,
-        ppid: row.ppid ?? null,
-        processName: row.process,
-        processPath: row.processPath ?? null,
-        commandLine: row.commandLine,
+        pid: primary.pid,
+        ppid: primary.ppid,
+        processName: primary.process,
+        processPath: primary.processPath,
+        commandLine: primary.commandLine,
         startedAt,
         serviceId,
         firstSeen: now,
@@ -106,56 +130,60 @@ async function persistScan(scan: DetailedScanResult): Promise<PersistedScan> {
         target: [ports.scope, ports.protocol, ports.address, ports.port],
         set: {
           pidHostId,
-          pid: row.pid,
-          ppid: row.ppid ?? null,
-          processName: row.process,
-          processPath: row.processPath ?? null,
-          commandLine: row.commandLine,
+          pid: primary.pid,
+          ppid: primary.ppid,
+          processName: primary.process,
+          processPath: primary.processPath,
+          commandLine: primary.commandLine,
           startedAt,
           serviceId,
           lastSeen: now,
         },
       });
 
-    const hKey = historyKey({
-      scope: row.scope,
-      pidHostId,
-      protocol: row.protocol,
-      address: row.address,
-      port: row.port,
-      pid: row.pid,
-    });
-    currentKeys.add(hKey);
+    for (const owner of owners) {
+      const ownerPidHostId = owner.pidScope ?? pidHostId;
+      const ownerStartedAt = toDate(owner.startedAt) ?? startedAt;
+      const hKey = historyKey({
+        scope: row.scope,
+        pidHostId: ownerPidHostId,
+        protocol: row.protocol,
+        address: row.address,
+        port: row.port,
+        pid: owner.pid,
+      });
+      currentKeys.add(hKey);
 
-    const open = openByKey.get(hKey);
-    if (open) {
-      if (open.serviceId !== serviceId) {
-        await db
-          .update(portHistory)
-          .set({ serviceId })
-          .where(eq(portHistory.id, open.id));
+      const open = openByKey.get(hKey);
+      if (open) {
+        if (open.serviceId !== serviceId) {
+          await db
+            .update(portHistory)
+            .set({ serviceId })
+            .where(eq(portHistory.id, open.id));
+        }
+        continue;
       }
-      continue;
-    }
 
-    await db.insert(portHistory).values({
-      id: randomUUID(),
-      scope: row.scope,
-      pidHostId,
-      protocol: row.protocol,
-      address: row.address,
-      port: row.port,
-      pid: row.pid,
-      ppid: row.ppid ?? null,
-      processName: row.process,
-      processPath: row.processPath ?? null,
-      commandLine: row.commandLine,
-      startedAt,
-      serviceId,
-      openedAt: now,
-      closedAt: null,
-      releasedBy: null,
-    });
+      await db.insert(portHistory).values({
+        id: randomUUID(),
+        scope: row.scope,
+        pidHostId: ownerPidHostId,
+        protocol: row.protocol,
+        address: row.address,
+        port: row.port,
+        pid: owner.pid,
+        ppid: owner.ppid,
+        processName: owner.process,
+        processPath: owner.processPath,
+        commandLine: owner.commandLine,
+        startedAt: ownerStartedAt,
+        serviceId,
+        openedAt: now,
+        closedAt: null,
+        releasedBy: null,
+      });
+    }
   }
 
   // スキャン対象になったホストで見えなくなったポートだけを閉じる。

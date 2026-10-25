@@ -239,7 +239,7 @@ paths:
           schema: { type: string }
         - name: q
           in: query
-          description: プロセス名・コマンドラインの部分一致
+          description: プロセス名・コマンドライン・distro（owners を含む）の部分一致
           schema: { type: string }
       responses:
         "200":
@@ -1283,6 +1283,10 @@ components:
           }
         serviceId: { type: string, nullable: true }
         likelyWslForward: { type: boolean }
+        owners:
+          type: array
+          items: { $ref: "#/components/schemas/PortOwner" }
+        ownerCount: { type: integer }
         firstSeen: { type: string, format: date-time, nullable: true }
         lastSeen: { type: string, format: date-time, nullable: true }
         reservation:
@@ -1295,6 +1299,44 @@ components:
             description: このエンドポイントに予約があり、実リスナーが存在する,
           }
         status: { type: string, enum: [in_use, conflict] }
+
+    PortOwner:
+      type: object
+      required:
+        [
+          pid,
+          pidScope,
+          ppid,
+          process,
+          processPath,
+          commandLine,
+          startedAt,
+          likelyWslForward,
+        ]
+      properties:
+        pidScope:
+          {
+            type: string,
+            nullable: true,
+            description: この PID を観測した distro（WSL の場合）,
+          }
+        pid: { type: integer, nullable: true }
+        ppid: { type: integer, nullable: true }
+        process: { type: string, nullable: true }
+        processPath: { type: string, nullable: true }
+        commandLine: { type: string, nullable: true }
+        startedAt:
+          {
+            type: string,
+            format: date-time,
+            nullable: true,
+            description: プロセス開始時刻,
+          }
+        likelyWslForward:
+          {
+            type: boolean,
+            description: このオーナーが WSL フォワード/中継に見えるか,
+          }
 
     PortHistoryEntry:
       type: object

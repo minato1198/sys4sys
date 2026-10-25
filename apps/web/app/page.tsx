@@ -22,6 +22,17 @@ interface ReservationView {
   inUse: boolean;
 }
 
+interface PortOwner {
+  pid: number | null;
+  pidScope: string | null;
+  ppid: number | null;
+  process: string | null;
+  processPath: string | null;
+  commandLine: string | null;
+  startedAt: string | null;
+  likelyWslForward: boolean;
+}
+
 interface PortItem {
   id: string;
   scope: "windows" | "wsl";
@@ -37,6 +48,8 @@ interface PortItem {
   commandLine: string | null;
   startedAt: string | null;
   likelyWslForward: boolean;
+  owners?: PortOwner[];
+  ownerCount?: number;
   serviceId: string | null;
   firstSeen: string | null;
   lastSeen: string | null;
@@ -200,6 +213,46 @@ function ReservationBadge({
   );
 }
 
+function fallbackPortOwner(item: PortItem): PortOwner {
+  return {
+    pid: item.pid,
+    pidScope: item.pidScope,
+    ppid: item.ppid,
+    process: item.process,
+    processPath: item.processPath,
+    commandLine: item.commandLine,
+    startedAt: item.startedAt,
+    likelyWslForward: item.likelyWslForward,
+  };
+}
+
+function portOwnersForItem(item: PortItem): PortOwner[] {
+  if (item.owners?.length) return item.owners;
+  return [fallbackPortOwner(item)];
+}
+
+function primaryPortOwner(item: PortItem): PortOwner {
+  return portOwnersForItem(item)[0] ?? fallbackPortOwner(item);
+}
+
+function killablePortOwners(item: PortItem): PortOwner[] {
+  return portOwnersForItem(item).filter(
+    (owner) => owner.pid !== null && owner.pid > 4,
+  );
+}
+
+function portOwnerKey(item: PortItem, owner: PortOwner): string {
+  return [
+    item.id,
+    owner.pidScope ?? "-",
+    owner.pid ?? "-",
+    owner.process ?? "-",
+    owner.processPath ?? "-",
+    owner.commandLine ?? "-",
+    owner.startedAt ?? "-",
+  ].join("|");
+}
+
 export default function DashboardPage() {
   const [data, setData] = useState<PortsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -213,7 +266,7 @@ export default function DashboardPage() {
   const [busyReservationId, setBusyReservationId] = useState<string | null>(
     null,
   );
-  const [killBusyId, setKillBusyId] = useState<string | null>(null);
+  const [killBusyKey, setKillBusyKey] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [historyFor, setHistoryFor] = useState<PortItem | null>(null);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
@@ -408,27 +461,32 @@ export default function DashboardPage() {
     }
   }
 
-  async function killProcess(item: PortItem) {
-    if (item.pid === null) return;
+  async function killOwner(endpoint: PortItem, owner: PortOwner) {
+    const pid = owner.pid ?? endpoint.pid;
+    if (pid === null || pid <= 4 || killBusyKey) return;
+
+    const pidScope = owner.pidScope ?? endpoint.pidScope;
+    const processName = owner.process ?? endpoint.process ?? "unknown";
     if (
       !window.confirm(
-        `PID ${item.pid} (${item.process ?? "unknown"}) を停止しますか？\n対象: ${item.protocol.toUpperCase()} ${item.port}`,
+        `PID ${pid} (${processName}) を停止しますか？\n対象: ${endpoint.protocol.toUpperCase()} ${endpoint.port}`,
       )
     ) {
       return;
     }
 
-    setKillBusyId(item.id);
+    const busyKey = portOwnerKey(endpoint, owner);
+    setKillBusyKey(busyKey);
     setMessage(null);
     try {
       const tokenParams = new URLSearchParams({
-        scope: item.scope,
-        pid: String(item.pid),
+        scope: endpoint.scope,
+        pid: String(pid),
       });
-      if (item.pidScope) tokenParams.set("pidScope", item.pidScope);
+      if (pidScope) tokenParams.set("pidScope", pidScope);
 
       const tokenResponse = await fetch(
-        `/api/ports/${item.port}/kill-token?${tokenParams}`,
+        `/api/ports/${endpoint.port}/kill-token?${tokenParams}`,
         { cache: "no-store" },
       );
       if (!tokenResponse.ok) {
@@ -444,12 +502,12 @@ export default function DashboardPage() {
         token: string;
       };
 
-      const response = await fetch(`/api/ports/${item.port}/kill`, {
+      const response = await fetch(`/api/ports/${endpoint.port}/kill`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          scope: item.scope,
-          pidScope: item.pidScope,
+          scope: endpoint.scope,
+          pidScope: pidScope,
           confirmToken: token.token,
           signal: "KILL",
           force: true,
@@ -463,14 +521,12 @@ export default function DashboardPage() {
           problem?.detail ?? `停止に失敗しました (${response.status})`,
         );
       }
-      setMessage(
-        `PID ${item.pid} (${item.process ?? "unknown"}) に停止シグナルを送信しました`,
-      );
+      setMessage(`PID ${pid} (${processName}) に停止シグナルを送信しました`);
       await load();
     } catch (cause) {
       setMessage(cause instanceof Error ? cause.message : String(cause));
     } finally {
-      setKillBusyId(null);
+      setKillBusyKey(null);
     }
   }
 
@@ -489,18 +545,24 @@ export default function DashboardPage() {
     const needle = filter.trim().toLowerCase();
     if (!data) return [];
     if (!needle) return data.items;
-    return data.items.filter((item) =>
-      [
+    return data.items.filter((item) => {
+      const values = [
         item.process,
         item.commandLine,
         item.address,
         String(item.port),
         item.pidScope,
         item.reservation?.serviceId,
-      ]
+        ...portOwnersForItem(item).flatMap((owner) => [
+          owner.process,
+          owner.commandLine,
+          owner.pidScope,
+        ]),
+      ];
+      return values
         .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(needle)),
-    );
+        .some((value) => String(value).toLowerCase().includes(needle));
+    });
   }, [data, filter]);
 
   const wslCount =
@@ -981,10 +1043,10 @@ export default function DashboardPage() {
                     item={item}
                     expanded={expanded.has(item.id)}
                     canOperate={canOperate}
-                    killBusy={killBusyId === item.id}
+                    killBusyKey={killBusyKey}
                     onToggle={() => toggleExpanded(item.id)}
                     onHistory={() => void openHistory(item)}
-                    onKill={() => void killProcess(item)}
+                    onKillOwner={(owner) => void killOwner(item, owner)}
                   />
                 ))
               )}
@@ -1102,19 +1164,32 @@ function FragmentRow({
   item,
   expanded,
   canOperate,
-  killBusy,
+  killBusyKey,
   onToggle,
   onHistory,
-  onKill,
+  onKillOwner,
 }: {
   item: PortItem;
   expanded: boolean;
   canOperate: boolean;
-  killBusy: boolean;
+  killBusyKey: string | null;
   onToggle: () => void;
   onHistory: () => void;
-  onKill: () => void;
+  onKillOwner: (owner: PortOwner) => void;
 }) {
+  const owners = portOwnersForItem(item);
+  const primary = primaryPortOwner(item);
+  const killable = killablePortOwners(item);
+  const rowKillOwner =
+    killable.length === 1 ? (killable[0] ?? primary) : primary;
+  const rowKillKey = portOwnerKey(item, rowKillOwner);
+  const canRowKill =
+    canOperate &&
+    rowKillOwner.pid !== null &&
+    rowKillOwner.pid > 4 &&
+    killable.length <= 1;
+  const ownerExtraCount = owners.length > 1 ? owners.length - 1 : 0;
+
   return (
     <>
       <tr
@@ -1135,10 +1210,21 @@ function FragmentRow({
           {item.address || "*"}
         </td>
         <td className="whitespace-nowrap px-4 py-2 text-sm text-mist-200">
-          {item.process ?? <span className="text-mist-400">—</span>}
+          {primary.process ?? <span className="text-mist-400">—</span>}
+          {ownerExtraCount > 0 ? (
+            <span
+              className="ml-1 rounded bg-warn-400/15 px-1 text-[10px] text-warn-400"
+              title="同じ endpoint に複数のオーナーがあります"
+            >
+              +{ownerExtraCount}
+            </span>
+          ) : null}
         </td>
         <td className="whitespace-nowrap px-4 py-2 font-mono text-xs tabular-nums text-mist-400">
-          {item.pid ?? "—"} / {item.ppid ?? "—"}
+          {primary.pid ?? "—"} / {primary.ppid ?? "—"}
+          {ownerExtraCount > 0 ? (
+            <span className="text-warn-400"> (+{ownerExtraCount})</span>
+          ) : null}
         </td>
         <td className="whitespace-nowrap px-4 py-2">
           <ReservationBadge reservation={item.reservation} />
@@ -1159,15 +1245,22 @@ function FragmentRow({
             >
               履歴
             </button>
-            {item.pid !== null ? (
+            {canRowKill ? (
               <button
                 type="button"
-                onClick={onKill}
-                disabled={!canOperate || killBusy}
+                onClick={() => onKillOwner(rowKillOwner)}
+                disabled={killBusyKey !== null}
                 className="rounded border border-ink-700 px-2 py-1 text-[10px] text-mist-400 transition hover:border-danger-400/40 hover:text-danger-400 disabled:cursor-not-allowed disabled:opacity-40"
               >
-                {killBusy ? "停止中…" : "停止"}
+                {killBusyKey === rowKillKey ? "停止中…" : "停止"}
               </button>
+            ) : killable.length > 1 ? (
+              <span
+                className="rounded border border-warn-400/20 bg-warn-400/10 px-2 py-1 text-[10px] text-warn-400"
+                title="複数プロセスがあります。詳細を開いて PID を選んで停止してください"
+              >
+                複数
+              </span>
             ) : null}
           </div>
         </td>
@@ -1177,15 +1270,15 @@ function FragmentRow({
           <td colSpan={7} className="px-4 py-3">
             <dl className="grid gap-x-6 gap-y-2 text-[11px] sm:grid-cols-2 lg:grid-cols-4">
               <div>
-                <dt className="text-mist-400">PID / PPID</dt>
+                <dt className="text-mist-400">Primary PID / PPID</dt>
                 <dd className="font-mono text-mist-200">
-                  {item.pid ?? "—"} / {item.ppid ?? "—"}
+                  {primary.pid ?? "—"} / {primary.ppid ?? "—"}
                 </dd>
               </div>
               <div>
                 <dt className="text-mist-400">Process started</dt>
                 <dd className="font-mono text-mist-200">
-                  {formatDate(item.startedAt)}
+                  {formatDate(primary.startedAt ?? item.startedAt)}
                 </dd>
               </div>
               <div>
@@ -1203,7 +1296,7 @@ function FragmentRow({
               <div className="sm:col-span-2">
                 <dt className="text-mist-400">Executable</dt>
                 <dd className="break-all font-mono text-mist-200">
-                  {item.processPath ?? "—"}
+                  {primary.processPath ?? item.processPath ?? "—"}
                 </dd>
               </div>
               <div className="sm:col-span-2">
@@ -1213,11 +1306,54 @@ function FragmentRow({
                 </dd>
               </div>
               <div className="sm:col-span-2 lg:col-span-4">
-                <dt className="text-mist-400">Command line</dt>
+                <dt className="text-mist-400">Primary command line</dt>
                 <dd className="break-all font-mono text-mist-200">
-                  {item.commandLine ?? "—"}
+                  {primary.commandLine ?? item.commandLine ?? "—"}
                 </dd>
               </div>
+              {owners.length > 1 ? (
+                <div className="sm:col-span-2 lg:col-span-4">
+                  <dt className="text-mist-400">Owners ({owners.length})</dt>
+                  <dd className="space-y-2">
+                    {owners.map((owner) => {
+                      const ownerKey = portOwnerKey(item, owner);
+                      const ownerKillable = owner.pid !== null && owner.pid > 4;
+                      const ownerBusy = killBusyKey === ownerKey;
+                      return (
+                        <div
+                          key={ownerKey}
+                          className="flex flex-wrap items-start gap-2 rounded-md border border-ink-700/60 bg-ink-950/30 px-2 py-2"
+                        >
+                          <div className="min-w-[220px] flex-1">
+                            <div className="font-mono text-[11px] text-mist-200">
+                              PID {owner.pid ?? "—"} / PPID {owner.ppid ?? "—"}{" "}
+                              · {owner.process ?? "—"}
+                            </div>
+                            <div className="max-w-[520px] break-all font-mono text-[10px] text-mist-400">
+                              {owner.commandLine ?? "—"}
+                            </div>
+                            <div className="font-mono text-[10px] text-mist-400">
+                              {owner.pidScope ?? "—"} ·{" "}
+                              {formatDate(owner.startedAt ?? item.startedAt)}
+                              {owner.likelyWslForward ? " · WSL relay" : ""}
+                            </div>
+                          </div>
+                          {ownerKillable ? (
+                            <button
+                              type="button"
+                              onClick={() => onKillOwner(owner)}
+                              disabled={!canOperate || killBusyKey !== null}
+                              className="rounded border border-ink-700 px-2 py-1 text-[10px] text-mist-400 transition hover:border-danger-400/40 hover:text-danger-400 disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                              {ownerBusy ? "停止中…" : "停止"}
+                            </button>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </dd>
+                </div>
+              ) : null}
               {item.reservation ? (
                 <div className="sm:col-span-2 lg:col-span-4">
                   <dt className="text-mist-400">Reservation</dt>
