@@ -74,19 +74,24 @@ export function findCommand(name: string): CommandDefinition | undefined {
 export function commandsInGroup(group: string): CommandDefinition[] {
   const prefix = `${group} `;
   return COMMANDS.filter(
-    (command) =>
-      command.name === group ||
-      (command.name.startsWith(prefix) &&
-        !command.name.slice(prefix.length).includes(" ")),
+    (command) => command.name === group || command.name.startsWith(prefix),
   );
 }
 
 /**
- * 完全名（2 語）を優先し、次に 1 語のコマンドを探す。
+ * 完全名（3 語 → 2 語 → 1 語）を優先し、コマンドを探す。
  * 余分な positional は rest として返す。
  */
 export function resolveCommand(positionals: string[]): ResolvedCommand | null {
   if (positionals.length === 0) return null;
+
+  if (positionals.length >= 3) {
+    const threeWord = `${positionals[0]} ${positionals[1]} ${positionals[2]}`;
+    const command = findCommand(threeWord);
+    if (command) {
+      return { command, rest: positionals.slice(3) };
+    }
+  }
 
   if (positionals.length >= 2) {
     const twoWord = `${positionals[0]} ${positionals[1]}`;

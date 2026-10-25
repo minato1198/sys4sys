@@ -30,10 +30,36 @@ test("registry resolves two-word commands and preserves rest", () => {
   assert.deepEqual(whoami?.rest, []);
 });
 
+test("registry resolves three-word commands and preserves rest", () => {
+  const resolved = resolveCommand(["settings", "mail", "get"]);
+  assert.equal(resolved?.command.name, "settings mail get");
+  assert.deepEqual(resolved?.rest, []);
+
+  const deploy = resolveCommand(["deploy-requests", "approve", "req-1"]);
+  assert.equal(deploy?.command.name, "deploy-requests approve");
+  assert.deepEqual(deploy?.rest, ["req-1"]);
+});
+
 test("registry groups commands", () => {
   assert.deepEqual(
     commandsInGroup("auth").map((command) => command.name),
     ["auth login", "auth logout", "auth status"],
+  );
+  assert.deepEqual(
+    commandsInGroup("settings").map((command) =>
+      command.name.replace("settings ", ""),
+    ),
+    [
+      "mail get",
+      "mail set",
+      "mail test",
+      "ai get",
+      "ai set",
+      "ai test",
+      "retention get",
+      "retention set",
+      "backup",
+    ],
   );
 });
 

@@ -28,6 +28,193 @@ const showEnv: CommandOption = {
   type: "boolean",
   description: "env / deploy.env の値を表示（既定はマスク）",
 };
+const note: CommandOption = {
+  name: "note",
+  type: "string",
+  description: "メモ",
+  valueName: "text",
+};
+const fullOpt: CommandOption = {
+  name: "full",
+  type: "boolean",
+  description: "分析結果・レポート本文を全文表示",
+};
+const limitDefault50: CommandOption = {
+  name: "limit",
+  type: "string",
+  description: "取得件数（1〜200）",
+  default: "50",
+  valueName: "n",
+};
+const limitDefault100: CommandOption = {
+  name: "limit",
+  type: "string",
+  description: "取得件数（1〜500）",
+  default: "100",
+  valueName: "n",
+};
+const offsetOpt: CommandOption = {
+  name: "offset",
+  type: "string",
+  description: "取得開始位置（0〜）",
+  default: "0",
+  valueName: "n",
+};
+const serviceOpt: CommandOption = {
+  name: "service",
+  type: "string",
+  description: "サービス ID",
+  valueName: "id",
+};
+const statusOpt: CommandOption = {
+  name: "status",
+  type: "string",
+  description: "ステータスで絞り込む",
+  valueName: "status",
+};
+const severityOpt: CommandOption = {
+  name: "severity",
+  type: "string",
+  description: "深刻度（critical|error|warning|info）",
+  valueName: "severity",
+};
+const sinceOpt: CommandOption = {
+  name: "since",
+  type: "string",
+  description: "開始時刻（ISO）",
+  valueName: "iso",
+};
+const untilOpt: CommandOption = {
+  name: "until",
+  type: "string",
+  description: "終了時刻（ISO）",
+  valueName: "iso",
+};
+const kindOpt: CommandOption = {
+  name: "kind",
+  type: "string",
+  description: "ホストの種類（windows|wsl）",
+  valueName: "kind",
+};
+const nameOpt: CommandOption = {
+  name: "name",
+  type: "string",
+  description: "名前",
+  valueName: "name",
+};
+const distroOpt: CommandOption = {
+  name: "distro",
+  type: "string",
+  description: "WSL ディストロ名",
+  valueName: "name",
+};
+const hostUserOpt: CommandOption = {
+  name: "user",
+  type: "string",
+  description: "WSL の既定ユーザー",
+  valueName: "name",
+};
+const disabledOpt: CommandOption = {
+  name: "disabled",
+  type: "boolean",
+  description: "作成時に無効化する",
+};
+const enableOpt: CommandOption = {
+  name: "enable",
+  type: "boolean",
+  description: "有効化する",
+};
+const disableOpt: CommandOption = {
+  name: "disable",
+  type: "boolean",
+  description: "無効化する（非対話は --yes 必須）",
+};
+const portScopeOpt: CommandOption = {
+  name: "scope",
+  type: "string",
+  description: "スコープ（windows|wsl）",
+  valueName: "scope",
+};
+const portListScopeOpt: CommandOption = {
+  name: "scope",
+  type: "string",
+  description: "スコープ（all|windows|wsl）",
+  default: "all",
+  valueName: "scope",
+};
+const protocolOpt: CommandOption = {
+  name: "protocol",
+  type: "string",
+  description: "tcp|udp",
+  valueName: "protocol",
+};
+const portOpt: CommandOption = {
+  name: "port",
+  type: "string",
+  description: "ポート番号（1〜65535）",
+  valueName: "port",
+};
+const grepOpt: CommandOption = {
+  name: "grep",
+  type: "string",
+  description: "本文の部分一致",
+  valueName: "text",
+};
+const reservationsOpt: CommandOption = {
+  name: "reservations",
+  type: "boolean",
+  description: "予約一覧をあわせて表示",
+};
+const pidOpt: CommandOption = {
+  name: "pid",
+  type: "string",
+  description: "停止対象の PID",
+  valueName: "pid",
+};
+const pidScopeOpt: CommandOption = {
+  name: "pid-scope",
+  type: "string",
+  description: "PID を観測した WSL distro",
+  valueName: "distro",
+};
+const signalOpt: CommandOption = {
+  name: "signal",
+  type: "string",
+  description: "TERM|KILL",
+  default: "TERM",
+  valueName: "signal",
+};
+const forceOpt: CommandOption = {
+  name: "force",
+  type: "boolean",
+  description: "強制停止 / 出力ファイルの上書き",
+};
+const requestOpt: CommandOption = {
+  name: "request",
+  type: "boolean",
+  description: "即時 deploy ではなく承認要求を作成",
+};
+const settingsFileOpt: CommandOption = {
+  name: "file",
+  type: "string",
+  short: "f",
+  description: "設定 JSON（- は標準入力）",
+  required: true,
+  valueName: "path",
+};
+const formatOpt: CommandOption = {
+  name: "format",
+  type: "string",
+  description: "md|json",
+  default: "md",
+  valueName: "format",
+};
+const outputOpt: CommandOption = {
+  name: "output",
+  type: "string",
+  description: "出力先パス（- は stdout）",
+  valueName: "path",
+};
 
 export const COMMAND_DEFINITIONS: CommandDefinition[] = [
   {
@@ -198,12 +385,15 @@ export const COMMAND_DEFINITIONS: CommandDefinition[] = [
   {
     name: "services deploy",
     summary: "サービスをデプロイ",
+    description:
+      "サービス設定が requireApproval の場合は即時 deploy が 409 になります。--request で承認要求を作成できます。",
     phase: "P0",
     positionals: [{ name: "id", required: true, description: "サービス ID" }],
-    options: [dryRun, yes, wait, timeout, showEnv],
+    options: [dryRun, yes, wait, timeout, showEnv, requestOpt, note],
     examples: [
       "sys4sys services deploy <id> --dry-run",
       "sys4sys services deploy <id> --yes --wait --timeout 120",
+      'sys4sys services deploy <id> --request --note "リリース 1.2.3"',
     ],
     mutating: true,
     requiresConfirmation: true,
@@ -494,6 +684,516 @@ export const COMMAND_DEFINITIONS: CommandDefinition[] = [
     mutating: false,
     requiresConfirmation: false,
     requiredScopes: ["logs:read"],
+  },
+  {
+    name: "incidents list",
+    summary: "インシデント一覧を表示",
+    phase: "P1",
+    positionals: [],
+    options: [statusOpt, severityOpt, serviceOpt, limitDefault50, offsetOpt],
+    examples: [
+      "sys4sys incidents list --status open --severity error --limit 20 --json",
+      "sys4sys incidents list --service <id> --offset 20",
+    ],
+    mutating: false,
+    requiresConfirmation: false,
+    requiredScopes: ["incidents:read"],
+  },
+  {
+    name: "incidents get",
+    summary: "インシデント詳細を表示",
+    description: "イベント、承認、アクション、最新分析、レポートを表示します。",
+    phase: "P1",
+    positionals: [
+      { name: "id", required: true, description: "インシデント ID" },
+    ],
+    options: [fullOpt],
+    examples: [
+      "sys4sys incidents get <id>",
+      "sys4sys incidents get <id> --json",
+    ],
+    mutating: false,
+    requiresConfirmation: false,
+    requiredScopes: ["incidents:read"],
+  },
+  {
+    name: "incidents ack",
+    summary: "インシデントを ack する",
+    phase: "P1",
+    positionals: [
+      { name: "id", required: true, description: "インシデント ID" },
+    ],
+    options: [note],
+    examples: ['sys4sys incidents ack <id> --note "確認済み"'],
+    mutating: true,
+    requiresConfirmation: false,
+    requiredScopes: ["incidents:write"],
+  },
+  {
+    name: "incidents resolve",
+    summary: "インシデントを解決する",
+    phase: "P1",
+    positionals: [
+      { name: "id", required: true, description: "インシデント ID" },
+    ],
+    options: [note, yes],
+    examples: ['sys4sys incidents resolve <id> --note "復旧確認済み" --yes'],
+    mutating: true,
+    requiresConfirmation: true,
+    requiredScopes: ["incidents:write"],
+  },
+  {
+    name: "incidents analyze",
+    summary: "インシデントの AI 分析をキュー投入",
+    phase: "P1",
+    positionals: [
+      { name: "id", required: true, description: "インシデント ID" },
+    ],
+    options: [],
+    examples: ["sys4sys incidents analyze <id> --json"],
+    mutating: true,
+    requiresConfirmation: false,
+    requiredScopes: ["incidents:write"],
+  },
+  {
+    name: "incidents analysis",
+    summary: "インシデントの最新 AI 分析を表示",
+    phase: "P1",
+    positionals: [
+      { name: "id", required: true, description: "インシデント ID" },
+    ],
+    options: [fullOpt],
+    examples: [
+      "sys4sys incidents analysis <id>",
+      "sys4sys incidents analysis <id> --full --json",
+    ],
+    mutating: false,
+    requiresConfirmation: false,
+    requiredScopes: ["incidents:read"],
+  },
+  {
+    name: "approvals list",
+    summary: "承認キュー一覧を表示",
+    phase: "P1",
+    positionals: [],
+    options: [statusOpt, limitDefault50],
+    examples: [
+      "sys4sys approvals list --status pending --json",
+      "sys4sys approvals list --status approved --limit 20",
+    ],
+    mutating: false,
+    requiresConfirmation: false,
+    requiredScopes: ["approvals:read"],
+  },
+  {
+    name: "approvals approve",
+    summary: "承認を承認し、アクションを実行",
+    phase: "P1",
+    positionals: [{ name: "id", required: true, description: "承認 ID" }],
+    options: [note, yes],
+    examples: [
+      'sys4sys approvals approve <id> --note "原因ログ確認済み" --yes',
+    ],
+    mutating: true,
+    requiresConfirmation: true,
+    requiredScopes: ["approvals:decide"],
+  },
+  {
+    name: "approvals reject",
+    summary: "承認を却下する",
+    phase: "P1",
+    positionals: [{ name: "id", required: true, description: "承認 ID" }],
+    options: [note, yes],
+    examples: ['sys4sys approvals reject <id> --note "影響範囲が大きい" --yes'],
+    mutating: true,
+    requiresConfirmation: true,
+    requiredScopes: ["approvals:decide"],
+  },
+  {
+    name: "hosts get",
+    summary: "ホスト詳細を表示",
+    phase: "P1",
+    positionals: [{ name: "id", required: true, description: "ホスト ID" }],
+    options: [],
+    examples: ["sys4sys hosts get <id>", "sys4sys hosts get <id> --json"],
+    mutating: false,
+    requiresConfirmation: false,
+    requiredScopes: ["hosts:read"],
+  },
+  {
+    name: "hosts detect",
+    summary: "WSL ディストロを検出し、登録済みか表示",
+    phase: "P1",
+    positionals: [],
+    options: [],
+    examples: ["sys4sys hosts detect", "sys4sys hosts detect --json"],
+    mutating: false,
+    requiresConfirmation: false,
+    requiredScopes: ["hosts:write"],
+  },
+  {
+    name: "hosts create",
+    summary: "ホストを登録",
+    description: "WSL は --distro 必須。Windows は 1 つだけ。",
+    phase: "P1",
+    positionals: [],
+    options: [kindOpt, nameOpt, distroOpt, hostUserOpt, disabledOpt, dryRun],
+    examples: [
+      "sys4sys hosts create --kind wsl --name Ubuntu --distro Ubuntu-22.04",
+      "sys4sys hosts create --kind windows --name local --dry-run",
+    ],
+    mutating: true,
+    requiresConfirmation: false,
+    requiredScopes: ["hosts:write"],
+  },
+  {
+    name: "hosts update",
+    summary: "ホストを更新",
+    description: "--disable は非対話で --yes が必要です。",
+    phase: "P1",
+    positionals: [{ name: "id", required: true, description: "ホスト ID" }],
+    options: [nameOpt, hostUserOpt, enableOpt, disableOpt, dryRun],
+    examples: [
+      "sys4sys hosts update <id> --disable --yes",
+      "sys4sys hosts update <id> --enable --name local",
+    ],
+    mutating: true,
+    requiresConfirmation: true,
+    requiredScopes: ["hosts:write"],
+  },
+  {
+    name: "ports list",
+    summary: "ポート一覧と予約を一覧表示",
+    description: "API がスキャンを行うため環境により遅くなることがあります。",
+    phase: "P1",
+    positionals: [],
+    options: [
+      portListScopeOpt,
+      protocolOpt,
+      portOpt,
+      serviceOpt,
+      grepOpt,
+      reservationsOpt,
+    ],
+    examples: [
+      "sys4sys ports list --scope wsl --json",
+      "sys4sys ports list --port 3000 --reservations",
+    ],
+    mutating: false,
+    requiresConfirmation: false,
+    requiredScopes: ["ports:read"],
+  },
+  {
+    name: "ports history",
+    summary: "ポート使用履歴を表示",
+    phase: "P1",
+    positionals: [],
+    options: [
+      portScopeOpt,
+      portOpt,
+      protocolOpt,
+      sinceOpt,
+      untilOpt,
+      limitDefault100,
+    ],
+    examples: [
+      "sys4sys ports history --scope windows --port 3000",
+      "sys4sys ports history --scope wsl --port 8080 --since 2026-10-01T00:00:00Z",
+    ],
+    mutating: false,
+    requiresConfirmation: false,
+    requiredScopes: ["ports:read"],
+  },
+  {
+    name: "ports reserve",
+    summary: "ポートを予約",
+    phase: "P1",
+    positionals: [],
+    options: [portScopeOpt, portOpt, protocolOpt, serviceOpt, note],
+    examples: [
+      "sys4sys ports reserve --scope windows --port 3100 --protocol tcp --service <id>",
+    ],
+    mutating: true,
+    requiresConfirmation: false,
+    requiredScopes: ["ports:operate"],
+  },
+  {
+    name: "ports release",
+    summary: "ポート予約を解放",
+    phase: "P1",
+    positionals: [{ name: "id", required: true, description: "予約 ID" }],
+    options: [yes],
+    examples: ["sys4sys ports release <reservation-id> --yes"],
+    mutating: true,
+    requiresConfirmation: true,
+    requiredScopes: ["ports:operate"],
+  },
+  {
+    name: "ports kill",
+    summary: "ポートを掴むプロセスを二段階で停止",
+    description:
+      "先に ports list で対象を確認してください。確認トークンは CLI 内部で取得し、自動再取得はしません。",
+    phase: "P1",
+    positionals: [{ name: "port", required: true, description: "ポート番号" }],
+    options: [portScopeOpt, pidOpt, pidScopeOpt, signalOpt, forceOpt, yes],
+    examples: [
+      "sys4sys ports kill 3000 --scope windows --yes",
+      "sys4sys ports kill 3000 --scope wsl --pid 123 --signal TERM --yes",
+    ],
+    mutating: true,
+    requiresConfirmation: true,
+    requiredScopes: ["ports:operate"],
+  },
+  {
+    name: "reports list",
+    summary: "レポート一覧を表示",
+    phase: "P1",
+    positionals: [],
+    options: [serviceOpt, limitDefault50, offsetOpt],
+    examples: [
+      "sys4sys reports list --incident <id> --json",
+      "sys4sys reports list --limit 20 --offset 20",
+    ],
+    mutating: false,
+    requiresConfirmation: false,
+    requiredScopes: ["reports:read"],
+  },
+  {
+    name: "reports get",
+    summary: "レポート詳細を表示",
+    phase: "P1",
+    positionals: [{ name: "id", required: true, description: "レポート ID" }],
+    options: [fullOpt],
+    examples: [
+      "sys4sys reports get <id>",
+      "sys4sys reports get <id> --full --json",
+    ],
+    mutating: false,
+    requiresConfirmation: false,
+    requiredScopes: ["reports:read"],
+  },
+  {
+    name: "reports export",
+    summary: "レポートをファイルまたは stdout に出力",
+    phase: "P1",
+    positionals: [{ name: "id", required: true, description: "レポート ID" }],
+    options: [formatOpt, outputOpt, forceOpt],
+    examples: [
+      "sys4sys reports export <id> --format md --output -",
+      "sys4sys reports export <id> --format json --output report.json",
+    ],
+    mutating: false,
+    requiresConfirmation: false,
+    requiredScopes: ["reports:read"],
+  },
+  {
+    name: "audit list",
+    summary: "監査ログを検索",
+    phase: "P1",
+    positionals: [],
+    options: [
+      {
+        name: "actor",
+        type: "string",
+        description: "actor ラベルまたは ID",
+        valueName: "text",
+      },
+      {
+        name: "action",
+        type: "string",
+        description: "アクションの部分一致",
+        valueName: "text",
+      },
+      {
+        name: "target",
+        type: "string",
+        description: "対象の部分一致",
+        valueName: "text",
+      },
+      sinceOpt,
+      untilOpt,
+      limitDefault100,
+      offsetOpt,
+    ],
+    examples: [
+      "sys4sys audit list --action service.deploy --since 2026-10-01T00:00:00Z",
+      "sys4sys audit list --target incident:<id> --limit 20 --json",
+    ],
+    mutating: false,
+    requiresConfirmation: false,
+    requiredScopes: ["audit:read"],
+  },
+  {
+    name: "settings mail get",
+    summary: "メール設定を表示（パスワードは非表示）",
+    phase: "P1",
+    positionals: [],
+    options: [],
+    examples: ["sys4sys settings mail get", "sys4sys settings mail get --json"],
+    mutating: false,
+    requiresConfirmation: false,
+    requiredScopes: ["settings:read"],
+  },
+  {
+    name: "settings mail set",
+    summary: "メール設定を更新",
+    description:
+      "パスワードは --file の JSON でのみ受け取る。非対話は --yes 必須。",
+    phase: "P1",
+    positionals: [],
+    options: [settingsFileOpt, dryRun, yes],
+    examples: [
+      "sys4sys settings mail set --file mail.json --yes",
+      "sys4sys settings mail set --file - --dry-run < mail.json",
+    ],
+    mutating: true,
+    requiresConfirmation: true,
+    requiredScopes: ["settings:write"],
+  },
+  {
+    name: "settings mail test",
+    summary: "メール設定でテスト送信",
+    phase: "P1",
+    positionals: [],
+    options: [],
+    examples: [
+      "sys4sys settings mail test",
+      "sys4sys settings mail test --json",
+    ],
+    mutating: false,
+    requiresConfirmation: false,
+    requiredScopes: ["settings:write"],
+  },
+  {
+    name: "settings ai get",
+    summary: "AI 設定を表示（API key は非表示）",
+    phase: "P1",
+    positionals: [],
+    options: [],
+    examples: ["sys4sys settings ai get", "sys4sys settings ai get --json"],
+    mutating: false,
+    requiresConfirmation: false,
+    requiredScopes: ["settings:read"],
+  },
+  {
+    name: "settings ai set",
+    summary: "AI 設定を更新",
+    description:
+      "API key は --file の JSON でのみ受け取る。非対話は --yes 必須。",
+    phase: "P1",
+    positionals: [],
+    options: [settingsFileOpt, dryRun, yes],
+    examples: [
+      "sys4sys settings ai set --file ai.json --yes",
+      "sys4sys settings ai set --file - --dry-run < ai.json",
+    ],
+    mutating: true,
+    requiresConfirmation: true,
+    requiredScopes: ["settings:write"],
+  },
+  {
+    name: "settings ai test",
+    summary: "AI 設定で接続テスト",
+    phase: "P1",
+    positionals: [],
+    options: [],
+    examples: ["sys4sys settings ai test", "sys4sys settings ai test --json"],
+    mutating: false,
+    requiresConfirmation: false,
+    requiredScopes: ["settings:write"],
+  },
+  {
+    name: "settings retention get",
+    summary: "保持期間設定を表示",
+    phase: "P1",
+    positionals: [],
+    options: [],
+    examples: [
+      "sys4sys settings retention get",
+      "sys4sys settings retention get --json",
+    ],
+    mutating: false,
+    requiresConfirmation: false,
+    requiredScopes: ["settings:read"],
+  },
+  {
+    name: "settings retention set",
+    summary: "保持期間設定を更新",
+    phase: "P1",
+    positionals: [],
+    options: [settingsFileOpt, dryRun, yes],
+    examples: ["sys4sys settings retention set --file retention.json --yes"],
+    mutating: true,
+    requiresConfirmation: true,
+    requiredScopes: ["settings:write"],
+  },
+  {
+    name: "settings backup",
+    summary: "データベースバックアップを作成",
+    phase: "P1",
+    positionals: [],
+    options: [yes, dryRun],
+    examples: [
+      "sys4sys settings backup --yes",
+      "sys4sys settings backup --dry-run",
+    ],
+    mutating: true,
+    requiresConfirmation: true,
+    requiredScopes: ["settings:write"],
+  },
+  {
+    name: "deploy-requests list",
+    summary: "デプロイ承認要求一覧を表示",
+    phase: "P1",
+    positionals: [],
+    options: [statusOpt, limitDefault50, offsetOpt],
+    examples: [
+      "sys4sys deploy-requests list --status pending --json",
+      "sys4sys deploy-requests list --status approved --limit 20",
+    ],
+    mutating: false,
+    requiresConfirmation: false,
+    requiredScopes: ["deploy:execute"],
+  },
+  {
+    name: "deploy-requests get",
+    summary: "デプロイ承認要求の詳細を表示",
+    phase: "P1",
+    positionals: [{ name: "id", required: true, description: "要求 ID" }],
+    options: [],
+    examples: [
+      "sys4sys deploy-requests get <id>",
+      "sys4sys deploy-requests get <id> --json",
+    ],
+    mutating: false,
+    requiresConfirmation: false,
+    requiredScopes: ["deploy:execute"],
+  },
+  {
+    name: "deploy-requests approve",
+    summary: "デプロイ承認要求を承認して実行",
+    phase: "P1",
+    positionals: [{ name: "id", required: true, description: "要求 ID" }],
+    options: [note, yes, wait, timeout],
+    examples: [
+      'sys4sys deploy-requests approve <request-id> --note "リリース確認済み" --yes --wait --timeout 120',
+    ],
+    mutating: true,
+    requiresConfirmation: true,
+    requiredScopes: ["approvals:decide"],
+  },
+  {
+    name: "deploy-requests reject",
+    summary: "デプロイ承認要求を却下",
+    phase: "P1",
+    positionals: [{ name: "id", required: true, description: "要求 ID" }],
+    options: [note, yes],
+    examples: [
+      'sys4sys deploy-requests reject <request-id> --note "まだ準備未完成" --yes',
+    ],
+    mutating: true,
+    requiresConfirmation: true,
+    requiredScopes: ["approvals:decide"],
   },
   {
     name: "schema",

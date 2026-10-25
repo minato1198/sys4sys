@@ -41,6 +41,7 @@ interface DeployConfig {
   command: string[];
   cwd?: string;
   env?: Record<string, string>;
+  envKeys?: string[];
   timeoutSec?: number;
   restartAfter?: boolean;
   healthTimeoutSec?: number;
@@ -69,7 +70,8 @@ interface Service {
   name: string;
   command: string[];
   cwd: string | null;
-  env: Record<string, string> | null;
+  env?: Record<string, string> | null;
+  envKeys?: string[];
   expectedPorts: number[];
   healthCheck: HealthCheck | null;
   deploy: DeployConfig | null;
@@ -110,6 +112,83 @@ interface ServiceDetail extends Service {
 
 interface Problem {
   detail?: string;
+  deployRequestId?: string | null;
+}
+
+interface ServiceSecrets {
+  env?: Record<string, string> | null;
+  deployEnv?: Record<string, string> | null;
+}
+
+const ENV_MASK = "***";
+
+type EnvMap = Record<string, string>;
+
+function normalizeEnv(value: EnvMap | null | undefined): EnvMap {
+  return value ?? {};
+}
+
+function sortedEnvKeys(value: EnvMap): string[] {
+  return Object.keys(value).sort((a, b) => a.localeCompare(b));
+}
+
+function sameEnv(
+  left: EnvMap | null | undefined,
+  right: EnvMap | null | undefined,
+): boolean {
+  const a = normalizeEnv(left);
+  const b = normalizeEnv(right);
+  const aKeys = sortedEnvKeys(a);
+  const bKeys = sortedEnvKeys(b);
+  if (aKeys.length !== bKeys.length) return false;
+  for (const key of aKeys) {
+    if (!bKeys.includes(key) || a[key] !== b[key]) return false;
+  }
+  return true;
+}
+
+function containsMaskedEnv(value: EnvMap | null | undefined): boolean {
+  return Object.values(normalizeEnv(value)).some((item) => item === ENV_MASK);
+}
+
+function parseEnvObject(
+  text: string,
+  jsonMessage: string,
+  objectMessage: string,
+): EnvMap | null {
+  if (!text.trim()) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text) as unknown;
+  } catch {
+    throw new Error(jsonMessage);
+  }
+  if (
+    !parsed ||
+    typeof parsed !== "object" ||
+    Array.isArray(parsed) ||
+    !Object.values(parsed).every((value) => typeof value === "string")
+  ) {
+    throw new Error(objectMessage);
+  }
+  return parsed as EnvMap;
+}
+
+function maskedEnvFromKeys(keys: string[] | undefined): EnvMap | null {
+  if (!keys || keys.length === 0) return null;
+  return Object.fromEntries(keys.map((key) => [key, ENV_MASK]));
+}
+
+function envValuesFromService(service: Service | ServiceDetail): EnvMap | null {
+  if (service.env) return service.env;
+  return maskedEnvFromKeys(service.envKeys);
+}
+
+function deployEnvValuesFromService(
+  deploy: DeployConfig | null,
+): EnvMap | null {
+  if (deploy?.env) return deploy.env;
+  return maskedEnvFromKeys(deploy?.envKeys);
 }
 
 const EMPTY_FORM = {
@@ -209,6 +288,11 @@ export default function ServicesPage() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [selected, setSelected] = useState<ServiceDetail | null>(null);
+  const [envBaseline, setEnvBaseline] = useState<EnvMap | null>(null);
+  const [deployEnvBaseline, setDeployEnvBaseline] = useState<EnvMap | null>(
+    null,
+  );
+  const [revealing, setRevealing] = useState(false);
   const [healthById, setHealthById] = useState<Record<string, HealthResult>>(
     {},
   );
@@ -376,6 +460,19 @@ export default function ServicesPage() {
         const problem = (await response
           .json()
           .catch(() => null)) as Problem | null;
+        if (
+          response.status === 409 &&
+          problem?.detail === "approval_required"
+        ) {
+          setMessage(
+            `${service.name} のデプロイには承認が必要です。/approvals ページで承認待ちを確認してください${
+              problem.deployRequestId
+                ? `（要求 ID: ${problem.deployRequestId}）`
+                : ""
+            }。`,
+          );
+          return;
+        }
         throw new Error(
           problem?.detail ?? `デプロイに失敗しました (${response.status})`,
         );
@@ -437,45 +534,76 @@ export default function ServicesPage() {
     }
   }
 
-  function editService(service: Service) {
-    setEditingId(service.id);
-    setForm({
-      hostId: service.hostId,
-      name: service.name,
-      command: JSON.stringify(service.command, null, 0),
-      cwd: service.cwd ?? "",
-      env: JSON.stringify(service.env ?? {}, null, 0),
-      expectedPorts: service.expectedPorts.join(", "),
-      autoStart: service.autoStart,
-      autoRestartPhase: service.autoRestartPhase,
-      healthType: service.healthCheck?.type ?? "",
-      healthUrl: service.healthCheck?.url ?? "",
-      healthPort: service.healthCheck?.port
-        ? String(service.healthCheck.port)
-        : "",
-      healthCommand: service.healthCheck?.command
-        ? JSON.stringify(service.healthCheck.command)
-        : "",
-      healthInterval: String(service.healthCheck?.intervalSec ?? 10),
-      healthTimeout: String(service.healthCheck?.timeoutSec ?? 3),
-      healthFailures: String(service.healthCheck?.failures ?? 3),
-      deployCommand: service.deploy
-        ? JSON.stringify(service.deploy.command)
-        : "",
-      deployCwd: service.deploy?.cwd ?? "",
-      deployEnv: service.deploy?.env
-        ? JSON.stringify(service.deploy.env, null, 2)
-        : "",
-      deployTimeout: String(service.deploy?.timeoutSec ?? 600),
-      deployHealthTimeout: String(service.deploy?.healthTimeoutSec ?? 120),
-      deployRestartAfter: service.deploy?.restartAfter ?? true,
-    });
-    setMessage(null);
-    window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
+  async function editService(service: Service) {
+    try {
+      const response = await fetch(
+        `/api/services/${encodeURIComponent(service.id)}`,
+        { cache: "no-store" },
+      );
+      if (response.status === 401) {
+        window.location.href = "/login";
+        return;
+      }
+      if (!response.ok) {
+        const problem = (await response
+          .json()
+          .catch(() => null)) as Problem | null;
+        setMessage(
+          problem?.detail ??
+            `編集用のサービス詳細を取得できませんでした (${response.status})`,
+        );
+        return;
+      }
+
+      const detail = (await response.json()) as ServiceDetail;
+      const envValues = envValuesFromService(detail);
+      const deployEnvValues = deployEnvValuesFromService(detail.deploy);
+      setEditingId(service.id);
+      setEnvBaseline(envValues);
+      setDeployEnvBaseline(deployEnvValues);
+      setForm({
+        hostId: detail.hostId,
+        name: detail.name,
+        command: JSON.stringify(detail.command, null, 0),
+        cwd: detail.cwd ?? "",
+        env: envValues ? JSON.stringify(envValues, null, 0) : "{}",
+        expectedPorts: detail.expectedPorts.join(", "),
+        autoStart: detail.autoStart,
+        autoRestartPhase: detail.autoRestartPhase,
+        healthType: detail.healthCheck?.type ?? "",
+        healthUrl: detail.healthCheck?.url ?? "",
+        healthPort: detail.healthCheck?.port
+          ? String(detail.healthCheck.port)
+          : "",
+        healthCommand: detail.healthCheck?.command
+          ? JSON.stringify(detail.healthCheck.command)
+          : "",
+        healthInterval: String(detail.healthCheck?.intervalSec ?? 10),
+        healthTimeout: String(detail.healthCheck?.timeoutSec ?? 3),
+        healthFailures: String(detail.healthCheck?.failures ?? 3),
+        deployCommand: detail.deploy
+          ? JSON.stringify(detail.deploy.command)
+          : "",
+        deployCwd: detail.deploy?.cwd ?? "",
+        deployEnv: deployEnvValues
+          ? JSON.stringify(deployEnvValues, null, 2)
+          : "",
+        deployTimeout: String(detail.deploy?.timeoutSec ?? 600),
+        deployHealthTimeout: String(detail.deploy?.healthTimeoutSec ?? 120),
+        deployRestartAfter: detail.deploy?.restartAfter ?? true,
+      });
+      setMessage(null);
+      window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
+    } catch (cause) {
+      setMessage(cause instanceof Error ? cause.message : String(cause));
+    }
   }
 
   function resetForm() {
     setEditingId(null);
+    setEnvBaseline(null);
+    setDeployEnvBaseline(null);
+    setRevealing(false);
     const candidate = hosts.find((host) => host.enabled) ?? hosts[0];
     setForm({ ...EMPTY_FORM, hostId: candidate?.id ?? "" });
   }
@@ -490,6 +618,52 @@ export default function ServicesPage() {
       deployHealthTimeout: current.deployHealthTimeout || "120",
       deployRestartAfter: true,
     }));
+  }
+
+  async function revealServiceEnv() {
+    if (!editingId || !isAdmin) return;
+    setRevealing(true);
+    setMessage(null);
+    try {
+      const response = await fetch(
+        `/api/services/${encodeURIComponent(editingId)}/secrets`,
+        { cache: "no-store" },
+      );
+      if (!response.ok) {
+        const problem = (await response
+          .json()
+          .catch(() => null)) as Problem | null;
+        if (response.status === 403) {
+          throw new Error(
+            problem?.detail ??
+              "env を表示するには admin 権限と services:secrets スコープが必要です",
+          );
+        }
+        throw new Error(
+          problem?.detail ?? `env 表示に失敗しました (${response.status})`,
+        );
+      }
+
+      const data = (await response.json()) as ServiceSecrets;
+      const envValues = data.env ?? null;
+      const deployEnvValues = data.deployEnv ?? null;
+      setEnvBaseline(envValues);
+      setDeployEnvBaseline(deployEnvValues);
+      setForm((current) => ({
+        ...current,
+        env: envValues ? JSON.stringify(envValues, null, 0) : "{}",
+        deployEnv: deployEnvValues
+          ? JSON.stringify(deployEnvValues, null, 2)
+          : "",
+      }));
+      setMessage(
+        "env 値を表示しました。値を変更しない限り、保存時に PATCH へ env は送信されません。",
+      );
+    } catch (cause) {
+      setMessage(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setRevealing(false);
+    }
   }
 
   async function submitService(event: FormEvent<HTMLFormElement>) {
@@ -511,26 +685,16 @@ export default function ServicesPage() {
         throw new Error("command は空でない文字列の配列にしてください");
       }
 
-      let env: Record<string, string> | null = null;
-      if (form.env.trim()) {
-        try {
-          const parsed = JSON.parse(form.env) as unknown;
-          if (
-            !parsed ||
-            typeof parsed !== "object" ||
-            Array.isArray(parsed) ||
-            !Object.values(parsed).every((value) => typeof value === "string")
-          ) {
-            throw new Error("env は文字列のオブジェクトにしてください");
-          }
-          env = parsed as Record<string, string>;
-        } catch (cause) {
-          throw new Error(
-            cause instanceof Error
-              ? cause.message
-              : "env は JSON オブジェクトで入力してください",
-          );
-        }
+      const env = parseEnvObject(
+        form.env,
+        "env は JSON オブジェクトで入力してください",
+        "env は文字列のオブジェクトにしてください",
+      );
+      const envUnchanged = editingId ? sameEnv(env, envBaseline) : false;
+      if (!envUnchanged && containsMaskedEnv(env)) {
+        throw new Error(
+          "env の既存値を変更する場合は Reveal で平文値を取得するか、変更しない env はそのまま保存してください",
+        );
       }
 
       const expectedPorts = form.expectedPorts
@@ -604,29 +768,18 @@ export default function ServicesPage() {
           );
         }
 
-        let deployEnv: Record<string, string> | undefined;
-        if (form.deployEnv.trim()) {
-          let parsedEnv: unknown;
-          try {
-            parsedEnv = JSON.parse(form.deployEnv);
-          } catch {
-            throw new Error(
-              "deploy env は JSON オブジェクトで入力してください",
-            );
-          }
-          if (
-            typeof parsedEnv !== "object" ||
-            parsedEnv === null ||
-            Array.isArray(parsedEnv) ||
-            !Object.values(parsedEnv).every(
-              (value) => typeof value === "string",
-            )
-          ) {
-            throw new Error(
-              "deploy env は文字列の値を持つ JSON オブジェクトにしてください",
-            );
-          }
-          deployEnv = parsedEnv as Record<string, string>;
+        const deployEnv = parseEnvObject(
+          form.deployEnv,
+          "deploy env は JSON オブジェクトで入力してください",
+          "deploy env は文字列の値を持つ JSON オブジェクトにしてください",
+        );
+        const deployEnvUnchanged = editingId
+          ? sameEnv(deployEnv, deployEnvBaseline)
+          : false;
+        if (!deployEnvUnchanged && containsMaskedEnv(deployEnv)) {
+          throw new Error(
+            "deploy env の既存値を変更する場合は Reveal で平文値を取得するか、変更しない deploy env はそのまま保存してください",
+          );
         }
 
         const timeoutSec = Number(form.deployTimeout) || 600;
@@ -655,21 +808,29 @@ export default function ServicesPage() {
           healthTimeoutSec,
         };
         if (form.deployCwd.trim()) deploy.cwd = form.deployCwd.trim();
-        if (deployEnv) deploy.env = deployEnv;
+        if (!deployEnvUnchanged) {
+          if (deployEnv) {
+            deploy.env = deployEnv;
+          } else if (editingId) {
+            deploy.env = {};
+          }
+        }
       }
 
-      const payload = {
+      const payload: Record<string, unknown> = {
         hostId: form.hostId,
         name: form.name.trim(),
         command: command as string[],
         cwd: form.cwd.trim() || undefined,
-        env: env ?? undefined,
         expectedPorts: expectedPorts.length > 0 ? expectedPorts : undefined,
         healthCheck: healthCheck ?? undefined,
         deploy: deploy ?? (editingId ? null : undefined),
         autoStart: form.autoStart,
         autoRestartPhase: form.autoRestartPhase,
       };
+      if (!envUnchanged) {
+        payload.env = env;
+      }
 
       const response = await fetch(
         editingId
@@ -1012,7 +1173,7 @@ export default function ServicesPage() {
                               <button
                                 type="button"
                                 disabled={busy || service.runtime.running}
-                                onClick={() => editService(service)}
+                                onClick={() => void editService(service)}
                                 className="rounded border border-ink-700 px-2 py-1 text-[10px] text-mist-200 transition hover:border-signal-400/40 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
                               >
                                 Edit
@@ -1080,7 +1241,8 @@ export default function ServicesPage() {
                   {
                     command: selected.command,
                     cwd: selected.cwd,
-                    env: selected.env,
+                    env: selected.env ?? null,
+                    envKeys: selected.envKeys ?? [],
                     expectedPorts: selected.expectedPorts,
                     healthCheck: selected.healthCheck,
                     deploy: selected.deploy,
@@ -1237,6 +1399,22 @@ export default function ServicesPage() {
                 }
                 className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 font-mono text-xs text-mist-200 focus:border-signal-400/40 focus:outline-none"
               />
+              {editingId ? (
+                <div className="mt-1 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={revealing}
+                    onClick={() => void revealServiceEnv()}
+                    className="rounded border border-signal-400/30 bg-signal-400/10 px-2 py-1 text-[10px] text-signal-400 transition hover:bg-signal-400/20 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {revealing ? "表示中…" : "Reveal env"}
+                  </button>
+                  <span className="text-[10px] text-mist-400">
+                    env は通常 *** で表示します。保存時に値を変えなければ PATCH
+                    には送信しません。
+                  </span>
+                </div>
+              ) : null}
             </label>
           </div>
 

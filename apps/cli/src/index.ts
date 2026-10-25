@@ -4,7 +4,14 @@ import { parseCliArgs } from "./args.js";
 import { createCredentialStore, resolveCredentials } from "./auth/store.js";
 import { ApiClient, ApiError } from "./client.js";
 import { authLogin, authLogout, authStatus, whoami } from "./commands/auth.js";
-import { listHosts } from "./commands/hosts.js";
+import * as approvalsCmd from "./commands/approvals.js";
+import * as auditCmd from "./commands/audit.js";
+import * as deployRequestsCmd from "./commands/deploy-requests.js";
+import * as hostsCmd from "./commands/hosts.js";
+import * as incidentsCmd from "./commands/incidents.js";
+import * as portsCmd from "./commands/ports.js";
+import * as reportsCmd from "./commands/reports.js";
+import * as settingsCmd from "./commands/settings.js";
 import {
   createService as createServiceCommand,
   deployService,
@@ -96,6 +103,21 @@ function expectNoExtraPositionals(
   }
 }
 
+async function authedClient(
+  parsed: ReturnType<typeof parseCliArgs>,
+): Promise<ApiClient> {
+  const resolved = await resolveCredentials({
+    apiUrl: parsed.values.api ?? process.env.SYS4SYS_API_URL,
+  });
+  if (resolved.source === "none") {
+    throw new CliError(
+      "認証情報がありません。`sys4sys auth login` を実行してください。",
+      3,
+    );
+  }
+  return clientFor(resolved);
+}
+
 export async function main(
   argv: string[],
   cliOutput?: CliOutput,
@@ -149,6 +171,30 @@ export async function main(
     scope: parsed.values.scope,
     expiresIn: parsed.values["expires-in"],
     save: Boolean(parsed.values.save),
+    severity: parsed.values.severity,
+    offset: parsed.values.offset,
+    note: parsed.values.note,
+    full: Boolean(parsed.values.full),
+    kind: parsed.values.kind,
+    distro: parsed.values.distro,
+    disabled: Boolean(parsed.values.disabled),
+    enable: Boolean(parsed.values.enable),
+    disable: Boolean(parsed.values.disable),
+    portScope: parsed.values.scope?.[0],
+    protocol: parsed.values.protocol,
+    port: parsed.values.port,
+    reservations: Boolean(parsed.values.reservations),
+    pid: parsed.values.pid,
+    pidScope: parsed.values["pid-scope"],
+    killSignal: parsed.values.signal,
+    force: Boolean(parsed.values.force),
+    format: parsed.values.format,
+    outputPath: parsed.values.output,
+    request: Boolean(parsed.values.request),
+    action: parsed.values.action,
+    target: parsed.values.target,
+    actor: parsed.values.actor,
+    incident: parsed.values.incident,
     output: cliOutput,
   };
 
@@ -300,15 +346,243 @@ export async function main(
   }
 
   if (group === "hosts") {
-    if (sub !== "list") {
-      throw new UsageError("hosts のサブコマンドは list のみです。");
+    const client = await authedClient(parsed);
+    switch (sub) {
+      case "list":
+        expectNoExtraPositionals(rest, "hosts list");
+        await hostsCmd.listHosts(client, options);
+        return 0;
+      case "get":
+        await hostsCmd.getHost(client, rest, options);
+        return 0;
+      case "detect":
+        expectNoExtraPositionals(rest, "hosts detect");
+        await hostsCmd.detectHosts(client, options);
+        return 0;
+      case "create":
+        expectNoExtraPositionals(rest, "hosts create");
+        await hostsCmd.createHost(client, options);
+        return 0;
+      case "update":
+        await hostsCmd.updateHost(client, rest, options);
+        return 0;
+      default:
+        throw new UsageError(
+          "hosts のサブコマンドは list / get / detect / create / update です。",
+        );
     }
-    expectNoExtraPositionals(rest, "hosts list");
-    const resolved = await resolveCredentials({
-      apiUrl: parsed.values.api ?? process.env.SYS4SYS_API_URL,
-    });
-    await listHosts(clientFor(resolved), options.json, options.output);
+  }
+
+  if (group === "incidents") {
+    const client = await authedClient(parsed);
+    switch (sub) {
+      case "list":
+        expectNoExtraPositionals(rest, "incidents list");
+        await incidentsCmd.listIncidents(client, options);
+        return 0;
+      case "get":
+        await incidentsCmd.getIncident(client, rest, options);
+        return 0;
+      case "ack":
+        await incidentsCmd.ackIncident(client, rest, options);
+        return 0;
+      case "resolve":
+        await incidentsCmd.resolveIncident(client, rest, options);
+        return 0;
+      case "analyze":
+        await incidentsCmd.analyzeIncident(client, rest, options);
+        return 0;
+      case "analysis":
+        await incidentsCmd.incidentAnalysis(client, rest, options);
+        return 0;
+      default:
+        throw new UsageError(
+          "incidents のサブコマンドは list / get / ack / resolve / analyze / analysis です。",
+        );
+    }
+  }
+
+  if (group === "approvals") {
+    const client = await authedClient(parsed);
+    if (sub === "list") {
+      expectNoExtraPositionals(rest, "approvals list");
+      await approvalsCmd.listApprovals(client, options);
+      return 0;
+    }
+    if (sub === "approve") {
+      await approvalsCmd.approveApproval(client, rest, options);
+      return 0;
+    }
+    if (sub === "reject") {
+      await approvalsCmd.rejectApproval(client, rest, options);
+      return 0;
+    }
+    throw new UsageError(
+      "approvals のサブコマンドは list / approve / reject です。",
+    );
+  }
+
+  if (group === "ports") {
+    const client = await authedClient(parsed);
+    switch (sub) {
+      case "list":
+        expectNoExtraPositionals(rest, "ports list");
+        await portsCmd.listPorts(client, options);
+        return 0;
+      case "history":
+        expectNoExtraPositionals(rest, "ports history");
+        await portsCmd.portHistory(client, options);
+        return 0;
+      case "reserve":
+        expectNoExtraPositionals(rest, "ports reserve");
+        await portsCmd.reservePort(client, options);
+        return 0;
+      case "release":
+        await portsCmd.releasePort(client, rest, options);
+        return 0;
+      case "kill":
+        await portsCmd.killPort(client, rest, options);
+        return 0;
+      default:
+        throw new UsageError(
+          "ports のサブコマンドは list / history / reserve / release / kill です。",
+        );
+    }
+  }
+
+  if (group === "reports") {
+    const client = await authedClient(parsed);
+    if (sub === "list") {
+      expectNoExtraPositionals(rest, "reports list");
+      await reportsCmd.listReports(client, options);
+      return 0;
+    }
+    if (sub === "get") {
+      await reportsCmd.getReport(client, rest, options);
+      return 0;
+    }
+    if (sub === "export") {
+      await reportsCmd.exportReport(client, rest, options);
+      return 0;
+    }
+    throw new UsageError("reports のサブコマンドは list / get / export です。");
+  }
+
+  if (group === "audit") {
+    if (sub !== "list") {
+      throw new UsageError("audit のサブコマンドは list のみです。");
+    }
+    expectNoExtraPositionals(rest, "audit list");
+    const client = await authedClient(parsed);
+    await auditCmd.listAudit(client, options);
     return 0;
+  }
+
+  if (group === "settings") {
+    const client = await authedClient(parsed);
+    const nested = [sub, ...rest].filter((value): value is string =>
+      Boolean(value),
+    );
+    const category = nested[0];
+    const actionName = nested[1];
+    const extra = nested.slice(2);
+
+    if (category === "mail") {
+      if (actionName === "get") {
+        expectNoExtraPositionals(extra, "settings mail get");
+        await settingsCmd.getMailSettings(client, extra, options);
+        return 0;
+      }
+      if (actionName === "set") {
+        expectNoExtraPositionals(extra, "settings mail set");
+        await settingsCmd.setMailSettings(client, extra, options);
+        return 0;
+      }
+      if (actionName === "test") {
+        expectNoExtraPositionals(extra, "settings mail test");
+        await settingsCmd.testMailSettings(client, extra, options);
+        return 0;
+      }
+      throw new UsageError(
+        "settings mail のサブコマンドは get / set / test です。",
+      );
+    }
+
+    if (category === "ai") {
+      if (actionName === "get") {
+        expectNoExtraPositionals(extra, "settings ai get");
+        await settingsCmd.getAiSettings(client, extra, options);
+        return 0;
+      }
+      if (actionName === "set") {
+        expectNoExtraPositionals(extra, "settings ai set");
+        await settingsCmd.setAiSettings(client, extra, options);
+        return 0;
+      }
+      if (actionName === "test") {
+        expectNoExtraPositionals(extra, "settings ai test");
+        await settingsCmd.testAiSettings(client, extra, options);
+        return 0;
+      }
+      throw new UsageError(
+        "settings ai のサブコマンドは get / set / test です。",
+      );
+    }
+
+    if (category === "retention") {
+      if (actionName === "get") {
+        expectNoExtraPositionals(extra, "settings retention get");
+        await settingsCmd.getRetentionSettings(client, extra, options);
+        return 0;
+      }
+      if (actionName === "set") {
+        expectNoExtraPositionals(extra, "settings retention set");
+        await settingsCmd.setRetentionSettings(client, extra, options);
+        return 0;
+      }
+      throw new UsageError(
+        "settings retention のサブコマンドは get / set です。",
+      );
+    }
+
+    if (category === "backup" && !actionName) {
+      expectNoExtraPositionals(extra, "settings backup");
+      await settingsCmd.createBackup(client, extra, options);
+      return 0;
+    }
+
+    throw new UsageError(
+      "settings のサブコマンドは mail / ai / retention / backup です。",
+    );
+  }
+
+  if (group === "deploy-requests") {
+    const client = await authedClient(parsed);
+    switch (sub) {
+      case "list":
+        expectNoExtraPositionals(rest, "deploy-requests list");
+        await deployRequestsCmd.listDeployRequests(client, options);
+        return 0;
+      case "get":
+        await deployRequestsCmd.getDeployRequest(client, rest, options);
+        return 0;
+      case "approve":
+        return await deployRequestsCmd.approveDeployRequest(
+          client,
+          rest,
+          options,
+        );
+      case "reject":
+        return await deployRequestsCmd.rejectDeployRequest(
+          client,
+          rest,
+          options,
+        );
+      default:
+        throw new UsageError(
+          "deploy-requests のサブコマンドは list / get / approve / reject です。",
+        );
+    }
   }
 
   if (group === "services") {

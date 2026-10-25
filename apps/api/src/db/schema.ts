@@ -1,4 +1,4 @@
-import type { DeployConfigInput } from "@sys4sys/shared";
+import type { DeployConfigInput, DeployRequestSnapshot } from "@sys4sys/shared";
 import {
   index,
   integer,
@@ -285,6 +285,7 @@ export const approvals = sqliteTable(
     requestedAction: text("requested_action", { mode: "json" })
       .$type<Record<string, unknown>>()
       .notNull(),
+    requestedBy: text("requested_by"),
     status: text("status", {
       enum: ["pending", "approved", "rejected", "expired"],
     })
@@ -370,6 +371,40 @@ export const actions = sqliteTable(
   },
   (table) => [
     index("actions_service_started_idx").on(table.serviceId, table.startedAt),
+  ],
+);
+
+export const deployRequests = sqliteTable(
+  "deploy_requests",
+  {
+    id: text("id").primaryKey(),
+    serviceId: text("service_id").notNull(),
+    requestedBy: text("requested_by").notNull(),
+    requestedAt: timestamp("requested_at").notNull(),
+    status: text("status", {
+      enum: [
+        "pending",
+        "approved",
+        "rejected",
+        "expired",
+        "executed",
+        "failed",
+      ],
+    })
+      .notNull()
+      .default("pending"),
+    decidedBy: text("decided_by"),
+    decidedAt: timestamp("decided_at"),
+    note: text("note"),
+    actionId: text("action_id"),
+    snapshot: text("snapshot", { mode: "json" })
+      .$type<DeployRequestSnapshot>()
+      .notNull(),
+    expiresAt: timestamp("expires_at").notNull(),
+  },
+  (table) => [
+    index("deploy_requests_status_idx").on(table.status),
+    index("deploy_requests_service_idx").on(table.serviceId, table.requestedAt),
   ],
 );
 

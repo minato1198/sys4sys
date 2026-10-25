@@ -31,6 +31,29 @@ export interface CliValues {
   "no-truncate"?: boolean;
   "no-reconnect"?: boolean;
   md?: boolean;
+  severity?: string;
+  offset?: string;
+  note?: string;
+  full?: boolean;
+  kind?: string;
+  distro?: string;
+  disabled?: boolean;
+  enable?: boolean;
+  disable?: boolean;
+  protocol?: string;
+  port?: string;
+  reservations?: boolean;
+  pid?: string;
+  "pid-scope"?: string;
+  signal?: string;
+  force?: boolean;
+  format?: string;
+  output?: string;
+  request?: boolean;
+  action?: string;
+  target?: string;
+  actor?: string;
+  incident?: string;
 }
 
 export interface ParsedCli {
@@ -68,6 +91,29 @@ const options = {
   "no-truncate": { type: "boolean" },
   "no-reconnect": { type: "boolean" },
   md: { type: "boolean" },
+  severity: { type: "string" },
+  offset: { type: "string" },
+  note: { type: "string" },
+  full: { type: "boolean" },
+  kind: { type: "string" },
+  distro: { type: "string" },
+  disabled: { type: "boolean" },
+  enable: { type: "boolean" },
+  disable: { type: "boolean" },
+  protocol: { type: "string" },
+  port: { type: "string" },
+  reservations: { type: "boolean" },
+  pid: { type: "string" },
+  "pid-scope": { type: "string" },
+  signal: { type: "string" },
+  force: { type: "boolean" },
+  format: { type: "string" },
+  output: { type: "string" },
+  request: { type: "boolean" },
+  action: { type: "string" },
+  target: { type: "string" },
+  actor: { type: "string" },
+  incident: { type: "string" },
 } as const;
 
 export function parseCliArgs(argv: string[]): ParsedCli {

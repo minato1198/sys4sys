@@ -10,7 +10,7 @@
   "scripts": {
     "dev": "tsx src/index.ts",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test src/args.test.ts src/output.test.ts src/client.test.ts src/index.test.ts src/time.test.ts src/auth/store.test.ts src/commands/services.test.ts src/commands/tokens.test.ts src/commands/auth.test.ts src/commands/logs.test.ts src/commands/logs-tail.test.ts src/commands/schema.test.ts src/skill.test.ts"
+    "test": "node --import tsx --test src/args.test.ts src/output.test.ts src/client.test.ts src/index.test.ts src/time.test.ts src/auth/store.test.ts src/commands/registry.test.ts src/commands/services.test.ts src/commands/tokens.test.ts src/commands/auth.test.ts src/commands/logs.test.ts src/commands/logs-tail.test.ts src/commands/schema.test.ts src/commands/incidents.test.ts src/commands/approvals.test.ts src/commands/hosts.test.ts src/commands/ports.test.ts src/commands/ports-kill.test.ts src/commands/reports.test.ts src/commands/audit.test.ts src/commands/settings.test.ts src/commands/deploy-requests.test.ts src/skill.test.ts"
   },
   "dependencies": {
     "@sys4sys/shared": "workspace:*",

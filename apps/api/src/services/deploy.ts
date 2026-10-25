@@ -9,9 +9,10 @@ import type { DeployConfigInput, LogLevel } from "@sys4sys/shared";
 import type { AuthUser } from "../auth/types.js";
 import { writeAudit } from "../audit.js";
 import { db } from "../db/index.js";
-import { actions, hosts, services } from "../db/schema.js";
+import { actions, deployRequests, hosts, services } from "../db/schema.js";
 import { ingestLog } from "../logs/ingest.js";
 import { isCommandAllowed } from "./allowlist.js";
+import { decryptServiceEnv, SERVICE_ENV_DECRYPTION_ERROR } from "./secrets.js";
 import {
   checkServiceHealth,
   restartService,
@@ -116,6 +117,7 @@ async function finishDeploy(
   actionId: string,
   status: DeployResultStatus,
   error: string | null,
+  deployRequestId: string | null = null,
 ): Promise<void> {
   const now = new Date();
   await db
@@ -131,6 +133,12 @@ async function finishDeploy(
       updatedAt: now,
     })
     .where(eq(services.id, serviceId));
+  if (deployRequestId) {
+    await db
+      .update(deployRequests)
+      .set({ status: status === "succeeded" ? "executed" : "failed" })
+      .where(eq(deployRequests.id, deployRequestId));
+  }
 }
 
 async function waitForHealthy(
@@ -258,6 +266,7 @@ export async function runDeploy(
   actionId: string,
   user: AuthUser,
   ip: string | null,
+  deployRequestId: string | null = null,
 ): Promise<void> {
   try {
     const allowed = isCommandAllowed(deploy.command);
@@ -296,7 +305,15 @@ export async function runDeploy(
       }
     }
 
-    const env = { ...(service.env ?? {}), ...(deploy.env ?? {}) };
+    let env: Record<string, string>;
+    try {
+      env = {
+        ...(decryptServiceEnv(service.env) ?? {}),
+        ...(decryptServiceEnv(deploy.env) ?? {}),
+      };
+    } catch {
+      throw new ServiceError(500, SERVICE_ENV_DECRYPTION_ERROR);
+    }
     await writeDeployLog(
       service,
       "stdout",
@@ -421,7 +438,13 @@ export async function runDeploy(
       );
     }
 
-    await finishDeploy(service.id, actionId, "succeeded", null);
+    await finishDeploy(
+      service.id,
+      actionId,
+      "succeeded",
+      null,
+      deployRequestId,
+    );
     await writeDeployLog(
       service,
       "stdout",
@@ -463,7 +486,13 @@ export async function runDeploy(
       // ログ保存に失敗しても action の失敗記録は続ける
     }
     try {
-      await finishDeploy(service.id, actionId, "failed", message);
+      await finishDeploy(
+        service.id,
+        actionId,
+        "failed",
+        message,
+        deployRequestId,
+      );
     } catch (finishError) {
       console.warn(
         `[deploy] failed to persist failure state: ${errorMessage(finishError)}`,

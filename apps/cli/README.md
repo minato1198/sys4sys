@@ -95,7 +95,13 @@ sys4sys tokens revoke <token-id> --yes
 ## 権限
 
 - `services create` / `services update` は `admin` が必要です。
-- `services deploy` は `operator` または `admin` が必要です。
+- `services deploy` / `services deploy --request` は `operator` または `admin` が必要です。
+- `deploy-requests approve` / `reject` は `approvals:decide` が必要です。即時 deploy と同じ role 制約に加え、要求者と承認者は原則別ユーザーです。
+- `approvals approve` / `reject` は `approvals:decide` が必要です。`requestedBy` が自分と一致する承認は 403 になります。監視エンジン由来の `requestedBy = null` は system 承認として扱われます。
+- `hosts create` / `hosts update` / `hosts detect` は `hosts:write`、一覧・詳細は `hosts:read` です。`--disable` は非対話で `--yes` が必要です。
+- `ports reserve` / `release` / `kill` は `ports:operate`、一覧・履歴は `ports:read` です。
+- `incidents ack` / `resolve` / `analyze` は `incidents:write`、一覧・詳細は `incidents:read` です。
+- `reports list` / `get` / `export` は `reports:read`、`audit list` は `audit:read`、設定系は `settings:read` / `settings:write` です。
 - トークン認証では API のスコープが適用されます。403 の場合は `requiredScope` を確認してください。
 - `services:secrets`（復号済み env の閲覧）は admin 専用です。CLI の `--show-env` はこの権限がないと成功しません。
 
@@ -108,6 +114,12 @@ sys4sys auth logout --revoke-token
 sys4sys auth status --json
 
 sys4sys hosts list --json
+sys4sys hosts get <host-id> --json
+sys4sys hosts detect --json
+sys4sys hosts create --kind windows --name local --dry-run --json
+sys4sys hosts update <host-id> --enable --json
+sys4sys hosts update <host-id> --disable --yes --json
+
 sys4sys services list --json
 sys4sys services get <id> --json
 sys4sys services create --file <path> --dry-run --json
@@ -127,6 +139,45 @@ sys4sys logs tail --service <id> --json
 sys4sys tokens list --json
 sys4sys tokens create --name ci --scope services:read --json
 sys4sys tokens revoke <token-id> --yes
+
+sys4sys incidents list --status open --severity error --json
+sys4sys incidents get <incident-id> --json
+sys4sys incidents ack <incident-id> --note "confirmed" --json
+sys4sys incidents resolve <incident-id> --note "done" --yes --json
+sys4sys incidents analyze <incident-id> --json
+
+sys4sys approvals list --status pending --json
+sys4sys approvals approve <approval-id> --note "restart ok" --yes --json
+sys4sys approvals reject <approval-id> --note "not yet" --yes --json
+
+sys4sys ports list --scope windows --json
+sys4sys ports list --scope all --protocol tcp --port 3000 --json
+sys4sys ports history --scope windows --port 3000 --json
+sys4sys ports reserve --scope windows --port 3100 --protocol tcp --service <service-id> --json
+sys4sys ports release <reservation-id> --yes --json
+sys4sys ports kill 3000 --scope windows --yes --json
+
+sys4sys reports list --incident <incident-id> --json
+sys4sys reports get <report-id>
+sys4sys reports export <report-id> --output ./report.md
+
+sys4sys audit list --action deploy --limit 50 --json
+sys4sys audit list --actor admin --target service:<service-id> --json
+
+sys4sys settings mail get --json
+sys4sys settings mail set --file mail.json --yes --json
+sys4sys settings ai get --json
+sys4sys settings ai set --file ai.json --dry-run --json
+sys4sys settings ai test --json
+sys4sys settings retention get --json
+sys4sys settings retention set --file retention.json --yes --json
+sys4sys settings backup --yes
+
+sys4sys deploy-requests list --status pending --json
+sys4sys deploy-requests get <request-id> --json
+sys4sys services deploy <service-id> --request --note "release" --json
+sys4sys deploy-requests approve <request-id> --note "release ok" --yes --wait --timeout 600 --json
+sys4sys deploy-requests reject <request-id> --note "blocked" --yes --json
 
 sys4sys schema --json
 sys4sys schema services list --json
@@ -191,12 +242,162 @@ sys4sys logs tail --service <id> --json --no-reconnect
 - `--json` の tail は NDJSON（1 行 1 JSON）です。Ctrl+C で終了します。
 - ログには秘密情報が含まれることがあります。外部へ送る前に内容を確認してください。
 
+## インシデント
+
+```bash
+sys4sys incidents list --json
+sys4sys incidents list --status open --severity error --service <service-id> --limit 50 --json
+sys4sys incidents get <incident-id>
+sys4sys incidents get <incident-id> --full
+sys4sys incidents ack <incident-id> --note "対応中"
+sys4sys incidents resolve <incident-id> --note "復旧確認済み" --yes
+sys4sys incidents analyze <incident-id> --json
+```
+
+- `list` は `status` / `severity` / `service` / `limit` / `offset` で絞り込みます。
+- `get` は events / approvals / actions / latest analysis / report を表示します。AI 分析全文が必要な場合は `--full`、または `--json` を使ってください。
+- `ack` と `resolve` は `incidents:write` が必要です。`resolve` は非対話環境で `--yes` が必要です。
+- `analyze` は AI 分析キューに投入するだけで、分析完了は `incidents get` の `analysis` / `report` で確認します。AI 未設定時は template 分析になることがあります。
+
+## 承認
+
+```bash
+sys4sys approvals list --json
+sys4sys approvals list --status pending --limit 20 --json
+sys4sys approvals approve <approval-id> --note "再起動OK" --yes
+sys4sys approvals reject <approval-id> --note "まだ準備未完成" --yes --json
+```
+
+- 既定では `pending` を一覧します。
+- 承認一覧は `requestedBy` を表示します。`requestedBy = null` は system 由来の承認です。
+- `approve` / `reject` は非対話環境で `--yes` が必要です。TTY でも対象のインシデント・サービス・要求アクションを表示します。
+- `requestedBy` が操作ユーザーと一致する承認の `approve` は 403 です。監視エンジン由来の `requestedBy = null` は system 承認として許可します。
+- 二重決定は 409 です。
+
+## ホスト管理
+
+```bash
+sys4sys hosts list --json
+sys4sys hosts get <host-id> --json
+sys4sys hosts detect --json
+sys4sys hosts create --kind windows --name local --dry-run --json
+sys4sys hosts create --kind wsl --name Ubuntu --distro Ubuntu-22.04 --json
+sys4sys hosts update <host-id> --name renamed --json
+sys4sys hosts update <host-id> --disable --yes --json
+```
+
+- `hosts detect` は WSL distro を検出します。WSL が見つからない場合は 502 と分かりやすいエラーになります。
+- Windows ホストは 1 つだけ登録できます。重複作成は 409 です。
+- WSL ホストの作成には `--distro` が必須です。
+- `--disable` はサービス停止につながるため、非対話環境で `--yes` が必要です。
+- `--dry-run` は入力値を表示するだけで API を変更しません。
+
+## ポート閲覧・予約・解放
+
+```bash
+sys4sys ports list --json
+sys4sys ports list --scope windows --protocol tcp --port 3000 --grep node --json
+sys4sys ports list --reservations --json
+sys4sys ports history --scope windows --port 3000 --limit 50 --json
+sys4sys ports reserve --scope windows --port 3100 --protocol tcp --service <service-id> --note "dev" --json
+sys4sys ports release <reservation-id> --yes --json
+```
+
+- `ports list` はスキャンを行うため、環境によっては時間がかかります。
+- `conflict` は人間向けの表で `!` 接頭辞を付けます。JSON 出力は `conflict: true` です。
+- `history` は `--scope` と `--port` が必須です。
+- `reserve` は `--protocol` と `--service` が必須です。競合・使用中は 409 です。
+- `release` は非対話環境で `--yes` が必要です。
+
+## ポート kill
+
+```bash
+sys4sys ports kill 3000 --scope windows --json
+sys4sys ports kill 3000 --scope windows --yes --signal TERM --json
+sys4sys ports kill 3000 --scope wsl --yes --signal KILL --pid <pid> --json
+```
+
+- 二段階です。まず kill token を取得し、対象 PID / プロセス / 期限を表示します。
+- 非対話環境では `--yes` が必要です。
+- `--signal` は `TERM` または `KILL` です。既定は `TERM` です。
+- トークンが期限切れで 400 / 409 の場合は、`sys4sys ports kill <port> --scope <scope> --yes` を再実行してトークンを再取得してください。
+
+## レポート
+
+```bash
+sys4sys reports list --json
+sys4sys reports list --incident <incident-id> --limit 20 --json
+sys4sys reports get <report-id>
+sys4sys reports export <report-id>
+sys4sys reports export <report-id> --format md --output ./report.md
+sys4sys reports export <report-id> --format json --output ./report.json --force
+```
+
+- `--output` を省略すると stdout に出力します。ファイル書き込みは `--output <path>` です。
+- 出力ファイルが既に存在する場合は `--force` がないと exit 2 です。
+- `reports get` は既定で Markdown 本文を短く表示します。全文が必要な場合は `--full` または `--json` を使ってください。
+
+## 監査ログ
+
+```bash
+sys4sys audit list --json
+sys4sys audit list --action deploy --limit 50 --json
+sys4sys audit list --actor <user-or-monitor> --target service:<service-id> --json
+sys4sys audit list --since 2026-10-01T00:00:00Z --until 2026-10-02T00:00:00Z --json
+```
+
+- `--since` / `--until` は ISO 8601 です。
+- 監査ログの `before` / `after` は秘密値を含めません。env 値やパスワードが監査ログに残っていないことを確認してください。
+
+## 設定
+
+```bash
+sys4sys settings mail get --json
+sys4sys settings mail set --file mail.json --dry-run --json
+sys4sys settings mail set --file mail.json --yes
+sys4sys settings ai get --json
+sys4sys settings ai set --file - --dry-run < ai.json
+sys4sys settings ai set --file ai.json --yes
+sys4sys settings ai test --json
+sys4sys settings retention get --json
+sys4sys settings retention set --file retention.json --yes
+sys4sys settings backup --dry-run
+sys4sys settings backup --yes
+```
+
+- `settings mail set` / `settings ai set` / `settings retention set` / `settings backup` は非対話環境で `--yes` が必要です。
+- メールパスワードと AI API key は JSON ファイル経由でのみ送ります。CLI は `--dry-run` 出力でパスワード/API key を `***` にします。
+- 設定の GET 応答には秘密値そのものは含まれません。`passwordSet` / `apiKeySet` などの状態だけを表示します。
+
+## デプロイ承認ワークフロー
+
+`deploy.requireApproval` が `true` のサービスでは、即時 deploy が 409 `approval_required` になります。
+
+```bash
+sys4sys services deploy <service-id> --dry-run --json
+sys4sys services deploy <service-id> --request --note "release 1.2.3"
+sys4sys deploy-requests list --status pending --json
+sys4sys deploy-requests get <request-id> --json
+sys4sys deploy-requests approve <request-id> --note "release ok" --yes --wait --timeout 600 --json
+sys4sys deploy-requests reject <request-id> --note "blocked" --yes --json
+```
+
+- `services deploy --request` は `POST /api/services/:id/deploy-requests` を作成します。
+- 即時 deploy が `approval_required` を返した場合、CLI は exit 4 で `--request` を案内します。
+- `pending` 要求が既に存在する場合は 409 と既存 `deployRequestId` を返します。
+- 承認は要求者と別ユーザーであることが原則です。`DEPLOY_ALLOW_SELF_APPROVAL=true` の場合だけ自己承認を許可します。
+- 承認時に現在の deploy 設定 / env スナップショットが要求作成時から変更されている場合は 409 になります。
+- 期限切れ要求は `expired` になり、承認は 409 です。
+- 承認成功後は status が `approved` から `executed` / `failed` に遷移します。`--wait` は期限まで status を追跡します。
+
 ## 出力
 
 - `--json` を基本にしてください。人間向けの表は解析に使わないでください。
 - `services actions` / `logs query` は `{ "items": [...], "nextCursor": "..." | null }` を返します。
 - `--json` のエラーは `{ "error": { "message": "...", "status": 403, "requiredScope": "..." } }` 形式です。
-- `env` / `deploy.env` は既定で `***` にマスクされます。表示する場合は `--show-env` を明示してください（`services list` の表には表示しません）。
+- API の `services list` は env / deploy.env の値を返しません。詳細 API は値を `***` にマスクし、キー名だけ返します。
+- `--show-env` を付けた `services get`、`services deploy --dry-run`、`--wait` 結果の表示では、admin 権限と `services:secrets` スコープがある場合に限って `GET /api/services/:id/secrets` を呼び、平文 env を表示します。表示前に stderr へ警告し、サーバー側は監査ログを記録します。
+- `services list --show-env` は env 値を表示しません。平文 env が必要な場合は対象 ID を指定して `services get --show-env` を使ってください。
 
 ## 終了コード
 
@@ -227,6 +428,6 @@ sys4sys schema services list
 - CLI は SQLite を直接操作せず、必ず API 経由で実行します。
 - `command` / `deploy.command` は `SERVICE_COMMAND_ALLOWLIST` に含まれる実行ファイルである必要があります。
 - `deploy.env` に秘密情報を直接書かないでください。
-- P0 時点ではサーバー側の env マスク・暗号化保存は未実装です。`--show-env` の利用は最小限にしてください。
-- インシデント・承認・レポートの CLI は P1 以降です。P0 では Web UI または API を利用してください。
+- サーバー側は通常のサービス応答で env 値をマスクし、env / deploy.env の保存値を AES-256-GCM で暗号化します。CLI は保存暗号文を取得せず、`--show-env` は secrets API 経由でのみ平文値を取得します。`--show-env` の利用は最小限にしてください。
+- インシデント・承認・ポート・レポート・監査ログ・設定・デプロイ承認の CLI は P1 で利用可能です。秘密値の取り扱いは `docs/SECURITY.md` と README の secrets 注意事項に従ってください。
 - `credentials.json` は Git 管理対象外です。トークンをコミットしないでください。

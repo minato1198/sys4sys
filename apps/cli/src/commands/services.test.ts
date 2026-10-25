@@ -10,11 +10,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { ApiClient, ApiError } from "../client.js";
-import { UsageError } from "../errors.js";
+import { AuthError, UsageError } from "../errors.js";
 import { memoryOutput } from "../test-output.js";
 import {
   createService,
   deployService,
+  getService,
   parseLimit,
   runServiceLifecycle,
   type CommandOptions,
@@ -614,6 +615,170 @@ test("services deploy validates --timeout before starting a deploy", async () =>
       UsageError,
     );
     assert.equal(deployRequests, 0);
+  } finally {
+    await server.close();
+  }
+});
+
+function maskedServiceResponse() {
+  const base = serviceResponse();
+  return {
+    ...base,
+    env: { DATABASE_URL: "***" },
+    envKeys: ["DATABASE_URL"],
+    deploy: {
+      ...base.deploy,
+      env: { DEPLOY_TOKEN: "***" },
+      envKeys: ["DEPLOY_TOKEN"],
+    },
+  };
+}
+
+test("services get --show-env calls the secrets endpoint and prints plaintext env", async () => {
+  let secretsRequested = 0;
+  const server = await startServer((request, response) => {
+    if (request.url === "/api/services/service-1" && request.method === "GET") {
+      json(response, maskedServiceResponse());
+      return;
+    }
+    if (
+      request.url === "/api/services/service-1/secrets" &&
+      request.method === "GET"
+    ) {
+      secretsRequested += 1;
+      json(response, {
+        env: { DATABASE_URL: "plain-value" },
+        deployEnv: { DEPLOY_TOKEN: "deploy-plain-value" },
+      });
+      return;
+    }
+    response.statusCode = 404;
+    response.end();
+  });
+
+  const capture = memoryOutput();
+  try {
+    const client = new ApiClient({
+      apiUrl: server.url,
+      sessionCookie: "test-token",
+    });
+    await getService(client, ["service-1"], {
+      ...options("unused.json"),
+      json: true,
+      showEnv: true,
+      output: capture.output,
+    });
+
+    assert.equal(secretsRequested, 1);
+    const body = JSON.parse(capture.out) as {
+      env: Record<string, string>;
+      deploy: { env: Record<string, string> };
+    };
+    assert.deepEqual(body.env, { DATABASE_URL: "plain-value" });
+    assert.deepEqual(body.deploy.env, { DEPLOY_TOKEN: "deploy-plain-value" });
+    assert.match(
+      capture.err,
+      /警告: --show-env は secrets API 経由で平文 env を表示します/,
+    );
+  } finally {
+    await server.close();
+  }
+});
+
+test("services get --show-env maps a missing secrets scope to an auth error", async () => {
+  const server = await startServer((request, response) => {
+    if (request.url === "/api/services/service-1" && request.method === "GET") {
+      json(response, maskedServiceResponse());
+      return;
+    }
+    if (
+      request.url === "/api/services/service-1/secrets" &&
+      request.method === "GET"
+    ) {
+      response.statusCode = 403;
+      response.setHeader("Content-Type", "application/problem+json");
+      response.end(
+        JSON.stringify({
+          type: "about:blank",
+          title: "Forbidden",
+          status: 403,
+          detail: "この操作には services:secrets スコープが必要です",
+          requiredScope: "services:secrets",
+        }),
+      );
+      return;
+    }
+    response.statusCode = 404;
+    response.end();
+  });
+
+  try {
+    const client = new ApiClient({
+      apiUrl: server.url,
+      sessionCookie: "test-token",
+    });
+    await assert.rejects(
+      () =>
+        getService(client, ["service-1"], {
+          ...options("unused.json"),
+          json: true,
+          showEnv: true,
+        }),
+      (error: unknown) => {
+        assert.ok(error instanceof AuthError);
+        assert.equal(
+          error.message,
+          "--show-env には admin 権限と services:secrets スコープが必要です",
+        );
+        return true;
+      },
+    );
+  } finally {
+    await server.close();
+  }
+});
+
+test("services deploy --dry-run --show-env uses the secrets endpoint", async () => {
+  let secretsRequested = 0;
+  const server = await startServer((request, response) => {
+    if (request.url === "/api/services/service-1" && request.method === "GET") {
+      json(response, maskedServiceResponse());
+      return;
+    }
+    if (
+      request.url === "/api/services/service-1/secrets" &&
+      request.method === "GET"
+    ) {
+      secretsRequested += 1;
+      json(response, {
+        env: { DATABASE_URL: "plain-value" },
+        deployEnv: { DEPLOY_TOKEN: "deploy-plain-value" },
+      });
+      return;
+    }
+    response.statusCode = 404;
+    response.end();
+  });
+
+  const capture = memoryOutput();
+  try {
+    const client = new ApiClient({
+      apiUrl: server.url,
+      sessionCookie: "test-token",
+    });
+    await deployService(client, ["service-1"], {
+      ...options("unused.json"),
+      json: true,
+      dryRun: true,
+      showEnv: true,
+      output: capture.output,
+    });
+
+    assert.equal(secretsRequested, 1);
+    const body = JSON.parse(capture.out) as {
+      deploy: { env: Record<string, string> };
+    };
+    assert.deepEqual(body.deploy.env, { DEPLOY_TOKEN: "deploy-plain-value" });
   } finally {
     await server.close();
   }

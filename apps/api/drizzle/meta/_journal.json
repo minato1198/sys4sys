@@ -43,6 +43,13 @@
       "when": 1792805708324,
       "tag": "0005_tearful_magneto",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1792918369881,
+      "tag": "0006_typical_joshua_kane",
+      "breakpoints": true
     }
   ]
 }

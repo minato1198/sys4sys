@@ -421,6 +421,9 @@ export async function decideApproval(
   if (approval.status !== "pending") {
     throw new IncidentError(409, "この承認は既に処理されています");
   }
+  if (approval.requestedBy && approval.requestedBy === actor.id) {
+    throw new IncidentError(403, "自己承認は許可されていません");
+  }
   const [incident] = await db
     .select()
     .from(incidents)
@@ -431,6 +434,12 @@ export async function decideApproval(
     throw new IncidentError(409, "解決済みのインシデントです");
   }
 
+  const service =
+    decision === "approved" ? await getService(incident.serviceId) : null;
+  if (decision === "approved" && !service) {
+    throw new IncidentError(404, "サービスが見つかりません");
+  }
+
   const [updatedApproval] = await db
     .update(approvals)
     .set({
@@ -439,20 +448,36 @@ export async function decideApproval(
       decidedAt: new Date(),
       note: note ?? null,
     })
-    .where(eq(approvals.id, id))
+    .where(and(eq(approvals.id, id), eq(approvals.status, "pending")))
     .returning();
-  const decided = updatedApproval ?? approval;
+  if (!updatedApproval) {
+    throw new IncidentError(409, "この承認は既に処理されています");
+  }
+  const decided = updatedApproval;
 
   if (decision === "rejected") {
     const [updatedIncident] = await db
       .update(incidents)
       .set({ status: "open" })
-      .where(eq(incidents.id, incident.id))
+      .where(
+        and(eq(incidents.id, incident.id), ne(incidents.status, "resolved")),
+      )
       .returning();
     await appendIncidentEvent(incident.id, "approval_rejected", {
       by: actor.email,
       note: note ?? null,
     });
+    await writeAudit({
+      actorUserId: actor.id,
+      actorLabel: actor.email,
+      action: "approval.rejected",
+      target: `approval:${id}`,
+      after: {
+        serviceId: incident.serviceId,
+        incidentId: incident.id,
+      },
+      reason: note ?? null,
+    }).catch(() => undefined);
     void notifyForIncident(
       updatedIncident ?? incident,
       "rejected",
@@ -469,16 +494,26 @@ export async function decideApproval(
     by: actor.email,
     note: note ?? null,
   });
-  const service = await getService(incident.serviceId);
-  if (!service) throw new IncidentError(404, "サービスが見つかりません");
   const action = await startRestartAction({
     incident,
-    service,
+    service: service!,
     requestedBy: actor.email,
     approvedBy: actor.email,
     reason: `承認された再起動 (${actor.email})`,
     delayMs: 0,
   });
+  await writeAudit({
+    actorUserId: actor.id,
+    actorLabel: actor.email,
+    action: "approval.approved",
+    target: `approval:${id}`,
+    after: {
+      serviceId: incident.serviceId,
+      incidentId: incident.id,
+      actionId: action.id,
+    },
+    reason: note ?? null,
+  }).catch(() => undefined);
   void notifyForIncident(incident, "approved", note ?? undefined).catch(
     () => undefined,
   );

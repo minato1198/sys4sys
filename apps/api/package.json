@@ -12,6 +12,7 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/db/migrate-cli.ts",
     "db:backup": "tsx src/db/backup-cli.ts",
+    "db:encrypt-secrets": "tsx src/db/encrypt-secrets-cli.ts",
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {

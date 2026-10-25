@@ -121,7 +121,7 @@ pnpm audit --prod
 
 ## CLI
 
-`@sys4sys/cli` でサービス・ログ・API トークン・デプロイを操作できます。CLI は SQLite を直接操作せず、必ず API 経由で実行します。
+`@sys4sys/cli` でサービス・ログ・API トークン・インシデント・承認・ホスト・ポート・レポート・監査ログ・設定・デプロイ承認を操作できます。CLI は SQLite を直接操作せず、必ず API 経由で実行します。
 
 ```powershell
 $env:SYS4SYS_API_URL = "http://127.0.0.1:8787"
@@ -137,9 +137,10 @@ pnpm sys4sys -- services restart <id> --yes --wait --json
 対話環境では `sys4sys auth login` でログインできます。資格情報の優先順位は `SYS4SYS_TOKEN` > `SYS4SYS_TOKEN_FILE` > 保存済みトークン > `SYS4SYS_SESSION_COOKIE` > 保存済み Cookie > メール/パスワードです。
 
 - `env` / `deploy.env` は既定でマスクされます。`--show-env` は原則使わないでください。
-- `stop` / `restart` / `delete` / `tokens revoke` / `deploy` は非対話環境で `--yes` が必須です。`--dry-run` で対象を確認してください。
+- `services list` は env の値を返しませんでした。`services get --show-env` は admin 権限と `services:secrets` スコープがある場合に限り、`GET /api/services/:id/secrets` 経由で平文 env を表示し、表示は監査ログに記録されます。
+- `stop` / `restart` / `delete` / `tokens revoke` / `deploy` / `hosts update --disable` / `ports release` / `ports kill` / `incidents resolve` / `approvals approve` / `approvals reject` / `deploy-requests approve` / `deploy-requests reject` / `settings ... set` / `settings backup` は非対話環境で `--yes` が必須です。`--dry-run` で対象を確認してください。
 - 終了コード: 0 成功、1 一般エラー、2 引数エラー、3 認証/権限エラー、4 競合、5 非同期処理の失敗。
-- P0 時点ではサーバー側の env マスク・暗号化保存は未実装です。インシデント・承認・レポートの CLI は P1 以降です。
+- サーバー側は通常のサービス応答で env 値をマスクし、env / deploy.env の保存値を AES-256-GCM で暗号化します。開発では未設定の `SECRET_ENCRYPTION_KEY` を `SESSION_SECRET` から導出し、本番では `SECRET_ENCRYPTION_KEY` を 32 文字以上で必須にします。インシデント・承認・ホスト・ポート・レポート・監査ログ・設定・デプロイ承認の CLI は P1 で利用可能です。
 
 詳細:
 
@@ -150,6 +151,7 @@ pnpm sys4sys -- services restart <id> --yes --wait --json
 ## セキュリティ
 
 - `.env`、データベース、バックアップ、鍵、ログをコミットしないでください。
+- サービス env の保存値は `SECRET_ENCRYPTION_KEY` または開発時の `SESSION_SECRET` から導出した鍵で暗号化します。鍵を変更すると既存 env は復号できなくなります。
 - 本番では `ADMIN_PASSWORD` を必ず設定し、初回ログイン後に変更してください。
 - HTTPS で公開し、`COOKIE_SECURE=true` と適切な `ALLOWED_ORIGINS` を設定してください。
 - 非ローカルの SMTP は STARTTLS または SMTPS を使用してください。
@@ -187,7 +189,13 @@ docs/
 
 - [データモデル](./docs/ER.md)
 - [OpenAPI](./docs/openapi.yaml)
+- [CLI スキーマ](./docs/cli-schema.json)
+- [CLI セキュリティ](./apps/cli/docs/SECURITY.md)
 - [認証 ADR](./docs/adr/0001-auth.md)
+- [API トークン ADR](./docs/adr/0002-tokens.md)
+- [CLI 資格情報 ADR](./docs/adr/0003-credentials.md)
+- [シークレット ADR](./docs/adr/0004-secrets.md)
+- [デプロイ承認 ADR](./docs/adr/0005-deploy-approval.md)
 - [デモ API](./apps/demo-api/README.md)
 - [セキュリティポリシー](./SECURITY.md)
 

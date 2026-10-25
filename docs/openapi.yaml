@@ -5,7 +5,8 @@ info:
   description: |
     バックエンド運用管理システム（ポート・ログ・監視・AI レポート）の API。
 
-    - 認証はセッション Cookie（`sys4sys_session`）。`/health`、`/auth/login`、`/auth/logout` 以外は認証必須。
+    - 認証はセッション Cookie（`sys4sys_session`）または API トークン（`Authorization: Bearer s4s_...`）。`/health`、`/auth/login`、`/auth/logout` 以外は認証必須。
+    - API トークンは `tokens:manage` を除く操作スコープを持つユーザーが作成でき、操作は `config.scopes` と `tokens:manage` で検査する。
     - ロールは `admin` / `operator` / `viewer`。各操作の必要ロールを description に記載。
     - 破壊的操作（kill / restart / 設定変更）は監査ログに記録する。
     - エラーは RFC 7807（application/problem+json）。
@@ -21,11 +22,13 @@ tags:
   - name: logs
   - name: incidents
   - name: approvals
+  - name: deploy-requests
   - name: reports
   - name: settings
   - name: audit
 security:
   - cookieAuth: []
+  - bearerAuth: []
 
 paths:
   /health:
@@ -83,13 +86,13 @@ paths:
   /auth/me:
     get:
       tags: [auth]
-      summary: 現在のユーザー
+      summary: 現在のユーザーと認証種別（認証必須）
       responses:
         "200":
           description: OK
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/AuthUser" }
+              schema: { $ref: "#/components/schemas/AuthMe" }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
   /auth/change-password:
@@ -105,6 +108,60 @@ paths:
         "204": { description: 変更済み。現在のセッション以外は無効化される }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "422": { $ref: "#/components/responses/ValidationError" }
+
+  /tokens:
+    get:
+      tags: [auth]
+      summary: API トークン一覧（認証必須）
+      description: |
+        自分のトークン一覧は認証のみで取得できる。他ユーザーのトークン一覧には `tokens:manage` が必要。
+      parameters:
+        - name: userId
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/TokenView" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [auth]
+      summary: API トークン発行（session なら認証必須、token なら tokens:manage）
+      description: |
+        トークン全文は発行時に一度だけレスポンスに含まれる。DB には SHA-256 ハッシュのみ保存し、一覧・詳細では prefix しか返さない。
+        トークンでトークンを発行する場合は発行元スコープの部分集合でなければならない。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TokenCreateRequest" }
+      responses:
+        "201":
+          description: 発行済み。`token` は一度だけ返る
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TokenCreated" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /tokens/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    delete:
+      tags: [auth]
+      summary: API トークン失効（自分または tokens:manage）
+      responses:
+        "204": { description: 失効済み }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
 
   /users:
     get:
@@ -189,6 +246,18 @@ paths:
   /hosts/{id}:
     parameters:
       - $ref: "#/components/parameters/Id"
+    get:
+      tags: [hosts]
+      summary: ホスト詳細（読み取り権限）
+      responses:
+        "200":
+          description: ホスト
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Host" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
     patch:
       tags: [hosts]
       summary: ホスト更新（admin のみ）
@@ -393,6 +462,9 @@ paths:
     get:
       tags: [services]
       summary: サービス一覧
+      description: |
+        env / deploy.env の値は返しません。キー名は envKeys / deploy.envKeys で返します。
+        保存時の暗号文も返しません。
       parameters:
         - name: hostId
           in: query
@@ -413,6 +485,9 @@ paths:
     post:
       tags: [services]
       summary: サービス登録（admin のみ）
+      description: |
+        env / deploy.env の入力値は受け付けます。作成応答では env / deploy.env の値は *** にマスクします。 env / deploy.env に "***" を含む作成要求は 422 で拒否します。
+        保存値はサーバー側で AES-256-GCM で暗号化し、API 応答には平文値も暗号文も返しません。
       requestBody:
         required: true
         content:
@@ -432,6 +507,9 @@ paths:
     get:
       tags: [services]
       summary: サービス詳細
+      description: |
+        env / deploy.env の値は既定で "***" にマスクします。キー名は envKeys / deploy.envKeys で返します。
+        平文値が必要な場合は /services/{id}/secrets を使用します。保存時の暗号文は返しません。
       responses:
         "200":
           description: OK
@@ -442,6 +520,8 @@ paths:
     patch:
       tags: [services]
       summary: サービス更新（admin のみ）
+      description: |
+        env / deploy.env に "***" を含む更新は 422 で拒否します。既存値を変更しない場合は env / deploy.env を省略してください。 deploy オブジェクト更新で deploy.env を省略した場合は既存 deploy.env を保持します。
       requestBody:
         required: true
         content:
@@ -459,6 +539,33 @@ paths:
       description: 履歴保持のため論理削除（is_active=false）。
       responses:
         "204": { description: 削除済み }
+
+  /services/{id}/secrets:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [services]
+      summary: サービス env の平文値（admin + services:secrets のみ）
+      description: |
+        admin 権限と services:secrets スコープが必要です。監査ログに service.secrets.reveal を残します。
+        保存値が復号できない場合は 500 を返し、平文値または暗号文を応答に含めません。
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ServiceSecrets" }
+        "403":
+          description: admin 権限または services:secrets スコープがありません
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500":
+          description: 保存値の復号に失敗しました
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
 
   /services/{id}/start:
     parameters:
@@ -518,10 +625,62 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Action" }
         "409":
-          description: 既にデプロイ実行中
+          description: 既にデプロイ実行中、または `deploy.requireApproval=true` で即時実行不可
           content:
             application/problem+json:
               schema: { $ref: "#/components/schemas/Problem" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /services/{id}/deploy-requests:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      tags: [deploy-requests]
+      summary: デプロイ承認要求を作成（operator 以上）
+      description: |
+        `deploy.requireApproval=true` のサービスで承認要求を作成する。現在の deploy 設定・env 値を
+        保存しないスナップショット（SHA-256 ハッシュ）と一緒に pending 要求を作る。同一サービスに
+        pending 要求がある場合は 409 と既存 `deployRequestId` を返す。
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                note: { type: string, maxLength: 500 }
+      responses:
+        "201":
+          description: 承認要求を作成
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DeployRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /services/{id}/actions:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [services]
+      summary: サービスのアクション履歴（services:read）
+      description: |
+        start / stop / restart / kill / deploy の action を新しい順に返す。cursor は
+        `<startedAt>|<id>` 形式。
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+        - name: cursor
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ActionList" }
+        "404": { $ref: "#/components/responses/NotFound" }
         "422": { $ref: "#/components/responses/ValidationError" }
 
   /services/{id}/health:
@@ -784,7 +943,10 @@ paths:
       - $ref: "#/components/parameters/Id"
     post:
       tags: [approvals]
-      summary: 再起動を承認（operator 以上）
+      summary: 再起動を承認（operator / admin）
+      description: |
+        監視エンジンが作成した `requestedBy=null` の承認は operator / admin どちらも承認できる。
+        `requestedBy` が操作ユーザーと一致する自己承認は 403。二重決定は 409。
       requestBody:
         content:
           application/json:
@@ -795,6 +957,8 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ApprovalDecisionResult" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
 
   /approvals/{id}/reject:
@@ -802,7 +966,7 @@ paths:
       - $ref: "#/components/parameters/Id"
     post:
       tags: [approvals]
-      summary: 再起動を却下（operator 以上）
+      summary: 再起動を却下（operator / admin）
       requestBody:
         content:
           application/json:
@@ -813,7 +977,97 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ApprovalDecisionResult" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
+
+  /deploy-requests:
+    get:
+      tags: [deploy-requests]
+      summary: デプロイ承認要求一覧（読み取り権限）
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, approved, rejected, expired, executed, failed]
+            default: pending
+        - $ref: "#/components/parameters/Limit"
+        - name: offset
+          in: query
+          schema: { type: integer, minimum: 0, default: 0 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DeployRequestList" }
+
+  /deploy-requests/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [deploy-requests]
+      summary: デプロイ承認要求詳細（読み取り権限）
+      description: |
+        pending 要求は期限切れを確認し、期限切れなら status が expired になった状態を返す。
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DeployRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /deploy-requests/{id}/approve:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      tags: [deploy-requests]
+      summary: デプロイ承認要求を承認して実行（operator 以上）
+      description: |
+        自己承認は `DEPLOY_ALLOW_SELF_APPROVAL=true` のときだけ許可する。承認時点で現在の deploy
+        設定・env スナップショットが要求作成時のものと同じであることを確認する。一致しなければ
+        409、期限切れまたは二重決定も 409。承認成功後は action を開始し、status は
+        `approved` -> `executed` / `failed` に遷移する。
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DeployRequestDecision" }
+      responses:
+        "202":
+          description: 承認し、デプロイ action を非同期で開始
+          content:
+            application/json:
+              schema:
+                { $ref: "#/components/schemas/DeployRequestDecisionResult" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /deploy-requests/{id}/reject:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      tags: [deploy-requests]
+      summary: デプロイ承認要求を却下（operator 以上）
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DeployRequestDecision" }
+      responses:
+        "200":
+          description: 却下済み
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DeployRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
 
   /reports:
     get:
@@ -1090,6 +1344,11 @@ components:
       type: apiKey
       in: cookie
       name: sys4sys_session
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
+      description: "API トークン。`Authorization: Bearer s4s_...` ヘッダーで送る。"
 
   parameters:
     Id:
@@ -1144,6 +1403,12 @@ components:
         status: { type: integer }
         detail: { type: string }
         instance: { type: string }
+        deployRequestId:
+          {
+            type: string,
+            nullable: true,
+            description: "approval_required / 既存 pending 要求がある場合に返すデプロイ要求 ID",
+          }
         errors:
           type: array
           items:
@@ -1166,6 +1431,69 @@ components:
         currentPassword: { type: string, minLength: 8 }
         newPassword: { type: string, minLength: 12 }
 
+    TokenScope:
+      type: string
+      enum:
+        - services:read
+        - services:write
+        - services:operate
+        - services:secrets
+        - deploy:execute
+        - logs:read
+        - logs:manage
+        - incidents:read
+        - incidents:write
+        - approvals:read
+        - approvals:decide
+        - hosts:read
+        - hosts:write
+        - ports:read
+        - ports:operate
+        - reports:read
+        - audit:read
+        - settings:read
+        - settings:write
+        - tokens:manage
+
+    TokenView:
+      type: object
+      required: [id, name, prefix, scopes, createdAt, expiresAt]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        prefix: { type: string }
+        scopes:
+          type: array
+          items: { $ref: "#/components/schemas/TokenScope" }
+        createdAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+        lastUsedAt: { type: string, format: date-time, nullable: true }
+        revokedAt: { type: string, format: date-time, nullable: true }
+
+    TokenCreateRequest:
+      type: object
+      required: [name, scopes]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        scopes:
+          type: array
+          items: { $ref: "#/components/schemas/TokenScope" }
+          minItems: 1
+        expiresInDays: { type: integer, minimum: 1, maximum: 365, default: 90 }
+        userId: { type: string }
+
+    TokenCreated:
+      allOf:
+        - $ref: "#/components/schemas/TokenView"
+        - type: object
+          required: [token]
+          properties:
+            token:
+              {
+                type: string,
+                description: "発行時に一度だけ返る平文トークン。保存・ログ出力禁止",
+              }
+
     AuthUser:
       type: object
       required: [id, email, name, role]
@@ -1174,6 +1502,26 @@ components:
         email: { type: string, format: email }
         name: { type: string }
         role: { type: string, enum: [admin, operator, viewer] }
+
+    AuthMe:
+      allOf:
+        - $ref: "#/components/schemas/AuthUser"
+        - type: object
+          required: [authMethod, scopes]
+          properties:
+            authMethod: { type: string, enum: [session, token] }
+            scopes:
+              type: array
+              items: { $ref: "#/components/schemas/TokenScope" }
+            token:
+              allOf:
+                - type: object
+                  properties:
+                    id: { type: string }
+                    name: { type: string }
+                    prefix: { type: string }
+                  required: [id, name, prefix]
+              nullable: true
 
     User:
       type: object
@@ -1426,6 +1774,11 @@ components:
         env:
           type: object
           additionalProperties: { type: string }
+          description: "一覧では省略。詳細では値は ***。env が null の場合は null。"
+        envKeys:
+          type: array
+          items: { type: string }
+          description: "env のキー名"
         expectedPorts:
           type: array
           items: { type: integer }
@@ -1501,6 +1854,18 @@ components:
               type: array
               items: { $ref: "#/components/schemas/Action" }
 
+    ServiceSecrets:
+      type: object
+      properties:
+        env:
+          type: object
+          additionalProperties: { type: string }
+          nullable: true
+        deployEnv:
+          type: object
+          additionalProperties: { type: string }
+          nullable: true
+
     ServiceCreate:
       type: object
       required: [hostId, name, command]
@@ -1567,11 +1932,21 @@ components:
         env:
           type: object
           additionalProperties: { type: string }
-          description: "サービス env に上書きマージされる環境変数"
+          description: "サービス env に上書きマージされる環境変数。一覧では省略、詳細では値は ***。"
+        envKeys:
+          type: array
+          items: { type: string }
+          description: "deploy.env のキー名"
         timeoutSec: { type: integer, minimum: 10, maximum: 3600, default: 600 }
         restartAfter: { type: boolean, default: true }
         healthTimeoutSec:
           { type: integer, minimum: 5, maximum: 900, default: 120 }
+        requireApproval:
+          {
+            type: boolean,
+            default: false,
+            description: "true なら即時 deploy は 409 approval_required になり deploy-requests 承認が必要",
+          }
 
     HealthCheck:
       type: object
@@ -1793,6 +2168,12 @@ components:
         id: { type: string }
         incidentId: { type: string }
         requestedAction: { type: object, additionalProperties: true }
+        requestedBy:
+          {
+            type: string,
+            nullable: true,
+            description: "承認要求の作成者。監視エンジン由来は null",
+          }
         status: { type: string, enum: [pending, approved, rejected, expired] }
         requestedAt: { type: string, format: date-time }
         decidedBy: { type: string, nullable: true }
@@ -1830,6 +2211,96 @@ components:
             id: { type: string }
             status: { type: string }
 
+    DeployRequest:
+      type: object
+      required:
+        [id, serviceId, requestedBy, status, requestedAt, expiresAt, snapshot]
+      properties:
+        id: { type: string }
+        serviceId: { type: string }
+        requestedBy: { type: string }
+        requestedAt: { type: string, format: date-time }
+        status:
+          type: string
+          enum: [pending, approved, rejected, expired, executed, failed]
+        decidedBy: { type: string, nullable: true }
+        decidedAt: { type: string, format: date-time, nullable: true }
+        note: { type: string, nullable: true }
+        actionId: { type: string, nullable: true }
+        expiresAt: { type: string, format: date-time }
+        snapshot: { $ref: "#/components/schemas/DeployRequestSnapshot" }
+        service:
+          allOf:
+            - $ref: "#/components/schemas/DeployRequestService"
+          nullable: true
+
+    DeployRequestList:
+      type: object
+      required: [items, total, limit, offset]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/DeployRequest" }
+        total: { type: integer }
+        limit: { type: integer }
+        offset: { type: integer }
+
+    DeployRequestSnapshot:
+      type: object
+      required:
+        [
+          command,
+          timeoutSec,
+          restartAfter,
+          healthTimeoutSec,
+          envHash,
+          deployEnvHash,
+        ]
+      properties:
+        command:
+          type: array
+          items: { type: string }
+          minItems: 1
+        cwd: { type: string, nullable: true }
+        timeoutSec: { type: integer }
+        restartAfter: { type: boolean }
+        healthTimeoutSec: { type: integer }
+        envHash:
+          {
+            type: string,
+            description: "サービス env の SHA-256 ハッシュ。平文値は保存しない",
+          }
+        deployEnvHash:
+          {
+            type: string,
+            description: "deploy.env の SHA-256 ハッシュ。平文値は保存しない",
+          }
+
+    DeployRequestService:
+      type: object
+      required: [id, name]
+      properties:
+        id: { type: string }
+        name: { type: string }
+
+    DeployRequestDecision:
+      type: object
+      properties:
+        note: { type: string, maxLength: 500 }
+
+    DeployRequestDecisionResult:
+      type: object
+      required: [request, action]
+      properties:
+        request: { $ref: "#/components/schemas/DeployRequest" }
+        action:
+          type: object
+          required: [id, status]
+          properties:
+            id: { type: string }
+            status:
+              { type: string, enum: [pending, running, succeeded, failed] }
+
     Action:
       type: object
       required: [id, type, status]
@@ -1845,6 +2316,15 @@ components:
         startedAt: { type: string, format: date-time }
         finishedAt: { type: string, format: date-time, nullable: true }
         error: { type: string, nullable: true }
+
+    ActionList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Action" }
+        nextCursor: { type: string, nullable: true }
 
     AiAnalysisQueued:
       type: object

@@ -17,6 +17,7 @@ import { hosts, portReservations, services } from "../db/schema.js";
 import { ingestLog } from "../logs/ingest.js";
 import { isCommandAllowed } from "./allowlist.js";
 import { serviceEvents } from "./events.js";
+import { decryptServiceEnv, SERVICE_ENV_DECRYPTION_ERROR } from "./secrets.js";
 
 export type ServiceRow = typeof services.$inferSelect;
 export type HostRow = typeof hosts.$inferSelect;
@@ -353,17 +354,24 @@ export async function startService(id: string): Promise<ServiceRow> {
   runtimes.set(id, runtime);
 
   try {
+    let serviceEnv: Record<string, string> | null;
+    try {
+      serviceEnv = decryptServiceEnv(service.env);
+    } catch {
+      throw new ServiceError(500, SERVICE_ENV_DECRYPTION_ERROR);
+    }
+
     const child =
       host.kind === "windows"
         ? spawn(service.command[0]!, service.command.slice(1), {
             cwd: service.cwd ?? undefined,
-            env: { ...process.env, ...(service.env ?? {}) },
+            env: { ...process.env, ...(serviceEnv ?? {}) },
             stdio: ["ignore", "pipe", "pipe"],
             windowsHide: true,
           })
         : spawn(
             "wsl.exe",
-            wslCommandArgs(host, service.command, service.cwd, service.env),
+            wslCommandArgs(host, service.command, service.cwd, serviceEnv),
             {
               env: process.env,
               stdio: ["ignore", "pipe", "pipe"],
@@ -715,12 +723,21 @@ async function runHealthCheck(
     };
   }
   try {
+    let serviceEnv: Record<string, string> | null = null;
+    if (host.kind !== "windows") {
+      try {
+        serviceEnv = decryptServiceEnv(service.env);
+      } catch {
+        return { healthy: false, detail: SERVICE_ENV_DECRYPTION_ERROR };
+      }
+    }
+
     if (host.kind === "windows") {
       await runFile(command[0]!, command.slice(1), timeoutMs);
     } else {
       await runFile(
         "wsl.exe",
-        wslCommandArgs(host, command, service.cwd, service.env),
+        wslCommandArgs(host, command, service.cwd, serviceEnv),
         timeoutMs,
       );
     }

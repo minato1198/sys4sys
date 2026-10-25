@@ -39,20 +39,18 @@ function routeConfig(request: FastifyRequest): {
 export async function requireAuth(
   request: FastifyRequest,
   reply: FastifyReply,
-): Promise<void> {
+): Promise<FastifyReply | undefined> {
   const authorization = request.headers.authorization;
 
   if (authorization !== undefined) {
     const match = /^Bearer\s+(.+)$/i.exec(authorization.trim());
     if (!match?.[1]) {
-      await unauthorized(reply);
-      return;
+      return unauthorized(reply);
     }
 
     const token = await verifyApiToken(match[1].trim());
     if (!token) {
-      await unauthorized(reply);
-      return;
+      return unauthorized(reply);
     }
 
     request.authUser = token.user;
@@ -69,22 +67,20 @@ export async function requireAuth(
     const config = routeConfig(request);
     if (config.authOnly === true) return;
     if (!config.scopes || config.scopes.length === 0) {
-      await forbidden(reply);
-      return;
+      return forbidden(reply);
     }
     const missing = config.scopes.find(
       (scope) => !hasScope(token.scopes, scope),
     );
     if (missing) {
-      await forbidden(reply, missing);
+      return forbidden(reply, missing);
     }
     return;
   }
 
   const session = await getSession(request);
   if (!session) {
-    await unauthorized(reply);
-    return;
+    return unauthorized(reply);
   }
 
   request.authUser = session.user;
@@ -98,7 +94,7 @@ export async function requireAuth(
       (scope) => !hasScope(session.scopes, scope),
     );
     if (missing) {
-      await forbidden(reply, missing);
+      return forbidden(reply, missing);
     }
   }
 }
@@ -107,11 +103,12 @@ export function requireRole(...roles: Role[]) {
   return async (
     request: FastifyRequest,
     reply: FastifyReply,
-  ): Promise<void> => {
-    await requireAuth(request, reply);
+  ): Promise<FastifyReply | undefined> => {
+    const handled = await requireAuth(request, reply);
+    if (handled) return handled;
     if (!request.authUser) return;
     if (!roles.includes(request.authUser.role)) {
-      await forbidden(reply);
+      return forbidden(reply);
     }
   };
 }
@@ -120,14 +117,15 @@ export function requireScope(...scopes: TokenScope[]) {
   return async (
     request: FastifyRequest,
     reply: FastifyReply,
-  ): Promise<void> => {
-    await requireAuth(request, reply);
+  ): Promise<FastifyReply | undefined> => {
+    const handled = await requireAuth(request, reply);
+    if (handled) return handled;
     if (!request.authUser) return;
     const missing = scopes.find(
       (scope) => !hasScope(request.authScopes ?? [], scope),
     );
     if (missing) {
-      await forbidden(reply, missing);
+      return forbidden(reply, missing);
     }
   };
 }
@@ -136,20 +134,20 @@ export function requireAccess(input: { roles?: Role[]; scopes: TokenScope[] }) {
   return async (
     request: FastifyRequest,
     reply: FastifyReply,
-  ): Promise<void> => {
-    await requireAuth(request, reply);
+  ): Promise<FastifyReply | undefined> => {
+    const handled = await requireAuth(request, reply);
+    if (handled) return handled;
     if (!request.authUser) return;
 
     if (input.roles && !input.roles.includes(request.authUser.role)) {
-      await forbidden(reply);
-      return;
+      return forbidden(reply);
     }
 
     const missing = input.scopes.find(
       (scope) => !hasScope(request.authScopes ?? [], scope),
     );
     if (missing) {
-      await forbidden(reply, missing);
+      return forbidden(reply, missing);
     }
   };
 }

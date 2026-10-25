@@ -1233,6 +1233,173 @@ try {
       }
     }
 
+    // --- deploy approval requests (P1-11) ---------------------------------
+    if (windowsHost) {
+      let deployApprovalServiceId: string | null = null;
+      try {
+        const createDeployApprovalService = await app.inject({
+          method: "POST",
+          url: "/api/services",
+          headers: {
+            cookie: admin.cookie,
+            "content-type": "application/json",
+          },
+          payload: {
+            hostId: windowsHost.id,
+            name: `smoke-deploy-approval-${suffix}`,
+            command: [process.execPath, "-e", "process.exit(0)"],
+            deploy: {
+              command: [process.execPath, "-e", "process.exit(0)"],
+              requireApproval: true,
+            },
+          },
+        });
+        check(
+          "admin creates requireApproval service 201",
+          createDeployApprovalService.statusCode === 201,
+        );
+        deployApprovalServiceId =
+          createDeployApprovalService.json<ServiceBody>().id;
+
+        const blockedDeploy = await app.inject({
+          method: "POST",
+          url: `/api/services/${deployApprovalServiceId}/deploy`,
+          headers: { cookie: operatorCookie },
+        });
+        check(
+          "requireApproval blocks immediate deploy 409",
+          blockedDeploy.statusCode === 409 &&
+            blockedDeploy.json<{ detail: string }>().detail ===
+              "approval_required",
+        );
+
+        const viewerDeployRequest = await app.inject({
+          method: "POST",
+          url: `/api/services/${deployApprovalServiceId}/deploy-requests`,
+          headers: {
+            cookie: viewerCookie,
+            "content-type": "application/json",
+          },
+          payload: {},
+        });
+        check(
+          "viewer cannot request deploy approval",
+          viewerDeployRequest.statusCode === 403,
+        );
+
+        const createdDeployRequest = await app.inject({
+          method: "POST",
+          url: `/api/services/${deployApprovalServiceId}/deploy-requests`,
+          headers: {
+            cookie: admin.cookie,
+            "content-type": "application/json",
+          },
+          payload: { note: "smoke deploy request" },
+        });
+        check(
+          "admin creates deploy request 201",
+          createdDeployRequest.statusCode === 201,
+        );
+        const deployRequestId = createdDeployRequest.json<{ id: string }>().id;
+
+        const duplicateDeployRequest = await app.inject({
+          method: "POST",
+          url: `/api/services/${deployApprovalServiceId}/deploy-requests`,
+          headers: {
+            cookie: admin.cookie,
+            "content-type": "application/json",
+          },
+          payload: {},
+        });
+        check(
+          "duplicate pending deploy request returns 409 with existing id",
+          duplicateDeployRequest.statusCode === 409 &&
+            duplicateDeployRequest.json<{ deployRequestId?: string }>()
+              .deployRequestId === deployRequestId,
+        );
+
+        const blockedWithPending = await app.inject({
+          method: "POST",
+          url: `/api/services/${deployApprovalServiceId}/deploy`,
+          headers: { cookie: operatorCookie },
+        });
+        check(
+          "pending deploy request blocks immediate deploy",
+          blockedWithPending.statusCode === 409 &&
+            blockedWithPending.json<{ deployRequestId?: string }>()
+              .deployRequestId === deployRequestId,
+        );
+
+        const selfApprove = await app.inject({
+          method: "POST",
+          url: `/api/deploy-requests/${deployRequestId}/approve`,
+          headers: {
+            cookie: admin.cookie,
+            "content-type": "application/json",
+          },
+          payload: {},
+        });
+        check("self approval is rejected 403", selfApprove.statusCode === 403);
+
+        const rejected = await app.inject({
+          method: "POST",
+          url: `/api/deploy-requests/${deployRequestId}/reject`,
+          headers: {
+            cookie: admin.cookie,
+            "content-type": "application/json",
+          },
+          payload: { note: "smoke reject" },
+        });
+        check(
+          "admin rejects deploy request 200",
+          rejected.statusCode === 200 &&
+            rejected.json<{ status: string }>().status === "rejected",
+        );
+
+        const secondReject = await app.inject({
+          method: "POST",
+          url: `/api/deploy-requests/${deployRequestId}/reject`,
+          headers: {
+            cookie: admin.cookie,
+            "content-type": "application/json",
+          },
+          payload: {},
+        });
+        check("double deploy reject 409", secondReject.statusCode === 409);
+
+        const deployAudit = await app.inject({
+          method: "GET",
+          url: `/api/audit-logs?action=deploy.request&target=deploy-request:${deployRequestId}&limit=50`,
+          headers: { cookie: admin.cookie },
+        });
+        const deployAuditBody = deployAudit.json<{
+          items: Array<{ action: string; target: string }>;
+        }>();
+        check(
+          "deploy request audit trail records request and reject",
+          deployAudit.statusCode === 200 &&
+            deployAuditBody.items.some(
+              (item) =>
+                item.action === "deploy.request.requested" &&
+                item.target === `deploy-request:${deployRequestId}`,
+            ) &&
+            deployAuditBody.items.some(
+              (item) =>
+                item.action === "deploy.request.reject" &&
+                item.target === `deploy-request:${deployRequestId}`,
+            ),
+        );
+      } finally {
+        if (deployApprovalServiceId) {
+          await app.inject({
+            method: "DELETE",
+            url: `/api/services/${deployApprovalServiceId}`,
+            headers: { cookie: admin.cookie },
+          });
+        }
+      }
+    }
+
     // --- WSL service (conditional) ---------------------------------------
     const hostsNow = await app.inject({
       method: "GET",

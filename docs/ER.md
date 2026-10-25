@@ -1,6 +1,6 @@
 # ER 図 / データモデル詳細
 
-- 版: 1.0（M0 成果物）
+- 版: 1.1（P1 デプロイ承認モデルを含む）
 - 対象: SQLite（初期） / PostgreSQL（将来）
 - 正: `PLAN.md` の「6. データモデル」と本ドキュメント
 
@@ -13,6 +13,7 @@ erDiagram
     users ||--o{ sessions : "has"
     users ||--o{ audit_logs : "acts"
     users ||--o{ approvals : "decides"
+    users ||--o{ deploy_requests : "requests"
 
     hosts ||--o{ services : "runs"
     hosts ||--o{ log_sources : "provides"
@@ -22,6 +23,8 @@ erDiagram
     services ||--o{ incidents : "has"
     services ||--o{ port_reservations : "reserves"
     services ||--o{ actions : "targets"
+    services ||--o{ deploy_requests : "requires approval for"
+    deploy_requests ||--o| actions : "executes as"
 
     incidents ||--o{ incident_events : "timeline"
     incidents ||--o{ approvals : "requires"
@@ -71,7 +74,7 @@ erDiagram
         json env
         json expected_ports
         json health_check
-        json deploy "command / cwd / env / timeoutSec / restartAfter / healthTimeoutSec"
+        json deploy "command / cwd / env / timeoutSec / restartAfter / healthTimeoutSec / requireApproval"
         json depends_on
         boolean auto_start
         text auto_restart_phase "observe | approve | auto"
@@ -184,11 +187,26 @@ erDiagram
         text id PK
         text incident_id FK
         json requested_action
+        text requested_by FK "nullable, null = system"
         text status "pending | approved | rejected | expired"
         datetime requested_at
         text decided_by FK
         datetime decided_at
         text note
+    }
+
+    deploy_requests {
+        text id PK
+        text service_id FK
+        text requested_by FK
+        text status "pending | approved | rejected | expired | executed | failed"
+        datetime requested_at
+        text decided_by FK
+        datetime decided_at
+        text note
+        text action_id FK "nullable"
+        json snapshot "command / cwd / timeoutSec / restartAfter / healthTimeoutSec / envHash / deployEnvHash"
+        datetime expires_at
     }
 
     ai_analyses {
@@ -304,6 +322,7 @@ WSL 3.x では distro 間でネットワーク名前空間が共有されるた�
 ### 2.5 承認とアクション
 
 - `approvals.requested_action` は `{ "type": "restart", "serviceId": "...", "reason": "..." }` の JSON
+- `approvals.requested_by` は承認要求の作成者。監視エンジン由来は `NULL` で、operator / admin が承認できる。ユーザー起因の要求は自己承認を許可しない
 - 承認後に `actions` を作成し、実行結果を `actions.status` に反映。承認 API は `202` を返して非同期に再起動する
 - デプロイは `actions.type=deploy`。コマンド実行、`[deploy]` ログ取り込み、必要に応じた再起動とヘルス確認を 1 つの action で扱う
 - 復旧確認はヘルスチェック成功 + 安定待ち。ヘルスチェックがないサービスは 3 秒間 `running` を維持できるかで判定する
@@ -343,9 +362,12 @@ WSL 3.x では distro 間でネットワーク名前空間が共有されるた�
 
 ### 2.10 デプロイ
 
-- `services.deploy` は `{ command, cwd?, env?, timeoutSec, restartAfter, healthTimeoutSec }` の JSON。`command` は `SERVICE_COMMAND_ALLOWLIST` に従う
+- `services.deploy` は `{ command, cwd?, env?, timeoutSec, restartAfter, healthTimeoutSec, requireApproval? }` の JSON。`command` は `SERVICE_COMMAND_ALLOWLIST` に従う
+- `requireApproval=true` のサービスでは即時 deploy を拒否し、`deploy_requests` の承認を必須にする
+- `deploy_requests` は要求作成時点の deploy 設定と env / deploy.env の SHA-256 ハッシュのみを `snapshot` に保存し、秘密値そのものは保存しない
+- 承認時点で現在の deploy 設定・env / deploy.env のハッシュが要求作成時と一致しなければ 409。期限切れ要求も `expired` として 409 で拒否する
+- `POST /api/services/:id/deploy` は `actions.type=deploy` を作成して `202` を返し、コマンドを非同期実行する。`deploy.requireApproval=true` の場合は `approval_required` と `deployRequestId` を 409 で返す
 - `cwd` を省略した場合は `services.cwd` を使う。Windows ホストでは実行前にディレクトリの存在を確認する
-- `POST /api/services/:id/deploy` は `actions.type=deploy` を作成して `202` を返し、コマンドを非同期実行する
 - 実行ログは `log_events` に `[deploy]` プレフィックス、`fields.source="deploy"`、`fields.actionId` 付きで保存する。エラーログ件数・パターン監視の対象からは除外する
 - `restartAfter=true` の場合はコマンド成功後にサービスを再起動し、`healthTimeoutSec` の間ヘルスチェックを待つ。失敗時は action と `services.last_deploy_*` を failed にする
 - 同一サービスの多重デプロイは in-memory Set と DB の running action で防止する。API 再起動時に running のまま残った deploy は起動時 reconciliation で failed にする
@@ -367,6 +389,7 @@ WSL 3.x では distro 間でネットワーク名前空間が共有されるた�
 | `incidents`         | `(fingerprint, started_at)` INDEX、`status` INDEX、`service_id` INDEX |
 | `incident_events`   | `incident_id` INDEX                                                   |
 | `approvals`         | `status` INDEX、`incident_id` INDEX                                   |
+| `deploy_requests`   | `status` INDEX、`(service_id, requested_at)` INDEX                    |
 | `actions`           | `(service_id, started_at)` INDEX                                      |
 | `audit_logs`        | `(ts)` INDEX、`actor_user_id` INDEX                                   |
 | `settings`          | `key` PK                                                              |

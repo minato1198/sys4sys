@@ -389,6 +389,7 @@
     {
       "name": "services deploy",
       "summary": "サービスをデプロイ",
+      "description": "サービス設定が requireApproval の場合は即時 deploy が 409 になります。--request で承認要求を作成できます。",
       "phase": "P0",
       "mutating": true,
       "requiresConfirmation": true,
@@ -438,13 +439,22 @@
           "show-env": {
             "type": "boolean",
             "description": "env / deploy.env の値を表示（既定はマスク）"
+          },
+          "request": {
+            "type": "boolean",
+            "description": "即時 deploy ではなく承認要求を作成"
+          },
+          "note": {
+            "type": "string",
+            "description": "メモ"
           }
         },
         "additionalProperties": false
       },
       "examples": [
         "sys4sys services deploy <id> --dry-run",
-        "sys4sys services deploy <id> --yes --wait --timeout 120"
+        "sys4sys services deploy <id> --yes --wait --timeout 120",
+        "sys4sys services deploy <id> --request --note \"リリース 1.2.3\""
       ]
     },
     {
@@ -985,6 +995,1652 @@
       "examples": [
         "sys4sys logs tail --service <id>",
         "sys4sys logs tail --level error --json"
+      ]
+    },
+    {
+      "name": "incidents list",
+      "summary": "インシデント一覧を表示",
+      "phase": "P1",
+      "mutating": false,
+      "requiresConfirmation": false,
+      "requiredScopes": [
+        "incidents:read"
+      ],
+      "positionals": [],
+      "options": {
+        "type": "object",
+        "properties": {
+          "api": {
+            "type": "string",
+            "description": "API のルート URL",
+            "default": "http://127.0.0.1:8787"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "JSON で出力"
+          },
+          "help": {
+            "type": "boolean",
+            "description": "ヘルプを表示"
+          },
+          "status": {
+            "type": "string",
+            "description": "ステータスで絞り込む"
+          },
+          "severity": {
+            "type": "string",
+            "description": "深刻度（critical|error|warning|info）"
+          },
+          "service": {
+            "type": "string",
+            "description": "サービス ID"
+          },
+          "limit": {
+            "type": "string",
+            "description": "取得件数（1〜200）",
+            "default": "50"
+          },
+          "offset": {
+            "type": "string",
+            "description": "取得開始位置（0〜）",
+            "default": "0"
+          }
+        },
+        "additionalProperties": false
+      },
+      "examples": [
+        "sys4sys incidents list --status open --severity error --limit 20 --json",
+        "sys4sys incidents list --service <id> --offset 20"
+      ]
+    },
+    {
+      "name": "incidents get",
+      "summary": "インシデント詳細を表示",
+      "description": "イベント、承認、アクション、最新分析、レポートを表示します。",
+      "phase": "P1",
+      "mutating": false,
+      "requiresConfirmation": false,
+      "requiredScopes": [
+        "incidents:read"
+      ],
+      "positionals": [
+        {
+          "name": "id",
+          "required": true,
+          "description": "インシデント ID"
+        }
+      ],
+      "options": {
+        "type": "object",
+        "properties": {
+          "api": {
+            "type": "string",
+            "description": "API のルート URL",
+            "default": "http://127.0.0.1:8787"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "JSON で出力"
+          },
+          "help": {
+            "type": "boolean",
+            "description": "ヘルプを表示"
+          },
+          "full": {
+            "type": "boolean",
+            "description": "分析結果・レポート本文を全文表示"
+          }
+        },
+        "additionalProperties": false
+      },
+      "examples": [
+        "sys4sys incidents get <id>",
+        "sys4sys incidents get <id> --json"
+      ]
+    },
+    {
+      "name": "incidents ack",
+      "summary": "インシデントを ack する",
+      "phase": "P1",
+      "mutating": true,
+      "requiresConfirmation": false,
+      "requiredScopes": [
+        "incidents:write"
+      ],
+      "positionals": [
+        {
+          "name": "id",
+          "required": true,
+          "description": "インシデント ID"
+        }
+      ],
+      "options": {
+        "type": "object",
+        "properties": {
+          "api": {
+            "type": "string",
+            "description": "API のルート URL",
+            "default": "http://127.0.0.1:8787"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "JSON で出力"
+          },
+          "help": {
+            "type": "boolean",
+            "description": "ヘルプを表示"
+          },
+          "note": {
+            "type": "string",
+            "description": "メモ"
+          }
+        },
+        "additionalProperties": false
+      },
+      "examples": [
+        "sys4sys incidents ack <id> --note \"確認済み\""
+      ]
+    },
+    {
+      "name": "incidents resolve",
+      "summary": "インシデントを解決する",
+      "phase": "P1",
+      "mutating": true,
+      "requiresConfirmation": true,
+      "requiredScopes": [
+        "incidents:write"
+      ],
+      "positionals": [
+        {
+          "name": "id",
+          "required": true,
+          "description": "インシデント ID"
+        }
+      ],
+      "options": {
+        "type": "object",
+        "properties": {
+          "api": {
+            "type": "string",
+            "description": "API のルート URL",
+            "default": "http://127.0.0.1:8787"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "JSON で出力"
+          },
+          "help": {
+            "type": "boolean",
+            "description": "ヘルプを表示"
+          },
+          "note": {
+            "type": "string",
+            "description": "メモ"
+          },
+          "yes": {
+            "type": "boolean",
+            "description": "確認を省略"
+          }
+        },
+        "additionalProperties": false
+      },
+      "examples": [
+        "sys4sys incidents resolve <id> --note \"復旧確認済み\" --yes"
+      ]
+    },
+    {
+      "name": "incidents analyze",
+      "summary": "インシデントの AI 分析をキュー投入",
+      "phase": "P1",
+      "mutating": true,
+      "requiresConfirmation": false,
+      "requiredScopes": [
+        "incidents:write"
+      ],
+      "positionals": [
+        {
+          "name": "id",
+          "required": true,
+          "description": "インシデント ID"
+        }
+      ],
+      "options": {
+        "type": "object",
+        "properties": {
+          "api": {
+            "type": "string",
+            "description": "API のルート URL",
+            "default": "http://127.0.0.1:8787"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "JSON で出力"
+          },
+          "help": {
+            "type": "boolean",
+            "description": "ヘルプを表示"
+          }
+        },
+        "additionalProperties": false
+      },
+      "examples": [
+        "sys4sys incidents analyze <id> --json"
+      ]
+    },
+    {
+      "name": "incidents analysis",
+      "summary": "インシデントの最新 AI 分析を表示",
+      "phase": "P1",
+      "mutating": false,
+      "requiresConfirmation": false,
+      "requiredScopes": [
+        "incidents:read"
+      ],
+      "positionals": [
+        {
+          "name": "id",
+          "required": true,
+          "description": "インシデント ID"
+        }
+      ],
+      "options": {
+        "type": "object",
+        "properties": {
+          "api": {
+            "type": "string",
+            "description": "API のルート URL",
+            "default": "http://127.0.0.1:8787"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "JSON で出力"
+          },
+          "help": {
+            "type": "boolean",
+            "description": "ヘルプを表示"
+          },
+          "full": {
+            "type": "boolean",
+            "description": "分析結果・レポート本文を全文表示"
+          }
+        },
+        "additionalProperties": false
+      },
+      "examples": [
+        "sys4sys incidents analysis <id>",
+        "sys4sys incidents analysis <id> --full --json"
+      ]
+    },
+    {
+      "name": "approvals list",
+      "summary": "承認キュー一覧を表示",
+      "phase": "P1",
+      "mutating": false,
+      "requiresConfirmation": false,
+      "requiredScopes": [
+        "approvals:read"
+      ],
+      "positionals": [],
+      "options": {
+        "type": "object",
+        "properties": {
+          "api": {
+            "type": "string",
+            "description": "API のルート URL",
+            "default": "http://127.0.0.1:8787"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "JSON で出力"
+          },
+          "help": {
+            "type": "boolean",
+            "description": "ヘルプを表示"
+          },
+          "status": {
+            "type": "string",
+            "description": "ステータスで絞り込む"
+          },
+          "limit": {
+            "type": "string",
+            "description": "取得件数（1〜200）",
+            "default": "50"
+          }
+        },
+        "additionalProperties": false
+      },
+      "examples": [
+        "sys4sys approvals list --status pending --json",
+        "sys4sys approvals list --status approved --limit 20"
+      ]
+    },
+    {
+      "name": "approvals approve",
+      "summary": "承認を承認し、アクションを実行",
+      "phase": "P1",
+      "mutating": true,
+      "requiresConfirmation": true,
+      "requiredScopes": [
+        "approvals:decide"
+      ],
+      "positionals": [
+        {
+          "name": "id",
+          "required": true,
+          "description": "承認 ID"
+        }
+      ],
+      "options": {
+        "type": "object",
+        "properties": {
+          "api": {
+            "type": "string",
+            "description": "API のルート URL",
+            "default": "http://127.0.0.1:8787"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "JSON で出力"
+          },
+          "help": {
+            "type": "boolean",
+            "description": "ヘルプを表示"
+          },
+          "note": {
+            "type": "string",
+            "description": "メモ"
+          },
+          "yes": {
+            "type": "boolean",
+            "description": "確認を省略"
+          }
+        },
+        "additionalProperties": false
+      },
+      "examples": [
+        "sys4sys approvals approve <id> --note \"原因ログ確認済み\" --yes"
+      ]
+    },
+    {
+      "name": "approvals reject",
+      "summary": "承認を却下する",
+      "phase": "P1",
+      "mutating": true,
+      "requiresConfirmation": true,
+      "requiredScopes": [
+        "approvals:decide"
+      ],
+      "positionals": [
+        {
+          "name": "id",
+          "required": true,
+          "description": "承認 ID"
+        }
+      ],
+      "options": {
+        "type": "object",
+        "properties": {
+          "api": {
+            "type": "string",
+            "description": "API のルート URL",
+            "default": "http://127.0.0.1:8787"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "JSON で出力"
+          },
+          "help": {
+            "type": "boolean",
+            "description": "ヘルプを表示"
+          },
+          "note": {
+            "type": "string",
+            "description": "メモ"
+          },
+          "yes": {
+            "type": "boolean",
+            "description": "確認を省略"
+          }
+        },
+        "additionalProperties": false
+      },
+      "examples": [
+        "sys4sys approvals reject <id> --note \"影響範囲が大きい\" --yes"
+      ]
+    },
+    {
+      "name": "hosts get",
+      "summary": "ホスト詳細を表示",
+      "phase": "P1",
+      "mutating": false,
+      "requiresConfirmation": false,
+      "requiredScopes": [
+        "hosts:read"
+      ],
+      "positionals": [
+        {
+          "name": "id",
+          "required": true,
+          "description": "ホスト ID"
+        }
+      ],
+      "options": {
+        "type": "object",
+        "properties": {
+          "api": {
+            "type": "string",
+            "description": "API のルート URL",
+            "default": "http://127.0.0.1:8787"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "JSON で出力"
+          },
+          "help": {
+            "type": "boolean",
+            "description": "ヘルプを表示"
+          }
+        },
+        "additionalProperties": false
+      },
+      "examples": [
+        "sys4sys hosts get <id>",
+        "sys4sys hosts get <id> --json"
+      ]
+    },
+    {
+      "name": "hosts detect",
+      "summary": "WSL ディストロを検出し、登録済みか表示",
+      "phase": "P1",
+      "mutating": false,
+      "requiresConfirmation": false,
+      "requiredScopes": [
+        "hosts:write"
+      ],
+      "positionals": [],
+      "options": {
+        "type": "object",
+        "properties": {
+          "api": {
+            "type": "string",
+            "description": "API のルート URL",
+            "default": "http://127.0.0.1:8787"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "JSON で出力"
+          },
+          "help": {
+            "type": "boolean",
+            "description": "ヘルプを表示"
+          }
+        },
+        "additionalProperties": false
+      },
+      "examples": [
+        "sys4sys hosts detect",
+        "sys4sys hosts detect --json"
+      ]
+    },
+    {
+      "name": "hosts create",
+      "summary": "ホストを登録",
+      "description": "WSL は --distro 必須。Windows は 1 つだけ。",
+      "phase": "P1",
+      "mutating": true,
+      "requiresConfirmation": false,
+      "requiredScopes": [
+        "hosts:write"
+      ],
+      "positionals": [],
+      "options": {
+        "type": "object",
+        "properties": {
+          "api": {
+            "type": "string",
+            "description": "API のルート URL",
+            "default": "http://127.0.0.1:8787"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "JSON で出力"
+          },
+          "help": {
+            "type": "boolean",
+            "description": "ヘルプを表示"
+          },
+          "kind": {
+            "type": "string",
+            "description": "ホストの種類（windows|wsl）"
+          },
+          "name": {
+            "type": "string",
+            "description": "名前"
+          },
+          "distro": {
+            "type": "string",
+            "description": "WSL ディストロ名"
+          },
+          "user": {
+            "type": "string",
+            "description": "WSL の既定ユーザー"
+          },
+          "disabled": {
+            "type": "boolean",
+            "description": "作成時に無効化する"
+          },
+          "dry-run": {
+            "type": "boolean",
+            "description": "API を変更せず検証・表示のみ"
+          }
+        },
+        "additionalProperties": false
+      },
+      "examples": [
+        "sys4sys hosts create --kind wsl --name Ubuntu --distro Ubuntu-22.04",
+        "sys4sys hosts create --kind windows --name local --dry-run"
+      ]
+    },
+    {
+      "name": "hosts update",
+      "summary": "ホストを更新",
+      "description": "--disable は非対話で --yes が必要です。",
+      "phase": "P1",
+      "mutating": true,
+      "requiresConfirmation": true,
+      "requiredScopes": [
+        "hosts:write"
+      ],
+      "positionals": [
+        {
+          "name": "id",
+          "required": true,
+          "description": "ホスト ID"
+        }
+      ],
+      "options": {
+        "type": "object",
+        "properties": {
+          "api": {
+            "type": "string",
+            "description": "API のルート URL",
+            "default": "http://127.0.0.1:8787"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "JSON で出力"
+          },
+          "help": {
+            "type": "boolean",
+            "description": "ヘルプを表示"
+          },
+          "name": {
+            "type": "string",
+            "description": "名前"
+          },
+          "user": {
+            "type": "string",
+            "description": "WSL の既定ユーザー"
+          },
+          "enable": {
+            "type": "boolean",
+            "description": "有効化する"
+          },
+          "disable": {
+            "type": "boolean",
+            "description": "無効化する（非対話は --yes 必須）"
+          },
+          "dry-run": {
+            "type": "boolean",
+            "description": "API を変更せず検証・表示のみ"
+          }
+        },
+        "additionalProperties": false
+      },
+      "examples": [
+        "sys4sys hosts update <id> --disable --yes",
+        "sys4sys hosts update <id> --enable --name local"
+      ]
+    },
+    {
+      "name": "ports list",
+      "summary": "ポート一覧と予約を一覧表示",
+      "description": "API がスキャンを行うため環境により遅くなることがあります。",
+      "phase": "P1",
+      "mutating": false,
+      "requiresConfirmation": false,
+      "requiredScopes": [
+        "ports:read"
+      ],
+      "positionals": [],
+      "options": {
+        "type": "object",
+        "properties": {
+          "api": {
+            "type": "string",
+            "description": "API のルート URL",
+            "default": "http://127.0.0.1:8787"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "JSON で出力"
+          },
+          "help": {
+            "type": "boolean",
+            "description": "ヘルプを表示"
+          },
+          "scope": {
+            "type": "string",
+            "description": "スコープ（all|windows|wsl）",
+            "default": "all"
+          },
+          "protocol": {
+            "type": "string",
+            "description": "tcp|udp"
+          },
+          "port": {
+            "type": "string",
+            "description": "ポート番号（1〜65535）"
+          },
+          "service": {
+            "type": "string",
+            "description": "サービス ID"
+          },
+          "grep": {
+            "type": "string",
+            "description": "本文の部分一致"
+          },
+          "reservations": {
+            "type": "boolean",
+            "description": "予約一覧をあわせて表示"
+          }
+        },
+        "additionalProperties": false
+      },
+      "examples": [
+        "sys4sys ports list --scope wsl --json",
+        "sys4sys ports list --port 3000 --reservations"
+      ]
+    },
+    {
+      "name": "ports history",
+      "summary": "ポート使用履歴を表示",
+      "phase": "P1",
+      "mutating": false,
+      "requiresConfirmation": false,
+      "requiredScopes": [
+        "ports:read"
+      ],
+      "positionals": [],
+      "options": {
+        "type": "object",
+        "properties": {
+          "api": {
+            "type": "string",
+            "description": "API のルート URL",
+            "default": "http://127.0.0.1:8787"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "JSON で出力"
+          },
+          "help": {
+            "type": "boolean",
+            "description": "ヘルプを表示"
+          },
+          "scope": {
+            "type": "string",
+            "description": "スコープ（windows|wsl）"
+          },
+          "port": {
+            "type": "string",
+            "description": "ポート番号（1〜65535）"
+          },
+          "protocol": {
+            "type": "string",
+            "description": "tcp|udp"
+          },
+          "since": {
+            "type": "string",
+            "description": "開始時刻（ISO）"
+          },
+          "until": {
+            "type": "string",
+            "description": "終了時刻（ISO）"
+          },
+          "limit": {
+            "type": "string",
+            "description": "取得件数（1〜500）",
+            "default": "100"
+          }
+        },
+        "additionalProperties": false
+      },
+      "examples": [
+        "sys4sys ports history --scope windows --port 3000",
+        "sys4sys ports history --scope wsl --port 8080 --since 2026-10-01T00:00:00Z"
+      ]
+    },
+    {
+      "name": "ports reserve",
+      "summary": "ポートを予約",
+      "phase": "P1",
+      "mutating": true,
+      "requiresConfirmation": false,
+      "requiredScopes": [
+        "ports:operate"
+      ],
+      "positionals": [],
+      "options": {
+        "type": "object",
+        "properties": {
+          "api": {
+            "type": "string",
+            "description": "API のルート URL",
+            "default": "http://127.0.0.1:8787"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "JSON で出力"
+          },
+          "help": {
+            "type": "boolean",
+            "description": "ヘルプを表示"
+          },
+          "scope": {
+            "type": "string",
+            "description": "スコープ（windows|wsl）"
+          },
+          "port": {
+            "type": "string",
+            "description": "ポート番号（1〜65535）"
+          },
+          "protocol": {
+            "type": "string",
+            "description": "tcp|udp"
+          },
+          "service": {
+            "type": "string",
+            "description": "サービス ID"
+          },
+          "note": {
+            "type": "string",
+            "description": "メモ"
+          }
+        },
+        "additionalProperties": false
+      },
+      "examples": [
+        "sys4sys ports reserve --scope windows --port 3100 --protocol tcp --service <id>"
+      ]
+    },
+    {
+      "name": "ports release",
+      "summary": "ポート予約を解放",
+      "phase": "P1",
+      "mutating": true,
+      "requiresConfirmation": true,
+      "requiredScopes": [
+        "ports:operate"
+      ],
+      "positionals": [
+        {
+          "name": "id",
+          "required": true,
+          "description": "予約 ID"
+        }
+      ],
+      "options": {
+        "type": "object",
+        "properties": {
+          "api": {
+            "type": "string",
+            "description": "API のルート URL",
+            "default": "http://127.0.0.1:8787"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "JSON で出力"
+          },
+          "help": {
+            "type": "boolean",
+            "description": "ヘルプを表示"
+          },
+          "yes": {
+            "type": "boolean",
+            "description": "確認を省略"
+          }
+        },
+        "additionalProperties": false
+      },
+      "examples": [
+        "sys4sys ports release <reservation-id> --yes"
+      ]
+    },
+    {
+      "name": "ports kill",
+      "summary": "ポートを掴むプロセスを二段階で停止",
+      "description": "先に ports list で対象を確認してください。確認トークンは CLI 内部で取得し、自動再取得はしません。",
+      "phase": "P1",
+      "mutating": true,
+      "requiresConfirmation": true,
+      "requiredScopes": [
+        "ports:operate"
+      ],
+      "positionals": [
+        {
+          "name": "port",
+          "required": true,
+          "description": "ポート番号"
+        }
+      ],
+      "options": {
+        "type": "object",
+        "properties": {
+          "api": {
+            "type": "string",
+            "description": "API のルート URL",
+            "default": "http://127.0.0.1:8787"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "JSON で出力"
+          },
+          "help": {
+            "type": "boolean",
+            "description": "ヘルプを表示"
+          },
+          "scope": {
+            "type": "string",
+            "description": "スコープ（windows|wsl）"
+          },
+          "pid": {
+            "type": "string",
+            "description": "停止対象の PID"
+          },
+          "pid-scope": {
+            "type": "string",
+            "description": "PID を観測した WSL distro"
+          },
+          "signal": {
+            "type": "string",
+            "description": "TERM|KILL",
+            "default": "TERM"
+          },
+          "force": {
+            "type": "boolean",
+            "description": "強制停止 / 出力ファイルの上書き"
+          },
+          "yes": {
+            "type": "boolean",
+            "description": "確認を省略"
+          }
+        },
+        "additionalProperties": false
+      },
+      "examples": [
+        "sys4sys ports kill 3000 --scope windows --yes",
+        "sys4sys ports kill 3000 --scope wsl --pid 123 --signal TERM --yes"
+      ]
+    },
+    {
+      "name": "reports list",
+      "summary": "レポート一覧を表示",
+      "phase": "P1",
+      "mutating": false,
+      "requiresConfirmation": false,
+      "requiredScopes": [
+        "reports:read"
+      ],
+      "positionals": [],
+      "options": {
+        "type": "object",
+        "properties": {
+          "api": {
+            "type": "string",
+            "description": "API のルート URL",
+            "default": "http://127.0.0.1:8787"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "JSON で出力"
+          },
+          "help": {
+            "type": "boolean",
+            "description": "ヘルプを表示"
+          },
+          "service": {
+            "type": "string",
+            "description": "サービス ID"
+          },
+          "limit": {
+            "type": "string",
+            "description": "取得件数（1〜200）",
+            "default": "50"
+          },
+          "offset": {
+            "type": "string",
+            "description": "取得開始位置（0〜）",
+            "default": "0"
+          }
+        },
+        "additionalProperties": false
+      },
+      "examples": [
+        "sys4sys reports list --incident <id> --json",
+        "sys4sys reports list --limit 20 --offset 20"
+      ]
+    },
+    {
+      "name": "reports get",
+      "summary": "レポート詳細を表示",
+      "phase": "P1",
+      "mutating": false,
+      "requiresConfirmation": false,
+      "requiredScopes": [
+        "reports:read"
+      ],
+      "positionals": [
+        {
+          "name": "id",
+          "required": true,
+          "description": "レポート ID"
+        }
+      ],
+      "options": {
+        "type": "object",
+        "properties": {
+          "api": {
+            "type": "string",
+            "description": "API のルート URL",
+            "default": "http://127.0.0.1:8787"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "JSON で出力"
+          },
+          "help": {
+            "type": "boolean",
+            "description": "ヘルプを表示"
+          },
+          "full": {
+            "type": "boolean",
+            "description": "分析結果・レポート本文を全文表示"
+          }
+        },
+        "additionalProperties": false
+      },
+      "examples": [
+        "sys4sys reports get <id>",
+        "sys4sys reports get <id> --full --json"
+      ]
+    },
+    {
+      "name": "reports export",
+      "summary": "レポートをファイルまたは stdout に出力",
+      "phase": "P1",
+      "mutating": false,
+      "requiresConfirmation": false,
+      "requiredScopes": [
+        "reports:read"
+      ],
+      "positionals": [
+        {
+          "name": "id",
+          "required": true,
+          "description": "レポート ID"
+        }
+      ],
+      "options": {
+        "type": "object",
+        "properties": {
+          "api": {
+            "type": "string",
+            "description": "API のルート URL",
+            "default": "http://127.0.0.1:8787"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "JSON で出力"
+          },
+          "help": {
+            "type": "boolean",
+            "description": "ヘルプを表示"
+          },
+          "format": {
+            "type": "string",
+            "description": "md|json",
+            "default": "md"
+          },
+          "output": {
+            "type": "string",
+            "description": "出力先パス（- は stdout）"
+          },
+          "force": {
+            "type": "boolean",
+            "description": "強制停止 / 出力ファイルの上書き"
+          }
+        },
+        "additionalProperties": false
+      },
+      "examples": [
+        "sys4sys reports export <id> --format md --output -",
+        "sys4sys reports export <id> --format json --output report.json"
+      ]
+    },
+    {
+      "name": "audit list",
+      "summary": "監査ログを検索",
+      "phase": "P1",
+      "mutating": false,
+      "requiresConfirmation": false,
+      "requiredScopes": [
+        "audit:read"
+      ],
+      "positionals": [],
+      "options": {
+        "type": "object",
+        "properties": {
+          "api": {
+            "type": "string",
+            "description": "API のルート URL",
+            "default": "http://127.0.0.1:8787"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "JSON で出力"
+          },
+          "help": {
+            "type": "boolean",
+            "description": "ヘルプを表示"
+          },
+          "actor": {
+            "type": "string",
+            "description": "actor ラベルまたは ID"
+          },
+          "action": {
+            "type": "string",
+            "description": "アクションの部分一致"
+          },
+          "target": {
+            "type": "string",
+            "description": "対象の部分一致"
+          },
+          "since": {
+            "type": "string",
+            "description": "開始時刻（ISO）"
+          },
+          "until": {
+            "type": "string",
+            "description": "終了時刻（ISO）"
+          },
+          "limit": {
+            "type": "string",
+            "description": "取得件数（1〜500）",
+            "default": "100"
+          },
+          "offset": {
+            "type": "string",
+            "description": "取得開始位置（0〜）",
+            "default": "0"
+          }
+        },
+        "additionalProperties": false
+      },
+      "examples": [
+        "sys4sys audit list --action service.deploy --since 2026-10-01T00:00:00Z",
+        "sys4sys audit list --target incident:<id> --limit 20 --json"
+      ]
+    },
+    {
+      "name": "settings mail get",
+      "summary": "メール設定を表示（パスワードは非表示）",
+      "phase": "P1",
+      "mutating": false,
+      "requiresConfirmation": false,
+      "requiredScopes": [
+        "settings:read"
+      ],
+      "positionals": [],
+      "options": {
+        "type": "object",
+        "properties": {
+          "api": {
+            "type": "string",
+            "description": "API のルート URL",
+            "default": "http://127.0.0.1:8787"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "JSON で出力"
+          },
+          "help": {
+            "type": "boolean",
+            "description": "ヘルプを表示"
+          }
+        },
+        "additionalProperties": false
+      },
+      "examples": [
+        "sys4sys settings mail get",
+        "sys4sys settings mail get --json"
+      ]
+    },
+    {
+      "name": "settings mail set",
+      "summary": "メール設定を更新",
+      "description": "パスワードは --file の JSON でのみ受け取る。非対話は --yes 必須。",
+      "phase": "P1",
+      "mutating": true,
+      "requiresConfirmation": true,
+      "requiredScopes": [
+        "settings:write"
+      ],
+      "positionals": [],
+      "options": {
+        "type": "object",
+        "properties": {
+          "api": {
+            "type": "string",
+            "description": "API のルート URL",
+            "default": "http://127.0.0.1:8787"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "JSON で出力"
+          },
+          "help": {
+            "type": "boolean",
+            "description": "ヘルプを表示"
+          },
+          "file": {
+            "type": "string",
+            "description": "設定 JSON（- は標準入力）"
+          },
+          "dry-run": {
+            "type": "boolean",
+            "description": "API を変更せず検証・表示のみ"
+          },
+          "yes": {
+            "type": "boolean",
+            "description": "確認を省略"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "additionalProperties": false
+      },
+      "examples": [
+        "sys4sys settings mail set --file mail.json --yes",
+        "sys4sys settings mail set --file - --dry-run < mail.json"
+      ]
+    },
+    {
+      "name": "settings mail test",
+      "summary": "メール設定でテスト送信",
+      "phase": "P1",
+      "mutating": false,
+      "requiresConfirmation": false,
+      "requiredScopes": [
+        "settings:write"
+      ],
+      "positionals": [],
+      "options": {
+        "type": "object",
+        "properties": {
+          "api": {
+            "type": "string",
+            "description": "API のルート URL",
+            "default": "http://127.0.0.1:8787"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "JSON で出力"
+          },
+          "help": {
+            "type": "boolean",
+            "description": "ヘルプを表示"
+          }
+        },
+        "additionalProperties": false
+      },
+      "examples": [
+        "sys4sys settings mail test",
+        "sys4sys settings mail test --json"
+      ]
+    },
+    {
+      "name": "settings ai get",
+      "summary": "AI 設定を表示（API key は非表示）",
+      "phase": "P1",
+      "mutating": false,
+      "requiresConfirmation": false,
+      "requiredScopes": [
+        "settings:read"
+      ],
+      "positionals": [],
+      "options": {
+        "type": "object",
+        "properties": {
+          "api": {
+            "type": "string",
+            "description": "API のルート URL",
+            "default": "http://127.0.0.1:8787"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "JSON で出力"
+          },
+          "help": {
+            "type": "boolean",
+            "description": "ヘルプを表示"
+          }
+        },
+        "additionalProperties": false
+      },
+      "examples": [
+        "sys4sys settings ai get",
+        "sys4sys settings ai get --json"
+      ]
+    },
+    {
+      "name": "settings ai set",
+      "summary": "AI 設定を更新",
+      "description": "API key は --file の JSON でのみ受け取る。非対話は --yes 必須。",
+      "phase": "P1",
+      "mutating": true,
+      "requiresConfirmation": true,
+      "requiredScopes": [
+        "settings:write"
+      ],
+      "positionals": [],
+      "options": {
+        "type": "object",
+        "properties": {
+          "api": {
+            "type": "string",
+            "description": "API のルート URL",
+            "default": "http://127.0.0.1:8787"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "JSON で出力"
+          },
+          "help": {
+            "type": "boolean",
+            "description": "ヘルプを表示"
+          },
+          "file": {
+            "type": "string",
+            "description": "設定 JSON（- は標準入力）"
+          },
+          "dry-run": {
+            "type": "boolean",
+            "description": "API を変更せず検証・表示のみ"
+          },
+          "yes": {
+            "type": "boolean",
+            "description": "確認を省略"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "additionalProperties": false
+      },
+      "examples": [
+        "sys4sys settings ai set --file ai.json --yes",
+        "sys4sys settings ai set --file - --dry-run < ai.json"
+      ]
+    },
+    {
+      "name": "settings ai test",
+      "summary": "AI 設定で接続テスト",
+      "phase": "P1",
+      "mutating": false,
+      "requiresConfirmation": false,
+      "requiredScopes": [
+        "settings:write"
+      ],
+      "positionals": [],
+      "options": {
+        "type": "object",
+        "properties": {
+          "api": {
+            "type": "string",
+            "description": "API のルート URL",
+            "default": "http://127.0.0.1:8787"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "JSON で出力"
+          },
+          "help": {
+            "type": "boolean",
+            "description": "ヘルプを表示"
+          }
+        },
+        "additionalProperties": false
+      },
+      "examples": [
+        "sys4sys settings ai test",
+        "sys4sys settings ai test --json"
+      ]
+    },
+    {
+      "name": "settings retention get",
+      "summary": "保持期間設定を表示",
+      "phase": "P1",
+      "mutating": false,
+      "requiresConfirmation": false,
+      "requiredScopes": [
+        "settings:read"
+      ],
+      "positionals": [],
+      "options": {
+        "type": "object",
+        "properties": {
+          "api": {
+            "type": "string",
+            "description": "API のルート URL",
+            "default": "http://127.0.0.1:8787"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "JSON で出力"
+          },
+          "help": {
+            "type": "boolean",
+            "description": "ヘルプを表示"
+          }
+        },
+        "additionalProperties": false
+      },
+      "examples": [
+        "sys4sys settings retention get",
+        "sys4sys settings retention get --json"
+      ]
+    },
+    {
+      "name": "settings retention set",
+      "summary": "保持期間設定を更新",
+      "phase": "P1",
+      "mutating": true,
+      "requiresConfirmation": true,
+      "requiredScopes": [
+        "settings:write"
+      ],
+      "positionals": [],
+      "options": {
+        "type": "object",
+        "properties": {
+          "api": {
+            "type": "string",
+            "description": "API のルート URL",
+            "default": "http://127.0.0.1:8787"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "JSON で出力"
+          },
+          "help": {
+            "type": "boolean",
+            "description": "ヘルプを表示"
+          },
+          "file": {
+            "type": "string",
+            "description": "設定 JSON（- は標準入力）"
+          },
+          "dry-run": {
+            "type": "boolean",
+            "description": "API を変更せず検証・表示のみ"
+          },
+          "yes": {
+            "type": "boolean",
+            "description": "確認を省略"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "additionalProperties": false
+      },
+      "examples": [
+        "sys4sys settings retention set --file retention.json --yes"
+      ]
+    },
+    {
+      "name": "settings backup",
+      "summary": "データベースバックアップを作成",
+      "phase": "P1",
+      "mutating": true,
+      "requiresConfirmation": true,
+      "requiredScopes": [
+        "settings:write"
+      ],
+      "positionals": [],
+      "options": {
+        "type": "object",
+        "properties": {
+          "api": {
+            "type": "string",
+            "description": "API のルート URL",
+            "default": "http://127.0.0.1:8787"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "JSON で出力"
+          },
+          "help": {
+            "type": "boolean",
+            "description": "ヘルプを表示"
+          },
+          "yes": {
+            "type": "boolean",
+            "description": "確認を省略"
+          },
+          "dry-run": {
+            "type": "boolean",
+            "description": "API を変更せず検証・表示のみ"
+          }
+        },
+        "additionalProperties": false
+      },
+      "examples": [
+        "sys4sys settings backup --yes",
+        "sys4sys settings backup --dry-run"
+      ]
+    },
+    {
+      "name": "deploy-requests list",
+      "summary": "デプロイ承認要求一覧を表示",
+      "phase": "P1",
+      "mutating": false,
+      "requiresConfirmation": false,
+      "requiredScopes": [
+        "deploy:execute"
+      ],
+      "positionals": [],
+      "options": {
+        "type": "object",
+        "properties": {
+          "api": {
+            "type": "string",
+            "description": "API のルート URL",
+            "default": "http://127.0.0.1:8787"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "JSON で出力"
+          },
+          "help": {
+            "type": "boolean",
+            "description": "ヘルプを表示"
+          },
+          "status": {
+            "type": "string",
+            "description": "ステータスで絞り込む"
+          },
+          "limit": {
+            "type": "string",
+            "description": "取得件数（1〜200）",
+            "default": "50"
+          },
+          "offset": {
+            "type": "string",
+            "description": "取得開始位置（0〜）",
+            "default": "0"
+          }
+        },
+        "additionalProperties": false
+      },
+      "examples": [
+        "sys4sys deploy-requests list --status pending --json",
+        "sys4sys deploy-requests list --status approved --limit 20"
+      ]
+    },
+    {
+      "name": "deploy-requests get",
+      "summary": "デプロイ承認要求の詳細を表示",
+      "phase": "P1",
+      "mutating": false,
+      "requiresConfirmation": false,
+      "requiredScopes": [
+        "deploy:execute"
+      ],
+      "positionals": [
+        {
+          "name": "id",
+          "required": true,
+          "description": "要求 ID"
+        }
+      ],
+      "options": {
+        "type": "object",
+        "properties": {
+          "api": {
+            "type": "string",
+            "description": "API のルート URL",
+            "default": "http://127.0.0.1:8787"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "JSON で出力"
+          },
+          "help": {
+            "type": "boolean",
+            "description": "ヘルプを表示"
+          }
+        },
+        "additionalProperties": false
+      },
+      "examples": [
+        "sys4sys deploy-requests get <id>",
+        "sys4sys deploy-requests get <id> --json"
+      ]
+    },
+    {
+      "name": "deploy-requests approve",
+      "summary": "デプロイ承認要求を承認して実行",
+      "phase": "P1",
+      "mutating": true,
+      "requiresConfirmation": true,
+      "requiredScopes": [
+        "approvals:decide"
+      ],
+      "positionals": [
+        {
+          "name": "id",
+          "required": true,
+          "description": "要求 ID"
+        }
+      ],
+      "options": {
+        "type": "object",
+        "properties": {
+          "api": {
+            "type": "string",
+            "description": "API のルート URL",
+            "default": "http://127.0.0.1:8787"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "JSON で出力"
+          },
+          "help": {
+            "type": "boolean",
+            "description": "ヘルプを表示"
+          },
+          "note": {
+            "type": "string",
+            "description": "メモ"
+          },
+          "yes": {
+            "type": "boolean",
+            "description": "確認を省略"
+          },
+          "wait": {
+            "type": "boolean",
+            "description": "完了まで待つ"
+          },
+          "timeout": {
+            "type": "string",
+            "description": "待ち時間のタイムアウト秒",
+            "default": "60"
+          }
+        },
+        "additionalProperties": false
+      },
+      "examples": [
+        "sys4sys deploy-requests approve <request-id> --note \"リリース確認済み\" --yes --wait --timeout 120"
+      ]
+    },
+    {
+      "name": "deploy-requests reject",
+      "summary": "デプロイ承認要求を却下",
+      "phase": "P1",
+      "mutating": true,
+      "requiresConfirmation": true,
+      "requiredScopes": [
+        "approvals:decide"
+      ],
+      "positionals": [
+        {
+          "name": "id",
+          "required": true,
+          "description": "要求 ID"
+        }
+      ],
+      "options": {
+        "type": "object",
+        "properties": {
+          "api": {
+            "type": "string",
+            "description": "API のルート URL",
+            "default": "http://127.0.0.1:8787"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "JSON で出力"
+          },
+          "help": {
+            "type": "boolean",
+            "description": "ヘルプを表示"
+          },
+          "note": {
+            "type": "string",
+            "description": "メモ"
+          },
+          "yes": {
+            "type": "boolean",
+            "description": "確認を省略"
+          }
+        },
+        "additionalProperties": false
+      },
+      "examples": [
+        "sys4sys deploy-requests reject <request-id> --note \"まだ準備未完成\" --yes"
       ]
     },
     {

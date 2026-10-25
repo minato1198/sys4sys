@@ -2,20 +2,29 @@ import { randomUUID } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import {
   deployConfigSchema,
+  ENV_MASK,
   serviceActionsQuerySchema,
   serviceCreateSchema,
   serviceListQuerySchema,
   serviceUpdateSchema,
   type DeployConfigInput,
+  type ServiceSecretsResponse,
 } from "@sys4sys/shared";
 import { and, desc, eq, lt, or } from "drizzle-orm";
 import { z } from "zod";
 import { writeAudit } from "../audit.js";
 import { requireAuth, requireRole } from "../auth/guard.js";
+import { config } from "../config.js";
 import { db } from "../db/index.js";
 import { actions, hosts, logSources, services } from "../db/schema.js";
 import { refreshLogTailer } from "../logs/tailers.js";
 import { isCommandAllowed } from "../services/allowlist.js";
+import {
+  buildDeployRequestSnapshot,
+  expirePendingDeployRequests,
+  findPendingDeployRequest,
+  requiresDeployApproval,
+} from "../services/deploy-approvals.js";
 import { beginDeploy, runDeploy } from "../services/deploy.js";
 import {
   checkServiceHealth,
@@ -26,6 +35,12 @@ import {
   stopService,
   type ServiceRow,
 } from "../services/manager.js";
+import {
+  decryptServiceDeployEnv,
+  decryptServiceEnv,
+  encryptServiceDeploy,
+  encryptServiceEnv,
+} from "../services/secrets.js";
 
 const idParamsSchema = z.object({ id: z.string().min(1) });
 
@@ -37,13 +52,18 @@ function problem(
   status: number,
   title: string,
   detail: string,
+  extra?: Record<string, unknown>,
 ) {
-  return reply.code(status).type("application/problem+json").send({
-    type: "about:blank",
-    title,
-    status,
-    detail,
-  });
+  return reply
+    .code(status)
+    .type("application/problem+json")
+    .send({
+      type: "about:blank",
+      title,
+      status,
+      detail,
+      ...(extra ?? {}),
+    });
 }
 
 function actor(request: FastifyRequest) {
@@ -68,7 +88,47 @@ function hostResponse(host: HostRow | undefined) {
   };
 }
 
-function serviceResponse(row: ServiceRow, host: HostRow | undefined) {
+function envKeyList(env: Record<string, string> | null | undefined): string[] {
+  return env ? Object.keys(env) : [];
+}
+
+function maskedEnv(env: Record<string, string> | null | undefined) {
+  if (!env) return null;
+  return Object.fromEntries(Object.keys(env).map((key) => [key, ENV_MASK]));
+}
+
+function deployDetail(deploy: DeployConfigInput | null | undefined) {
+  if (!deploy) return null;
+  return {
+    command: deploy.command,
+    cwd: deploy.cwd ?? null,
+    env: maskedEnv(deploy.env),
+    envKeys: envKeyList(deploy.env),
+    timeoutSec: deploy.timeoutSec,
+    restartAfter: deploy.restartAfter,
+    healthTimeoutSec: deploy.healthTimeoutSec,
+    requireApproval: deploy.requireApproval === true,
+  };
+}
+
+function deploySummary(deploy: DeployConfigInput | null | undefined) {
+  if (!deploy) return null;
+  return {
+    command: deploy.command,
+    cwd: deploy.cwd ?? null,
+    envKeys: envKeyList(deploy.env),
+    timeoutSec: deploy.timeoutSec,
+    restartAfter: deploy.restartAfter,
+    healthTimeoutSec: deploy.healthTimeoutSec,
+    requireApproval: deploy.requireApproval === true,
+  };
+}
+
+function serviceResponse(
+  row: ServiceRow,
+  host: HostRow | undefined,
+  options: { list?: boolean } = {},
+) {
   const runtime = runtimeInfo(row.id);
   return {
     id: row.id,
@@ -76,10 +136,11 @@ function serviceResponse(row: ServiceRow, host: HostRow | undefined) {
     name: row.name,
     command: row.command,
     cwd: row.cwd,
-    env: row.env ?? null,
+    env: options.list ? undefined : maskedEnv(row.env),
+    envKeys: envKeyList(row.env),
     expectedPorts: row.expectedPorts ?? [],
     healthCheck: row.healthCheck ?? null,
-    deploy: row.deploy ?? null,
+    deploy: options.list ? deploySummary(row.deploy) : deployDetail(row.deploy),
     dependsOn: row.dependsOn ?? [],
     autoStart: row.autoStart,
     autoRestartPhase: row.autoRestartPhase,
@@ -159,15 +220,96 @@ function deployValidationError(deploy: DeployConfigInput | null | undefined) {
     : (allowed.reason ?? "デプロイコマンドが許可されていません");
 }
 
-/** 監査ログには deploy.env（秘密値を含み得る）を残さない。 */
+/** 監査ログには env / deploy.env（秘密値を含み得る）を残さない。 */
 function deployAuditValue(deploy: DeployConfigInput | null | undefined) {
   if (!deploy) return null;
   return {
     command: deploy.command,
     cwd: deploy.cwd ?? null,
+    envKeys: envKeyList(deploy.env),
     timeoutSec: deploy.timeoutSec,
     restartAfter: deploy.restartAfter,
     healthTimeoutSec: deploy.healthTimeoutSec,
+    requireApproval: deploy.requireApproval === true,
+  };
+}
+
+/** 監査ログに env 値そのものは残さず、キー名だけを残す。 */
+function envAuditValue(env: Record<string, string> | null | undefined) {
+  return {
+    envKeys: envKeyList(env),
+  };
+}
+
+function maskedEnvValue(env: Record<string, string> | undefined): boolean {
+  return env ? Object.values(env).some((value) => value === ENV_MASK) : false;
+}
+
+function maskedEnvValidationError(
+  body: {
+    env?: Record<string, string> | null;
+    deploy?: DeployConfigInput | null;
+  },
+  existingEnv?: Record<string, string> | null,
+  existingDeployEnv?: Record<string, string> | null,
+): string | null {
+  const errors: string[] = [];
+  if (maskedEnvValue(body.env ?? undefined)) {
+    errors.push("env");
+  }
+  if (maskedEnvValue(body.deploy?.env)) {
+    errors.push("deploy.env");
+  }
+  if (errors.length > 0) {
+    return `${errors.join(", ")} にマスク値 "${ENV_MASK}" を含めることはできません。値を変更しない場合は env を送信し直すのではなく省略してください`;
+  }
+  void existingEnv;
+  void existingDeployEnv;
+  return null;
+}
+
+function hasOwnPropertyInBody(
+  body: unknown,
+  path: [string] | [string, string],
+): boolean {
+  if (typeof body !== "object" || body === null || Array.isArray(body)) {
+    return false;
+  }
+  const [first, second] = path;
+  const value = (body as Record<string, unknown>)[first];
+  if (second === undefined) return first in (body as Record<string, unknown>);
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+  return second in (value as Record<string, unknown>);
+}
+
+function mergeDeployUpdate(
+  bodyDeploy: DeployConfigInput,
+  rawBody: unknown,
+  existingDeploy: DeployConfigInput | null | undefined,
+): DeployConfigInput {
+  const merged =
+    existingDeploy &&
+    !hasOwnPropertyInBody(rawBody, ["deploy", "env"]) &&
+    existingDeploy.env
+      ? {
+          ...bodyDeploy,
+          env: existingDeploy.env,
+        }
+      : bodyDeploy;
+
+  const requireApproval = hasOwnPropertyInBody(rawBody, [
+    "deploy",
+    "requireApproval",
+  ])
+    ? bodyDeploy.requireApproval
+    : (existingDeploy?.requireApproval ??
+      config.DEPLOY_REQUIRE_APPROVAL_DEFAULT);
+
+  return {
+    ...merged,
+    requireApproval,
   };
 }
 
@@ -190,7 +332,9 @@ export async function serviceRoutes(app: FastifyInstance): Promise<void> {
         .orderBy(services.name);
       const hostRows = await db.select().from(hosts);
       const hostMap = new Map(hostRows.map((row) => [row.id, row]));
-      return rows.map((row) => serviceResponse(row, hostMap.get(row.hostId)));
+      return rows.map((row) =>
+        serviceResponse(row, hostMap.get(row.hostId), { list: true }),
+      );
     },
   );
 
@@ -218,6 +362,54 @@ export async function serviceRoutes(app: FastifyInstance): Promise<void> {
         ...serviceResponse(service, host),
         recentActions: recent.map(actionResponse),
       };
+    },
+  );
+
+  app.get(
+    "/services/:id/secrets",
+    {
+      preHandler: requireRole("admin"),
+      config: { scopes: ["services:secrets"] },
+    },
+    async (request, reply) => {
+      const { id } = idParamsSchema.parse(request.params);
+      const service = await findService(id);
+      if (!service) {
+        return problem(reply, 404, "Not Found", "サービスが見つかりません");
+      }
+
+      reply.header("Cache-Control", "no-store");
+      let env: Record<string, string> | null;
+      let deployEnv: Record<string, string> | null;
+      try {
+        env = decryptServiceEnv(service.env);
+        deployEnv = decryptServiceDeployEnv(service.deploy);
+      } catch {
+        return problem(
+          reply,
+          500,
+          "Internal Server Error",
+          "サービス env の復号に失敗しました",
+        );
+      }
+
+      const user = actor(request);
+      await writeAudit({
+        actorUserId: user.id,
+        actorLabel: user.email,
+        action: "service.secrets.reveal",
+        target: `service:${id}`,
+        before: null,
+        after: envAuditValue(service.env),
+        reason: "admin revealed service env values",
+        ip: request.ip,
+      });
+
+      const body: ServiceSecretsResponse = {
+        env,
+        deployEnv,
+      };
+      return reply.send(body);
     },
   );
 
@@ -260,8 +452,24 @@ export async function serviceRoutes(app: FastifyInstance): Promise<void> {
         return problem(reply, 422, "Unprocessable Entity", deployError);
       }
 
+      const envError = maskedEnvValidationError(body);
+      if (envError) {
+        return problem(reply, 422, "Unprocessable Entity", envError);
+      }
+
       const now = new Date();
       const id = randomUUID();
+      const envToStore = encryptServiceEnv(body.env);
+      const deployToStore = encryptServiceDeploy(
+        body.deploy
+          ? {
+              ...body.deploy,
+              requireApproval:
+                body.deploy.requireApproval ??
+                config.DEPLOY_REQUIRE_APPROVAL_DEFAULT,
+            }
+          : null,
+      );
       try {
         await db.insert(services).values({
           id,
@@ -269,10 +477,10 @@ export async function serviceRoutes(app: FastifyInstance): Promise<void> {
           name: body.name,
           command: body.command,
           cwd: body.cwd ?? null,
-          env: body.env ?? null,
+          env: envToStore,
           expectedPorts: body.expectedPorts ?? null,
           healthCheck: body.healthCheck ?? null,
-          deploy: body.deploy ?? null,
+          deploy: deployToStore ?? null,
           dependsOn: body.dependsOn ?? null,
           autoStart: body.autoStart,
           autoRestartPhase: body.autoRestartPhase,
@@ -303,7 +511,8 @@ export async function serviceRoutes(app: FastifyInstance): Promise<void> {
           name: body.name,
           command: body.command,
           expectedPorts: body.expectedPorts ?? null,
-          deploy: deployAuditValue(body.deploy),
+          ...envAuditValue(envToStore),
+          deploy: deployAuditValue(deployToStore),
         },
         ip: request.ip,
       });
@@ -321,10 +530,10 @@ export async function serviceRoutes(app: FastifyInstance): Promise<void> {
             name: body.name,
             command: body.command,
             cwd: body.cwd ?? null,
-            env: body.env ?? null,
+            env: envToStore,
             expectedPorts: body.expectedPorts ?? null,
             healthCheck: body.healthCheck ?? null,
-            deploy: body.deploy ?? null,
+            deploy: deployToStore ?? null,
             dependsOn: body.dependsOn ?? null,
             autoStart: body.autoStart,
             autoRestartPhase: body.autoRestartPhase,
@@ -380,6 +589,15 @@ export async function serviceRoutes(app: FastifyInstance): Promise<void> {
         return problem(reply, 422, "Unprocessable Entity", deployError);
       }
 
+      const envError = maskedEnvValidationError(
+        body,
+        existing.env,
+        existing.deploy?.env,
+      );
+      if (envError) {
+        return problem(reply, 422, "Unprocessable Entity", envError);
+      }
+
       const runtime = runtimeInfo(id);
       if (
         runtime.running &&
@@ -398,16 +616,27 @@ export async function serviceRoutes(app: FastifyInstance): Promise<void> {
       const updates: Partial<typeof services.$inferInsert> = {
         updatedAt: new Date(),
       };
+      const updatedEnv =
+        body.env !== undefined ? encryptServiceEnv(body.env) : existing.env;
+      let updatedDeploy = existing.deploy;
+      if (body.deploy !== undefined) {
+        updatedDeploy = body.deploy
+          ? (encryptServiceDeploy(
+              mergeDeployUpdate(body.deploy, request.body, existing.deploy),
+            ) ?? null)
+          : null;
+      }
+
       if (body.name !== undefined) updates.name = body.name;
       if (body.command !== undefined) updates.command = body.command;
       if (body.cwd !== undefined) updates.cwd = body.cwd;
-      if (body.env !== undefined) updates.env = body.env;
+      if (body.env !== undefined) updates.env = updatedEnv;
       if (body.expectedPorts !== undefined) {
         updates.expectedPorts = body.expectedPorts;
       }
       if (body.healthCheck !== undefined)
         updates.healthCheck = body.healthCheck;
-      if (body.deploy !== undefined) updates.deploy = body.deploy;
+      if (body.deploy !== undefined) updates.deploy = updatedDeploy;
       if (body.dependsOn !== undefined) updates.dependsOn = body.dependsOn;
       if (body.autoStart !== undefined) updates.autoStart = body.autoStart;
       if (body.autoRestartPhase !== undefined) {
@@ -438,6 +667,7 @@ export async function serviceRoutes(app: FastifyInstance): Promise<void> {
           command: existing.command,
           cwd: existing.cwd,
           expectedPorts: existing.expectedPorts,
+          ...envAuditValue(existing.env),
           deploy: deployAuditValue(existing.deploy),
           autoStart: existing.autoStart,
           autoRestartPhase: existing.autoRestartPhase,
@@ -450,9 +680,8 @@ export async function serviceRoutes(app: FastifyInstance): Promise<void> {
             body.expectedPorts !== undefined
               ? body.expectedPorts
               : existing.expectedPorts,
-          deploy: deployAuditValue(
-            body.deploy !== undefined ? body.deploy : existing.deploy,
-          ),
+          ...envAuditValue(updatedEnv),
+          deploy: deployAuditValue(updatedDeploy),
           autoStart: body.autoStart ?? existing.autoStart,
           autoRestartPhase: body.autoRestartPhase ?? existing.autoRestartPhase,
         },
@@ -717,6 +946,14 @@ export async function serviceRoutes(app: FastifyInstance): Promise<void> {
           "Unprocessable Entity",
           allowed.reason ?? "デプロイコマンドが許可されていません",
         );
+      }
+
+      await expirePendingDeployRequests(id);
+      if (requiresDeployApproval(deploy)) {
+        const pending = await findPendingDeployRequest(id);
+        return problem(reply, 409, "Conflict", "approval_required", {
+          deployRequestId: pending?.id ?? null,
+        });
       }
 
       try {

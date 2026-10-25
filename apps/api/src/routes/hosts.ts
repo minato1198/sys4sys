@@ -76,6 +76,35 @@ export async function hostRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
+  app.get(
+    "/hosts/:id",
+    { preHandler: requireAuth, config: { scopes: ["hosts:read"] } },
+    async (request, reply) => {
+      const { id } = idParamsSchema.parse(request.params);
+      const [row] = await db
+        .select()
+        .from(hosts)
+        .where(eq(hosts.id, id))
+        .limit(1);
+      if (!row) {
+        return problem(reply, 404, "Not Found", "ホストが見つかりません");
+      }
+
+      let distro: WslDistro | undefined;
+      if (row.kind === "wsl" && row.distro) {
+        try {
+          distro = (await detectDistros()).find(
+            (candidate) => candidate.name === row.distro,
+          );
+        } catch {
+          distro = undefined;
+        }
+      }
+
+      return hostResponse(row, distro);
+    },
+  );
+
   app.post(
     "/hosts/wsl/detect",
     { preHandler: requireRole("admin"), config: { scopes: ["hosts:write"] } },

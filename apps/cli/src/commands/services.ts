@@ -12,7 +12,8 @@ import {
 } from "@sys4sys/shared";
 import { ZodError } from "zod";
 import type { ApiClient } from "../client.js";
-import { CliError, UsageError } from "../errors.js";
+import { ApiError } from "../client.js";
+import { AuthError, CliError, UsageError } from "../errors.js";
 import {
   printJson,
   printTable,
@@ -22,7 +23,13 @@ import {
   writeOut,
   type CliOutput,
 } from "../output.js";
-import type { Action, DeployConfig, Host, Service } from "../types.js";
+import type {
+  Action,
+  DeployConfig,
+  Host,
+  Service,
+  ServiceSecrets,
+} from "../types.js";
 
 export interface CommandOptions {
   json: boolean;
@@ -52,6 +59,30 @@ export interface CommandOptions {
   scope?: string[];
   expiresIn?: string;
   save?: boolean;
+  severity?: string;
+  offset?: string;
+  note?: string;
+  full?: boolean;
+  kind?: string;
+  distro?: string;
+  disabled?: boolean;
+  enable?: boolean;
+  disable?: boolean;
+  portScope?: string;
+  protocol?: string;
+  port?: string;
+  reservations?: boolean;
+  pid?: string;
+  pidScope?: string;
+  killSignal?: string;
+  force?: boolean;
+  format?: string;
+  outputPath?: string;
+  request?: boolean;
+  action?: string;
+  target?: string;
+  actor?: string;
+  incident?: string;
   signal?: AbortSignal;
   output?: CliOutput;
   reconnectDelayMs?: number;
@@ -160,6 +191,51 @@ async function fetchService(client: ApiClient, id: string): Promise<Service> {
     "GET",
     `/api/services/${encodeURIComponent(id)}`,
   );
+}
+
+async function fetchServiceSecrets(
+  client: ApiClient,
+  id: string,
+): Promise<ServiceSecrets> {
+  try {
+    return await client.request<ServiceSecrets>(
+      "GET",
+      `/api/services/${encodeURIComponent(id)}/secrets`,
+    );
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 403) {
+      throw new AuthError(
+        "--show-env には admin 権限と services:secrets スコープが必要です",
+      );
+    }
+    throw error;
+  }
+}
+
+async function withServiceEnv(
+  client: ApiClient,
+  service: Service,
+  options: CommandOptions,
+): Promise<Service> {
+  if (!options.showEnv) return service;
+
+  err(
+    options,
+    "警告: --show-env は secrets API 経由で平文 env を表示します。表示は監査ログに記録されます。\n",
+  );
+  const secrets = await fetchServiceSecrets(client, service.id);
+  return {
+    ...service,
+    env: secrets.env,
+    envKeys: secrets.env ? Object.keys(secrets.env) : [],
+    deploy: service.deploy
+      ? {
+          ...service.deploy,
+          env: secrets.deployEnv,
+          envKeys: secrets.deployEnv ? Object.keys(secrets.deployEnv) : [],
+        }
+      : null,
+  };
 }
 
 function requireId(positionals: string[], command: string): string {
@@ -378,7 +454,13 @@ export async function listServices(
   );
 
   if (options.json) {
-    printJson(redactEnvFields(services, options.showEnv), options.output);
+    if (options.showEnv) {
+      err(
+        options,
+        "警告: services list は env 値を表示しません。平文 env は services get --show-env でのみ参照できます。\n",
+      );
+    }
+    printJson(redactEnvFields(services, false), options.output);
     return;
   }
   printServiceList(services, options);
@@ -390,7 +472,8 @@ export async function getService(
   options: CommandOptions,
 ): Promise<void> {
   const id = requireId(positionals, "services get");
-  const service = await fetchService(client, id);
+  let service = await fetchService(client, id);
+  service = await withServiceEnv(client, service, options);
   printService(service, options);
 }
 
@@ -423,11 +506,12 @@ export async function createService(
   }
 
   const created = await client.request<Service>("POST", "/api/services", input);
+  const revealed = await withServiceEnv(client, created, options);
   if (options.json) {
-    printJson(redactEnvFields(created, options.showEnv), options.output);
+    printJson(redactEnvFields(revealed, options.showEnv), options.output);
   } else {
     out(options, "service created.\n");
-    printService(created, options);
+    printService(revealed, options);
   }
 }
 
@@ -470,11 +554,12 @@ export async function updateService(
     `/api/services/${encodeURIComponent(id)}`,
     patch,
   );
+  const revealed = await withServiceEnv(client, updated, options);
   if (options.json) {
-    printJson(redactEnvFields(updated, options.showEnv), options.output);
+    printJson(redactEnvFields(revealed, options.showEnv), options.output);
   } else {
     out(options, "service updated.\n");
-    printService(updated, options);
+    printService(revealed, options);
   }
 }
 
@@ -484,7 +569,10 @@ export async function deployService(
   options: CommandOptions,
 ): Promise<number> {
   const id = requireId(positionals, "services deploy");
-  const service = await fetchService(client, id);
+  let service = await fetchService(client, id);
+  if (options.dryRun) {
+    service = await withServiceEnv(client, service, options);
+  }
   if (!service.deploy) {
     throw new UsageError(`deploy 設定がありません: ${id}`);
   }
@@ -518,12 +606,52 @@ export async function deployService(
   }
 
   const timeoutSec = parseTimeout(options.timeout, deploy);
+
+  if (options.request) {
+    const { createDeployRequest } = await import("./deploy-requests.js");
+    const request = await createDeployRequest(client, id, options);
+    if (options.json) {
+      printJson(request, options.output);
+    } else {
+      out(options, `deploy request created: ${request.id}\n`);
+      out(options, `Status:  ${request.status}\n`);
+      out(options, `Expires: ${request.expiresAt}\n`);
+      out(
+        options,
+        "承認後は `sys4sys deploy-requests approve <id> --yes` を実行してください。\n",
+      );
+    }
+    return 0;
+  }
+
   await confirmDeploy(service, deploy, options.yes, options.json);
 
-  const action = await client.request<Action>(
-    "POST",
-    `/api/services/${encodeURIComponent(id)}/deploy`,
-  );
+  let action: Action;
+  try {
+    action = await client.request<Action>(
+      "POST",
+      `/api/services/${encodeURIComponent(id)}/deploy`,
+    );
+  } catch (error) {
+    if (
+      error instanceof ApiError &&
+      error.status === 409 &&
+      (error.problem?.detail === "approval_required" ||
+        error.detail.includes("approval_required"))
+    ) {
+      const requestId =
+        error.problem && "deployRequestId" in error.problem
+          ? String(error.problem.deployRequestId)
+          : null;
+      throw new CliError(
+        `デプロイには承認が必要です。${
+          requestId ? ` 既存の承認待ち: ${requestId}。` : ""
+        } \`sys4sys services deploy ${id} --request\` で承認要求を作成してください。`,
+        4,
+      );
+    }
+    throw error;
+  }
 
   if (!options.wait) {
     if (options.json) {
@@ -536,12 +664,13 @@ export async function deployService(
 
   const result = await waitForDeploy(client, id, action, timeoutSec);
   const exitCode = result.action.status === "succeeded" ? 0 : 5;
+  const revealed = await withServiceEnv(client, result.service, options);
 
   if (options.json) {
     printJson(
       {
         action: result.action,
-        service: redactEnvFields(result.service, options.showEnv),
+        service: redactEnvFields(revealed, options.showEnv),
       },
       options.output,
     );
@@ -550,7 +679,7 @@ export async function deployService(
 
   printAction(result.action, options);
   out(options, "\n");
-  printService(result.service, { ...options, json: false });
+  printService(revealed, { ...options, json: false });
   return exitCode;
 }
 
@@ -713,7 +842,8 @@ async function runAction(
   const timeoutSec = parseWaitTimeout(options.timeout);
   const finished = await waitForAction(client, id, action, timeoutSec);
   const updated = await fetchService(client, id);
-  return printLifecycleResult(finished, updated, options);
+  const revealed = await withServiceEnv(client, updated, options);
+  return printLifecycleResult(finished, revealed, options);
 }
 
 async function deleteService(
@@ -812,6 +942,48 @@ export function parseLimit(
     throw new UsageError(`--limit は 1〜${maximum} の整数で指定してください。`);
   }
   return parsed;
+}
+
+export function parseOffset(
+  value: string | undefined,
+  maximum = 100_000,
+): number {
+  if (value === undefined) return 0;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 0 || parsed > maximum) {
+    throw new UsageError(
+      `--offset は 0〜${maximum} の整数で指定してください。`,
+    );
+  }
+  return parsed;
+}
+
+export async function confirmNonInteractive(
+  label: string,
+  options: CommandOptions,
+  prompt?: string,
+): Promise<void> {
+  if (options.yes) return;
+  if (options.json || !process.stdin.isTTY) {
+    throw new UsageError(
+      `非対話環境で ${label} を実行するには --yes を指定してください。`,
+    );
+  }
+
+  const rl = createInterface({
+    input: process.stdin,
+    output: process.stderr,
+  });
+  try {
+    const answer = await rl.question(
+      prompt ?? `${label} を実行しますか? [y/N] `,
+    );
+    if (!/^y(es)?$/i.test(answer.trim())) {
+      throw new CliError(`${label} をキャンセルしました。`, 1);
+    }
+  } finally {
+    rl.close();
+  }
 }
 
 export async function runServiceLifecycle(

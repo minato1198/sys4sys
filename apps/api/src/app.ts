@@ -15,6 +15,7 @@ import { aiRoutes } from "./routes/ai.js";
 import { approvalRoutes } from "./routes/approvals.js";
 import { auditRoutes } from "./routes/audit.js";
 import { authRoutes } from "./routes/auth.js";
+import { deployRequestRoutes } from "./routes/deploy-requests.js";
 import { healthRoutes } from "./routes/health.js";
 import { hostRoutes } from "./routes/hosts.js";
 import { incidentRoutes } from "./routes/incidents.js";
@@ -27,6 +28,7 @@ import { tokenRoutes } from "./routes/tokens.js";
 import { userRoutes } from "./routes/users.js";
 import { reconcileDeployments } from "./services/deploy.js";
 import { closeServiceWatchers, reconcileServices } from "./services/manager.js";
+import { migratePlaintextServiceEnv } from "./services/secrets.js";
 
 export async function buildApp() {
   migrateDb();
@@ -117,6 +119,18 @@ export async function buildApp() {
       );
     }
   }
+  const envMigration = await migratePlaintextServiceEnv();
+  if (envMigration.failed > 0) {
+    app.log.warn(
+      envMigration,
+      "service env secret migration completed with failures",
+    );
+  } else if (envMigration.servicesUpdated > 0) {
+    app.log.info(
+      envMigration,
+      "service env secrets encrypted during startup migration",
+    );
+  }
   await cleanupExpiredSessions();
   await cleanupExpiredTokens();
   await reconcileServices();
@@ -190,6 +204,7 @@ export async function buildApp() {
   await app.register(hostRoutes, { prefix: "/api" });
   await app.register(userRoutes, { prefix: "/api" });
   await app.register(serviceRoutes, { prefix: "/api" });
+  await app.register(deployRequestRoutes, { prefix: "/api" });
   await app.register(logRoutes, { prefix: "/api" });
   await app.register(incidentRoutes, { prefix: "/api" });
   await app.register(approvalRoutes, { prefix: "/api" });

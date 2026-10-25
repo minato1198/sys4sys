@@ -21,6 +21,10 @@ const envSchema = z.object({
   PORT: z.coerce.number().int().min(1).max(65535).default(8787),
   DATABASE_URL: z.string().default("./data/sys4sys.db"),
   SESSION_SECRET: z.string().min(16).default(DEFAULT_SESSION_SECRET),
+  SECRET_ENCRYPTION_KEY: z.preprocess(
+    (value) => (value === "" ? undefined : value),
+    z.string().min(32).optional(),
+  ),
   SESSION_TTL_HOURS: z.coerce.number().int().min(1).max(8760).default(168),
   TOKEN_DEFAULT_TTL_DAYS: z.coerce.number().int().min(1).max(365).default(90),
   TOKEN_MAX_TTL_DAYS: z.coerce.number().int().min(1).max(365).default(365),
@@ -149,6 +153,21 @@ const envSchema = z.object({
     .max(600)
     .default(30),
 
+  DEPLOY_REQUIRE_APPROVAL_DEFAULT: z
+    .string()
+    .default("false")
+    .transform((value) => value === "true"),
+  DEPLOY_REQUEST_TTL_MINUTES: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(10080)
+    .default(1440),
+  DEPLOY_ALLOW_SELF_APPROVAL: z
+    .string()
+    .default("false")
+    .transform((value) => value === "true"),
+
   APP_BASE_URL: z.string().url().default("http://127.0.0.1:3000"),
 });
 
@@ -168,6 +187,16 @@ if (
 ) {
   console.error(
     "SESSION_SECRET must be a random value of at least 32 characters in production",
+  );
+  process.exit(1);
+}
+
+if (
+  process.env.NODE_ENV === "production" &&
+  !parsed.data.SECRET_ENCRYPTION_KEY
+) {
+  console.error(
+    "SECRET_ENCRYPTION_KEY must be set to a random value of at least 32 characters in production",
   );
   process.exit(1);
 }

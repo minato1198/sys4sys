@@ -2,7 +2,6 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { approvalDecisionSchema, approvalQuerySchema } from "@sys4sys/shared";
 import { desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
-import { writeAudit } from "../audit.js";
 import { requireAuth, requireRole } from "../auth/guard.js";
 import { db } from "../db/index.js";
 import { approvals, hosts, incidents, services } from "../db/schema.js";
@@ -33,6 +32,7 @@ function approvalResponse(
     id: row.id,
     incidentId: row.incidentId,
     requestedAction: row.requestedAction,
+    requestedBy: row.requestedBy,
     status: row.status,
     requestedAt: iso(row.requestedAt),
     decidedBy: row.decidedBy,
@@ -109,7 +109,9 @@ function handleError(reply: FastifyReply, error: unknown) {
         ? "Not Found"
         : error.statusCode === 409
           ? "Conflict"
-          : "Error";
+          : error.statusCode === 403
+            ? "Forbidden"
+            : "Error";
     return problem(reply, error.statusCode, title, error.message);
   }
   throw error;
@@ -186,18 +188,6 @@ export async function approvalRoutes(app: FastifyInstance): Promise<void> {
       if (!user) return reply.code(401).send();
       try {
         const result = await decideApproval(id, decision, user, body.note);
-        await writeAudit({
-          actorUserId: user.id,
-          actorLabel: user.email,
-          action: `approval.${decision}`,
-          target: `approval:${id}`,
-          reason: body.note ?? null,
-          after: {
-            incidentId: result.incident.id,
-            actionId: result.action?.id ?? null,
-          },
-          ip: request.ip,
-        });
         return reply
           .code(decision === "approved" ? 202 : 200)
           .send(decisionResponse(result));
@@ -209,7 +199,7 @@ export async function approvalRoutes(app: FastifyInstance): Promise<void> {
   app.post(
     "/approvals/:id/approve",
     {
-      preHandler: requireRole("operator"),
+      preHandler: requireRole("operator", "admin"),
       config: { scopes: ["approvals:decide"] },
     },
     decide("approved"),
@@ -217,7 +207,7 @@ export async function approvalRoutes(app: FastifyInstance): Promise<void> {
   app.post(
     "/approvals/:id/reject",
     {
-      preHandler: requireRole("operator"),
+      preHandler: requireRole("operator", "admin"),
       config: { scopes: ["approvals:decide"] },
     },
     decide("rejected"),

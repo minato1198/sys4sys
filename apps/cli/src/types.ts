@@ -14,6 +14,7 @@ export interface Problem {
   detail?: string;
   instance?: string;
   requiredScope?: string;
+  deployRequestId?: string;
   errors?: Array<{ path: string; message: string }>;
 }
 
@@ -31,10 +32,16 @@ export interface Host {
 export interface DeployConfig {
   command: string[];
   cwd?: string;
-  env?: Record<string, string>;
+  env?: Record<string, string> | null;
+  envKeys?: string[];
   timeoutSec: number;
   restartAfter: boolean;
   healthTimeoutSec: number;
+}
+
+export interface ServiceSecrets {
+  env: Record<string, string> | null;
+  deployEnv: Record<string, string> | null;
 }
 
 export interface Action {
@@ -75,7 +82,8 @@ export interface Service {
   name: string;
   command: string[];
   cwd: string | null;
-  env: Record<string, string> | null;
+  env?: Record<string, string> | null;
+  envKeys?: string[];
   expectedPorts: number[];
   healthCheck: unknown;
   deploy: DeployConfig | null;

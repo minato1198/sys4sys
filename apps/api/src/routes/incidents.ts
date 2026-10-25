@@ -83,6 +83,7 @@ function approvalResponse(row: ApprovalRow) {
     id: row.id,
     incidentId: row.incidentId,
     requestedAction: row.requestedAction,
+    requestedBy: row.requestedBy,
     status: row.status,
     requestedAt: iso(row.requestedAt),
     decidedBy: row.decidedBy,

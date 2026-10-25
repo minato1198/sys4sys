@@ -11,12 +11,42 @@ import {
   roleSchema,
 } from "./ports.js";
 
+/** API が通常のサービス応答で返す env / deploy.env のマスク値。 */
+export const ENV_MASK = "***";
+
+const envRecordSchema = z.record(z.string(), z.string());
+const envKeysSchema = z.array(z.string());
+
+export const serviceEnvResponseSchema = envRecordSchema.nullable();
+export type ServiceEnvResponse = z.infer<typeof serviceEnvResponseSchema>;
+
+export const serviceEnvKeysResponseSchema = envKeysSchema;
+export type ServiceEnvKeysResponse = z.infer<
+  typeof serviceEnvKeysResponseSchema
+>;
+
+export const deployEnvResponseSchema = envRecordSchema.nullable();
+export type DeployEnvResponse = z.infer<typeof deployEnvResponseSchema>;
+
+export const deployEnvKeysResponseSchema = envKeysSchema;
+export type DeployEnvKeysResponse = z.infer<typeof deployEnvKeysResponseSchema>;
+
+export const serviceSecretsResponseSchema = z.object({
+  env: envRecordSchema.nullable(),
+  deployEnv: envRecordSchema.nullable(),
+});
+export type ServiceSecretsResponse = z.infer<
+  typeof serviceSecretsResponseSchema
+>;
+
 export const problemSchema = z.object({
   type: z.string(),
   title: z.string(),
   status: z.number().int(),
   detail: z.string(),
   instance: z.string().optional(),
+  requiredScope: z.string().optional(),
+  deployRequestId: z.string().optional(),
   errors: z
     .array(z.object({ path: z.string(), message: z.string() }))
     .optional(),
@@ -131,6 +161,7 @@ export const deployConfigSchema = z.object({
   timeoutSec: z.number().int().min(10).max(3600).default(600),
   restartAfter: z.boolean().default(true),
   healthTimeoutSec: z.number().int().min(5).max(900).default(120),
+  requireApproval: z.boolean().optional(),
 });
 export type DeployConfigInput = z.infer<typeof deployConfigSchema>;
 
@@ -186,6 +217,48 @@ export const serviceActionsQuerySchema = z.object({
   cursor: z.string().min(1).optional(),
 });
 export type ServiceActionsQuery = z.infer<typeof serviceActionsQuerySchema>;
+
+export const deployRequestStatusSchema = z.enum([
+  "pending",
+  "approved",
+  "rejected",
+  "expired",
+  "executed",
+  "failed",
+]);
+export type DeployRequestStatus = z.infer<typeof deployRequestStatusSchema>;
+
+export const deployRequestSnapshotSchema = z.object({
+  command: z.array(z.string().min(1)).min(1),
+  cwd: z.string().nullable(),
+  timeoutSec: z.number().int(),
+  restartAfter: z.boolean(),
+  healthTimeoutSec: z.number().int(),
+  envHash: z.string(),
+  deployEnvHash: z.string(),
+});
+export type DeployRequestSnapshot = z.infer<typeof deployRequestSnapshotSchema>;
+
+export const deployRequestCreateSchema = z.object({
+  note: z.string().max(500).optional(),
+});
+export type DeployRequestCreateInput = z.infer<
+  typeof deployRequestCreateSchema
+>;
+
+export const deployRequestDecisionSchema = z.object({
+  note: z.string().max(500).optional(),
+});
+export type DeployRequestDecisionInput = z.infer<
+  typeof deployRequestDecisionSchema
+>;
+
+export const deployRequestQuerySchema = z.object({
+  status: deployRequestStatusSchema.default("pending"),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  offset: z.coerce.number().int().min(0).default(0),
+});
+export type DeployRequestQuery = z.infer<typeof deployRequestQuerySchema>;
 
 export const approvalDecisionSchema = z.object({
   note: z.string().max(500).optional(),
