@@ -467,22 +467,31 @@ async function signalStop(
   runtime: Runtime | undefined,
   signal: "TERM" | "KILL",
 ): Promise<void> {
-  if (pid && pid > 4) {
-    await stopProcess({
-      scope,
-      pidScope,
-      pid,
-      signal,
-      force: signal === "KILL",
-    });
+  const child = runtime?.child;
+  const isWindowsPlatform = process.platform === "win32";
+  const canUseChildHandle = Boolean(child);
+  const shouldSignalChildDirectly =
+    canUseChildHandle &&
+    (signal === "KILL" || !pid || (scope === "windows" && !isWindowsPlatform));
+
+  if (pid && pid > 4 && (scope === "wsl" || isWindowsPlatform)) {
+    try {
+      await stopProcess({
+        scope,
+        pidScope,
+        pid,
+        signal,
+        force: signal === "KILL",
+      });
+    } catch (error) {
+      // Windows で taskkill が失敗しても、直接起動した子プロセスが
+      // あれば SIGTERM / SIGKILL で停止する。WSL は wsl.exe kill が主経路。
+      if (!canUseChildHandle) throw error;
+    }
   }
 
-  if (runtime?.child) {
-    if (signal === "KILL") {
-      runtime.child.kill("SIGKILL");
-    } else if (!pid) {
-      runtime.child.kill("SIGTERM");
-    }
+  if (shouldSignalChildDirectly && child) {
+    child.kill(signal === "KILL" ? "SIGKILL" : "SIGTERM");
   }
 }
 
