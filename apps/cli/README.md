@@ -1,7 +1,34 @@
-# @sys4sys/cli
+# sys4sys
 
 sys4sys API を操作する CLI です。サービス・ログ・API トークン・デプロイを JSON で扱えます。
 CLI は SQLite を直接操作せず、必ず API 経由で実行します。
+
+## インストール
+
+Node.js 22 以上が必要です。
+
+```bash
+npm install -g sys4sys@0.2.0
+sys4sys version --json
+sys4sys doctor --json
+```
+
+`npx` で試す場合:
+
+```bash
+npx sys4sys@0.2.0 --help
+npx sys4sys@0.2.0 schema --json
+```
+
+リポジトリから実行する場合は依存関係をインストールし、CLI をビルドします。
+
+```bash
+pnpm install
+pnpm build:cli
+pnpm sys4sys -- --help
+```
+
+`npm` 配布物には `dist`、`SKILL.md`、`README.md`、`LICENSE` だけが含まれます。`.env`、DB、ログ、テスト、`credentials.json`、ソース、個人パスは含まれません。
 
 ## 前提
 
@@ -16,6 +43,27 @@ pnpm dev:api
 ```bash
 pnpm sys4sys -- --help
 ```
+
+## 導入確認
+
+```bash
+sys4sys version --json
+sys4sys doctor --json
+sys4sys doctor --strict
+```
+
+`doctor` は Node.js、API URL、API の到達性、認証、スコープ、トークン期限、資格情報ファイル、設定ディレクトリを確認します。秘密値は表示しません。API に到達できない場合も結果を返し、`--strict` では警告・エラーを exit 1 にします。
+
+シェル補完を生成できます。
+
+```bash
+sys4sys completions bash
+sys4sys completions zsh
+sys4sys completions fish
+sys4sys completions powershell
+```
+
+bash / zsh は `eval "$(sys4sys completions bash)"` のように読み込みます。PowerShell は生成されたスクリプトをプロファイルに追加してください。
 
 ## 認証
 
@@ -105,6 +153,31 @@ sys4sys tokens revoke <token-id> --yes
 - トークン認証では API のスコープが適用されます。admin ロールでも、トークンに必要なスコープを明示的に付与していないと 403 になることがあります。403 の場合は `requiredScope` と `sys4sys whoami --json` の `scopes` を確認してください。
 - `services:secrets`（復号済み env の閲覧）は admin 専用です。CLI の `--show-env` はこの権限がないと成功しません。
 
+## MCP
+
+CLI は MCP（Model Context Protocol）サーバーを内蔵しています。AI クライアントから読み取り専用で使うのが基本です。
+
+```bash
+export SYS4SYS_API_URL="https://sys4sys.example.com"
+export SYS4SYS_TOKEN="<token>"
+sys4sys mcp serve
+```
+
+- transport は stdio のみです。
+- `SYS4SYS_TOKEN` が必須です。保存済み資格情報・セッション Cookie・対話ログインは使いません。
+- stdout は MCP プロトコル専用です。診断は stderr に出力されます。
+- 読み取りツールは `whoami`、サービス一覧・詳細、ログ検索、インシデント、承認一覧、Schema です。
+- 書き込みツールは `--allow-write`（または `SYS4SYS_MCP_ALLOW_WRITE=true`）と、一致するトークンスコープが必要です。
+- 破壊的な書き込みツールは `confirm: true` が必須です。
+- deploy は承認が必要な場合に要求を作成するだけで、自動承認しません。自己承認は API が 403 で拒否します。
+- MCP 用トークンには管理者の全スコープを渡さず、読み取り専用から始めてください。
+
+```bash
+sys4sys mcp serve --allow-write
+```
+
+安全な設定とツール一覧は [docs/cli/MCP_SECURITY.md](../../docs/cli/MCP_SECURITY.md) を参照してください。
+
 ## コマンド
 
 ```bash
@@ -112,6 +185,10 @@ sys4sys whoami --json
 sys4sys auth login
 sys4sys auth logout --revoke-token
 sys4sys auth status --json
+sys4sys doctor --json
+sys4sys version --json
+sys4sys completions bash
+sys4sys mcp serve
 
 sys4sys hosts list --json
 sys4sys hosts get <host-id> --json
@@ -241,6 +318,26 @@ sys4sys logs tail --service <id> --json --no-reconnect
 - `--no-reconnect` は再接続を無効化します。401 / 403 では再接続しません。
 - `--json` の tail は NDJSON（1 行 1 JSON）です。Ctrl+C で終了します。
 - ログには秘密情報が含まれることがあります。外部へ送る前に内容を確認してください。
+- `--limit` は最大 500、既定 100 です。大量ログでは `--service` と `--since` を必ず指定してください。
+- `logs tail` の再接続は最大 10 回、バックオフは最大 30 秒です。`--no-reconnect` で無効化できます。
+
+性能目標と制限の詳細は [docs/cli/PERFORMANCE.md](../../docs/cli/PERFORMANCE.md) を参照してください。10 万行の一時 DB を使うベンチマークを手元で実行できます。
+
+```bash
+node scripts/bench-cli.mjs --help
+node scripts/bench-cli.mjs
+```
+
+主な制限:
+
+| 項目                     | 値                 |
+| ------------------------ | ------------------ |
+| `logs query --limit`     | 最大 500、既定 100 |
+| `logs tail` の再接続     | 最大 10 回         |
+| `logs tail` のバックオフ | 最大 30 秒         |
+| MCP のログ結果           | 最大 200 行        |
+| API トークンの最大期限   | 365 日             |
+| deploy 要求の期限        | 24 時間（設定可）  |
 
 ## インシデント
 
@@ -414,6 +511,10 @@ sys4sys deploy-requests reject <request-id> --note "blocked" --yes --json
 
 - 機械可読なコマンド契約: [docs/cli-schema.json](../../docs/cli-schema.json)
 - AI エージェント向け手順書: [SKILL.md](./SKILL.md)
+- 性能と制限: [docs/cli/PERFORMANCE.md](../../docs/cli/PERFORMANCE.md)
+- 運用ガイド: [docs/cli/OPERATIONS.md](../../docs/cli/OPERATIONS.md)
+- トークンローテーション: [docs/cli/TOKEN_ROTATION.md](../../docs/cli/TOKEN_ROTATION.md)
+- MCP の安全性: [docs/cli/MCP_SECURITY.md](../../docs/cli/MCP_SECURITY.md)
 
 ```bash
 pnpm schema:generate

@@ -22,8 +22,30 @@ sys4sys CLI は、sys4sys API を安全に操作するためのクライアン�
 - デプロイを実行する
 - API トークンを発行・失効する
 - CI / 自動化向けに JSON で結果を得る
+- AI クライアントから MCP 経由で読み取り・限定書き込みを行う
 
-P1 の CLI はインシデント・承認・ホスト・ポート・レポート・監査ログ・設定・デプロイ承認に対応しています。
+P1 の CLI はインシデント・承認・ホスト・ポート・レポート・監査ログ・設定・デプロイ承認に対応しています。P2 では MCP、npm 配布、`doctor`、`version`、シェル補完を追加しました。
+
+## Setup
+
+Node.js 22 以上が必要です。
+
+```bash
+npm install -g sys4sys@0.2.0
+sys4sys version --json
+sys4sys doctor --json
+```
+
+`doctor` は Node.js、API URL、API の到達性、認証、スコープ、トークン期限、資格情報ファイル、設定ディレクトリを確認します。秘密値は表示しません。`--strict` は警告・エラーで exit 1 にします。API 不到達でもクラッシュしません。
+
+シェル補完:
+
+```bash
+sys4sys completions bash
+sys4sys completions zsh
+sys4sys completions fish
+sys4sys completions powershell
+```
 
 ## Authentication
 
@@ -79,15 +101,18 @@ sys4sys whoami --json
 
 ## Command reference
 
-グローバルオプション: `--api <url>`, `--json`, `--help`。
+グローバルオプション: `--api <url>`, `--json`, `--help`, `--version`。`mcp serve` は `--transport stdio` と `--allow-write` を受け付けます。
 
-### 認証
+### 認証・導入確認
 
 ```bash
 sys4sys auth login --api <url>
 sys4sys auth logout --revoke-token
 sys4sys auth status --json
 sys4sys whoami --json
+sys4sys doctor --json
+sys4sys doctor --strict --json
+sys4sys version --json
 ```
 
 ### ホスト・サービス
@@ -147,9 +172,10 @@ sys4sys logs tail --service <id> --json
 - `--since` は `30s` / `15m` / `2h` / `1d` または ISO 8601 です。
 - `--until` は ISO 8601 のみです。
 - `logs query` の `--limit` は 1〜500、既定値 100 です。`nextCursor` を `--cursor` に渡して続きを取得します。
-- `logs tail` は SSE を受信します。切断時は指数バックオフで再接続し、最大 10 回で停止します。`--no-reconnect` で無効化できます。
+- `logs tail` は SSE を受信します。切断時は指数バックオフで再接続し、最大 10 回・バックオフ最大 30 秒で停止します。`--no-reconnect` で無効化できます。
 - `logs tail --json` は 1 行 1 JSON（NDJSON）です。Ctrl+C で終了します。
 - 401 / 403 では再接続しません。
+- 大量ログでは `--service` と `--since` を必ず指定してください。性能と制限は `docs/cli/PERFORMANCE.md` を参照します。
 
 ### トークン
 
@@ -272,6 +298,23 @@ sys4sys deploy-requests reject <request-id> --note "blocked" --yes --json
 - 承認時に deploy 設定・env スナップショットが変わっている場合、期限切れ、または二重決定は 409 です。
 - `--wait` は要求 status が `executed` / `failed` になるまで追跡します。失敗時は exit 5 です。
 
+### MCP
+
+```bash
+export SYS4SYS_API_URL="https://sys4sys.example.com"
+export SYS4SYS_TOKEN="<token>"
+sys4sys mcp serve
+sys4sys mcp serve --allow-write
+```
+
+- transport は stdio のみです。
+- `SYS4SYS_TOKEN` が必須で、保存済み資格情報・セッション Cookie・対話ログインは使いません。
+- stdout は MCP プロトコル専用です。診断は stderr に出します。
+- 既定は読み取り専用です。書き込みは `--allow-write` または `SYS4SYS_MCP_ALLOW_WRITE=true`、一致するトークンスコープ、必要な `confirm: true` が揃った場合だけ有効です。
+- deploy は承認が必要な場合に要求を作成するだけで、自動承認しません。自己承認は API が 403 で拒否します。
+- MCP 用トークンは読み取り専用から始め、`tokens:manage` / `settings:write` / `services:secrets` を付けないでください。
+- 詳細は `docs/cli/MCP_SECURITY.md` を参照します。
+
 ### Schema
 
 ```bash
@@ -283,6 +326,16 @@ sys4sys schema tokens create
 - `--json` は機械可読なコマンド契約です。AI / MCP はこちらを使います。
 - `--md`（既定）は人間向けリファレンスです。
 - リポジトリ内の生成物は `docs/cli-schema.json` です。変更後は `pnpm schema:generate` で更新してください。
+
+## Limits
+
+- `logs query --limit`: 最大 500、既定 100。
+- `logs tail`: 再接続 最大 10 回、バックオフ最大 30 秒。
+- MCP のログ結果: 最大 200 行。
+- API トークンの最大期限: 365 日。既定 90 日。
+- deploy 要求の期限: 既定 24 時間、サーバー設定で最大 7 日。
+- 同時 deploy 要求: サービスごとに 1 つ。
+- 制限値の正は `apps/cli/src/limits.ts`、詳細は `docs/cli/PERFORMANCE.md`。
 
 ## JSON output
 
@@ -376,6 +429,7 @@ sys4sys tokens create --name ci --scope services:read --scope logs:read --expire
 
 ## Troubleshooting
 
+- **まず `sys4sys doctor --json`**: Node.js、API URL、API 到達性、認証、スコープ、トークン期限、資格情報、設定ディレクトリを確認します。秘密値は表示されません。
 - **exit 3 + `requiredScope`**: トークンのスコープ不足です。`sys4sys whoami --json` / `sys4sys auth status --json` で現在のスコープを確認し、必要なら `tokens create` で部分集合のトークンを発行します。
 - **exit 4 (409)**: サービスが実行中、承認が二重決定、ポート予約競合、Windows ホスト重複、または deploy 承認が必要な状態です。対象 ID と status を確認してください。
 - **`approval_required`**: 対象サービスの `deploy.requireApproval` が `true` です。`sys4sys services deploy <service-id> --request` で承認要求を作成してください。
@@ -385,6 +439,16 @@ sys4sys tokens create --name ci --scope services:read --scope logs:read --expire
 - **401**: トークンの失効・期限切れ、または API URL の誤りです。`auth status --json` を確認してください。トークン経路では自動再ログインしません。
 - **tail が接続を繰り返す**: ネットワークまたは API の状態を確認してください。10 回で停止します。`--no-reconnect` で単発実行できます。
 - **資格情報ファイルが壊れている**: CLI は自動削除しません。`sys4sys auth login` で上書きするか、手動で確認してください。
+- **MCP の書き込みツールが出ない**: `--allow-write` とトークンスコープを確認してください。`sys4sys_whoami` でスコープを確認できます。
+- **MCP の stdout が壊れる**: ラッパーやプロセス内で stdout にログを書いていませんか。診断は stderr に出してください。
+
+## References
+
+- `docs/cli/PERFORMANCE.md`: 性能目標・制限・ベンチマーク
+- `docs/cli/OPERATIONS.md`: 導入・CI・障害時の切り分け・アップグレード
+- `docs/cli/TOKEN_ROTATION.md`: トークン発行・配布・失効・漏洩対応
+- `docs/cli/MCP_SECURITY.md`: MCP の安全な設定とツール一覧
+- `docs/cli-schema.json`: 機械可読なコマンド契約
 
 ## Do not
 

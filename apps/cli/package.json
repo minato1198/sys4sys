@@ -1,23 +1,55 @@
 {
-  "name": "@sys4sys/cli",
-  "version": "0.1.0",
-  "private": true,
+  "name": "sys4sys",
+  "version": "0.2.0",
+  "private": false,
   "type": "module",
-  "main": "./src/index.ts",
+  "description": "AI-operable operations CLI for sys4sys",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sys4sys/sys4sys.git",
+    "directory": "apps/cli"
+  },
+  "homepage": "https://github.com/sys4sys/sys4sys#readme",
+  "bugs": {
+    "url": "https://github.com/sys4sys/sys4sys/issues"
+  },
+  "bin": {
+    "sys4sys": "./dist/bin.js"
+  },
+  "main": "./dist/index.js",
+  "exports": {
+    ".": "./dist/index.js",
+    "./schema": "./dist/schema.js"
+  },
+  "files": [
+    "dist",
+    "SKILL.md",
+    "README.md",
+    "LICENSE"
+  ],
   "engines": {
     "node": ">=22"
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
-    "dev": "tsx src/index.ts",
+    "dev": "tsx src/bin.ts",
+    "build": "tsup",
+    "prepack": "pnpm build",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test src/args.test.ts src/output.test.ts src/client.test.ts src/index.test.ts src/time.test.ts src/auth/store.test.ts src/commands/registry.test.ts src/commands/services.test.ts src/commands/tokens.test.ts src/commands/auth.test.ts src/commands/logs.test.ts src/commands/logs-tail.test.ts src/commands/schema.test.ts src/commands/incidents.test.ts src/commands/approvals.test.ts src/commands/hosts.test.ts src/commands/ports.test.ts src/commands/ports-kill.test.ts src/commands/reports.test.ts src/commands/audit.test.ts src/commands/settings.test.ts src/commands/deploy-requests.test.ts src/skill.test.ts"
+    "test": "node --import tsx --test src/args.test.ts src/output.test.ts src/client.test.ts src/index.test.ts src/time.test.ts src/version.test.ts src/limits.test.ts src/auth/store.test.ts src/commands/registry.test.ts src/commands/services.test.ts src/commands/tokens.test.ts src/commands/auth.test.ts src/commands/logs.test.ts src/commands/logs-tail.test.ts src/commands/schema.test.ts src/commands/incidents.test.ts src/commands/approvals.test.ts src/commands/hosts.test.ts src/commands/ports.test.ts src/commands/ports-kill.test.ts src/commands/reports.test.ts src/commands/audit.test.ts src/commands/settings.test.ts src/commands/deploy-requests.test.ts src/commands/doctor.test.ts src/commands/completions.test.ts src/mcp/server.test.ts src/mcp/write.test.ts src/skill.test.ts",
+    "test:e2e": "node --import tsx --test --test-concurrency=1 test/e2e/auth.e2e.test.ts test/e2e/services.e2e.test.ts test/e2e/logs.e2e.test.ts test/e2e/deploy-approval.e2e.test.ts"
   },
   "dependencies": {
-    "@sys4sys/shared": "workspace:*",
+    "@modelcontextprotocol/sdk": "1.32.2",
     "zod": "^4.1.12"
   },
   "devDependencies": {
+    "@sys4sys/shared": "workspace:*",
     "@types/node": "^24.10.1",
+    "tsup": "9.0.0",
     "tsx": "^4.20.6",
     "typescript": "^5.9.3"
   }

@@ -38,13 +38,48 @@ jobs:
           git diff --exit-code -- docs/cli-schema.json
 
       - name: CLI tests
-        run: pnpm --filter @sys4sys/cli test
+        run: pnpm --filter sys4sys test
 
       - name: Test
         run: pnpm test
+
+      - name: Build CLI
+        run: pnpm --filter sys4sys build
+
+      - name: Verify CLI package
+        run: node scripts/verify-cli-package.mjs
 
       - name: Build web
         run: pnpm --filter @sys4sys/web build
 
       - name: Audit production dependencies
         run: pnpm audit --prod
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.14.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: CLI live E2E
+        run: pnpm --filter sys4sys test:e2e
+
+      - name: Upload E2E artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cli-e2e-artifacts
+          path: apps/cli/test/e2e/.artifacts
+          if-no-files-found: ignore
+          retention-days: 7

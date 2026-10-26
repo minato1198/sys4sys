@@ -37,6 +37,7 @@ export interface DeployConfig {
   timeoutSec: number;
   restartAfter: boolean;
   healthTimeoutSec: number;
+  requireApproval?: boolean;
 }
 
 export interface ServiceSecrets {

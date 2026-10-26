@@ -37,4 +37,7 @@ Thumbs.db
 # sys4sys CLI credentials (tokens / session cookies)
 credentials.json
 
+# Live CLI E2E failure artifacts
+apps/cli/test/e2e/.artifacts/
+
 spike/forwarding-test.json

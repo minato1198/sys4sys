@@ -5,6 +5,10 @@ export interface CliValues {
   api?: string;
   json?: boolean;
   help?: boolean;
+  version?: boolean;
+  "allow-write"?: boolean;
+  transport?: string;
+  strict?: boolean;
   file?: string;
   host?: string;
   status?: string;
@@ -65,6 +69,10 @@ const options = {
   api: { type: "string" },
   json: { type: "boolean", short: "j" },
   help: { type: "boolean", short: "h" },
+  version: { type: "boolean", short: "V" },
+  "allow-write": { type: "boolean" },
+  transport: { type: "string" },
+  strict: { type: "boolean" },
   file: { type: "string", short: "f" },
   host: { type: "string" },
   status: { type: "string" },

@@ -1,0 +1,65 @@
+name: CLI Matrix
+
+on:
+  push:
+    branches: [main]
+    tags:
+      - "v*"
+  pull_request:
+    paths:
+      - "apps/cli/**"
+      - "packages/shared/**"
+      - "scripts/verify-cli-package.mjs"
+      - ".github/workflows/cli-matrix.yml"
+  schedule:
+    - cron: "17 3 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  install:
+    name: CLI install (${{ matrix.os }}, Node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node: [22]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.14.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: CLI tests
+        run: pnpm --filter sys4sys test
+
+      - name: Build CLI
+        run: pnpm --filter sys4sys build
+
+      - name: Verify package and installed binary
+        run: node scripts/verify-cli-package.mjs
+
+      - name: Upload verification log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cli-matrix-${{ matrix.os }}-node${{ matrix.node }}
+          path: |
+            apps/cli/dist
+            docs/cli-schema.json
+          if-no-files-found: ignore
+          retention-days: 7

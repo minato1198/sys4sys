@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { UsageError } from "../errors.js";
+import { CLI_VERSION } from "../version.js";
 import { COMMANDS } from "./registry.js";
 import {
   formatSchemaJson,
@@ -13,7 +14,7 @@ import {
 test("generates a schema for every registered command", () => {
   const schema = generateSchema();
   assert.equal(schema.schemaVersion, "1");
-  assert.equal(schema.cliVersion, "0.1.0");
+  assert.equal(schema.cliVersion, CLI_VERSION);
   assert.equal(schema.commands.length, COMMANDS.length);
   assert.deepEqual(
     schema.commands.map((command) => command.name),

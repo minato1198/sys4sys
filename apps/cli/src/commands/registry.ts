@@ -57,6 +57,12 @@ export const GLOBAL_OPTIONS: CommandOption[] = [
     short: "h",
     description: "ヘルプを表示",
   },
+  {
+    name: "version",
+    type: "boolean",
+    short: "V",
+    description: "バージョンを表示",
+  },
 ];
 
 export function allOptionsFor(command: CommandDefinition): CommandOption[] {

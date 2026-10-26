@@ -1,4 +1,3 @@
-import { pathToFileURL } from "node:url";
 import { ZodError } from "zod";
 import { parseCliArgs } from "./args.js";
 import { createCredentialStore, resolveCredentials } from "./auth/store.js";
@@ -23,6 +22,7 @@ import {
 import { CliError, UsageError } from "./errors.js";
 import { printHelp } from "./help.js";
 import { printError, printJson, writeOut, type CliOutput } from "./output.js";
+import { CLI_VERSION, versionInfo } from "./version.js";
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -124,6 +124,11 @@ export async function main(
 ): Promise<number> {
   const parsed = parseCliArgs(argv);
 
+  if (parsed.values.version) {
+    await writeOut(cliOutput, `${CLI_VERSION}\n`);
+    return 0;
+  }
+
   if (
     parsed.values.help ||
     parsed.positionals.length === 0 ||
@@ -197,6 +202,61 @@ export async function main(
     incident: parsed.values.incident,
     output: cliOutput,
   };
+
+  if (group === "version") {
+    expectNoExtraPositionals(
+      [sub, ...rest].filter(Boolean) as string[],
+      "version",
+    );
+    if (options.json) {
+      printJson(versionInfo(), options.output);
+    } else {
+      await writeOut(options.output, `${CLI_VERSION}\n`);
+    }
+    return 0;
+  }
+
+  if (group === "doctor") {
+    expectNoExtraPositionals(
+      [sub, ...rest].filter(Boolean) as string[],
+      "doctor",
+    );
+    const { runDoctor } = await import("./commands/doctor.js");
+    return await runDoctor({
+      json: options.json,
+      strict: Boolean(parsed.values.strict),
+      output: options.output,
+      env: process.env,
+      apiUrl: parsed.values.api ?? process.env.SYS4SYS_API_URL,
+    });
+  }
+
+  if (group === "completions") {
+    const shell = sub?.trim();
+    if (!shell) {
+      throw new UsageError(
+        "completions には bash / zsh / fish / powershell のいずれかを指定してください。",
+      );
+    }
+    expectNoExtraPositionals(rest, "completions");
+    const { completionScript } = await import("./commands/completions.js");
+    await writeOut(options.output, completionScript(shell));
+    return 0;
+  }
+
+  if (group === "mcp") {
+    if (sub !== "serve") {
+      throw new UsageError("mcp のサブコマンドは serve のみです。");
+    }
+    expectNoExtraPositionals(rest, "mcp serve");
+    const { runMcpCommand } = await import("./commands/mcp.js");
+    return await runMcpCommand({
+      transport: parsed.values.transport,
+      allowWrite: Boolean(parsed.values["allow-write"]),
+      apiUrl: parsed.values.api ?? process.env.SYS4SYS_API_URL,
+      env: process.env,
+    });
+  }
 
   if (group === "schema") {
     const { printSchema } = await import("./commands/schema.js");
@@ -654,11 +714,4 @@ export async function run(argv: string[], output?: CliOutput): Promise<number> {
   }
 }
 
-const entrypoint = process.argv[1]
-  ? pathToFileURL(process.argv[1]).href
-  : undefined;
-
-if (entrypoint && entrypoint === import.meta.url) {
-  const code = await run(process.argv.slice(2));
-  if (code !== 0) process.exitCode = code;
-}
+export { CLI_VERSION } from "./version.js";

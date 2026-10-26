@@ -6,10 +6,11 @@ import {
   type CommandOption,
 } from "./registry.js";
 import { UsageError } from "../errors.js";
+import { CLI_VERSION } from "../version.js";
 import type { CommandOptions } from "./services.js";
 
 export const CLI_SCHEMA_VERSION = "1";
-export const CLI_VERSION = "0.1.0";
+export { CLI_VERSION };
 
 export interface JsonSchemaProperty {
   type: string;

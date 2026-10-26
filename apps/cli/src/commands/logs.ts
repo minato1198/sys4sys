@@ -9,6 +9,7 @@ import { ZodError } from "zod";
 import { ApiError, type ApiClient } from "../client.js";
 import { CliError, UsageError } from "../errors.js";
 import { printJson, writeErr, writeOut } from "../output.js";
+import { CLI_LIMITS } from "../limits.js";
 import { parseSince, parseUntil } from "../time.js";
 import type { LogEvent } from "../types.js";
 import { parseLimit, type CommandOptions } from "./services.js";
@@ -19,7 +20,7 @@ export interface LogPage {
 }
 
 const TRUNCATE_LENGTH = 200;
-const MAX_RECONNECT_ATTEMPTS = 10;
+const MAX_RECONNECT_ATTEMPTS = CLI_LIMITS.logTailMaxReconnectAttempts;
 
 function zodToUsage(error: unknown): UsageError {
   if (error instanceof ZodError) {
@@ -48,7 +49,11 @@ export function buildLogQuery(
       q: options.grep,
       from: parseSince(options.since, now),
       to: parseUntil(options.until),
-      limit: parseLimit(options.limit, 100, 500),
+      limit: parseLimit(
+        options.limit,
+        CLI_LIMITS.logQueryDefaultLimit,
+        CLI_LIMITS.logQueryMaxLimit,
+      ),
       cursor: options.cursor,
     });
   } catch (error) {
@@ -265,7 +270,9 @@ export async function tailLogs(
           `接続が切れました。${Math.round(backoffMs / 1000)} 秒後に再接続します...\n`,
         );
         await wait(backoffMs, controller.signal);
-        backoffMs = configuredBackoffMs ?? Math.min(backoffMs * 2, 30_000);
+        backoffMs =
+          configuredBackoffMs ??
+          Math.min(backoffMs * 2, CLI_LIMITS.logTailMaxBackoffMs);
         continue;
       }
 
@@ -283,7 +290,9 @@ export async function tailLogs(
         `ストリームが終了しました。${Math.round(backoffMs / 1000)} 秒後に再接続します...\n`,
       );
       await wait(backoffMs, controller.signal);
-      backoffMs = configuredBackoffMs ?? Math.min(backoffMs * 2, 30_000);
+      backoffMs =
+        configuredBackoffMs ??
+        Math.min(backoffMs * 2, CLI_LIMITS.logTailMaxBackoffMs);
     }
     return 0;
   } finally {
