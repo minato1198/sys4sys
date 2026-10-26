@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1",
-  "cliVersion": "0.2.1",
+  "cliVersion": "0.2.2",
   "auth": {
     "methods": [
       "token",
