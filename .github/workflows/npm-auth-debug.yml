@@ -1,0 +1,33 @@
+name: npm Auth Debug
+
+on:
+  push:
+    tags:
+      - "debug/*"
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: npm whoami
+        run: npm whoami
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: npm publish dry-run with token
+        working-directory: apps/cli
+        run: npm publish --dry-run --access public --ignore-scripts --loglevel verbose
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
