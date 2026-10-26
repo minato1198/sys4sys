@@ -797,7 +797,7 @@ P2-03 と P2-04 は P0/P1 完了後なら P2-01 と並列可。P2-05 は P2-03 �
 - [x] P2-01 MCP 読み取り
 - [x] P2-02 MCP 書き込み
 - [x] P2-03 npm 配布準備（ビルド / pack / 3 OS tarball install / Release Dry Run CI 検証済み）
-- [ ] 公開済み `sys4sys` package が npm registry と 3 OS `npx` で確認できる
+- [x] 公開済み `sys4sys` package が npm registry と 3 OS `npx` で確認できる
 - [x] P2-04 クロスプラットフォーム CI
 - [x] P2-05 ライブ E2E
 - [x] P2-06 doctor/version/補完

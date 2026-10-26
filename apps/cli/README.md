@@ -13,13 +13,13 @@ sys4sys version --json
 sys4sys doctor --json
 ```
 
-`npm install -g sys4sys@0.2.0` が成立するのは、tag `v0.2.0` で `Release CLI` workflow が publish 成功した後です。publish 前は `pnpm --filter sys4sys build` と `npm pack ./apps/cli` で配布物を確認できます。
+`npm install -g sys4sys@0.2.0` は tag `v0.2.0` の `Release CLI` workflow によって公開済みです。次のバージョン以降は、tag `v*` で `Release CLI` workflow が publish 成功した後に成立します。
 
 `npx` で試す場合:
 
 ```bash
-npx sys4sys@0.2.0 --help
-npx sys4sys@0.2.0 schema --json
+npx -y sys4sys@0.2.0 --help
+npx -y sys4sys@0.2.0 schema --json
 ```
 
 リポジトリから実行する場合は依存関係をインストールし、CLI をビルドします。
