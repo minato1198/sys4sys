@@ -4,7 +4,7 @@
 - 前提: P0 / P1 完了
 - 対象: MCP、npm 配布、クロスプラットフォーム CI、ライブ E2E、doctor/completions、性能・運用ドキュメント
 - 完了条件: 親計画の **P2 Gate** を満たす。
-- ステータス: 実装完了（ローカル検証済み / CI検証完了 / Release Dry Run検証完了 / 本番 npm publish は tag `v*` と publish 認可待ち）
+- ステータス: 実装完了（ローカル検証済み / CI検証完了 / Release Dry Run検証完了 / `sys4sys@0.2.0` npm publish 完了）
 
 ---
 
@@ -389,7 +389,7 @@ node apps/cli/dist/bin.js --help
 - [x] `bin` が動く。
 - [x] 配布物に禁止ファイルがない。
 - [x] リリース workflow がタグで動く（dry-run 可）。
-- [ ] 本番 npm publish が tag `v*` で成功し、公開済み package として確認できる。
+- [x] 本番 npm publish が tag `v*` で成功し、公開済み package として確認できる。
 
 ---
 

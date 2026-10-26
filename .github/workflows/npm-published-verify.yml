@@ -1,0 +1,34 @@
+name: npm Published Verify
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Verify published sys4sys version
+        run: npx -y sys4sys@0.2.0 version --json
+
+      - name: Verify published sys4sys schema
+        run: npx -y sys4sys@0.2.0 schema --json
+
+      - name: Verify published sys4sys doctor
+        run: npx -y sys4sys@0.2.0 doctor --json
