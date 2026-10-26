@@ -31,7 +31,7 @@ P1 の CLI はインシデント・承認・ホスト・ポート・レポート
 Node.js 22 以上が必要です。
 
 ```bash
-npm install -g sys4sys@0.2.0
+npm install -g sys4sys@0.2.2
 sys4sys version --json
 sys4sys doctor --json
 ```

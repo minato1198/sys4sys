@@ -9,7 +9,7 @@
 Node.js 22 以上が必要です。
 
 ```bash
-npm install -g sys4sys@0.2.0
+npm install -g sys4sys@0.2.2
 sys4sys version --json
 sys4sys doctor --json
 ```
@@ -17,8 +17,8 @@ sys4sys doctor --json
 `npx` で試す場合は、グローバル環境を変更せずに実行できます。
 
 ```bash
-npx sys4sys@0.2.0 doctor --json
-npx sys4sys@0.2.0 schema --json
+npx sys4sys@0.2.2 doctor --json
+npx sys4sys@0.2.2 schema --json
 ```
 
 リポジトリから開発版を使う場合:

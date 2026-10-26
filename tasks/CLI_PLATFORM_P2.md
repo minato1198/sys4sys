@@ -4,7 +4,7 @@
 - 前提: P0 / P1 完了
 - 対象: MCP、npm 配布、クロスプラットフォーム CI、ライブ E2E、doctor/completions、性能・運用ドキュメント
 - 完了条件: 親計画の **P2 Gate** を満たす。
-- ステータス: 実装完了（ローカル検証済み / CI検証完了 / Release Dry Run検証完了 / `sys4sys@0.2.0` npm publish 完了）
+- ステータス: 実装完了（ローカル検証済み / CI検証完了 / Release Dry Run検証完了 / `sys4sys@0.2.0` publish 完了 / `sys4sys@0.2.2` Trusted Publishing publish 完了）
 
 ---
 
@@ -292,7 +292,7 @@ SYS4SYS_TOKEN=<operator-token> pnpm sys4sys -- mcp serve --allow-write
 ```json
 {
   "name": "sys4sys",
-  "version": "0.2.0",
+  "version": "0.2.2",
   "private": false,
   "type": "module",
   "bin": { "sys4sys": "dist/bin.js" },
@@ -333,17 +333,17 @@ SYS4SYS_TOKEN=<operator-token> pnpm sys4sys -- mcp serve --allow-write
 `.github/workflows/release.yml`:
 
 - トリガー: `v*` タグ。
-- 権限: `contents: write`, `id-token: write`（provenance）。
+- 権限: `contents: write`, `id-token: write`（GitHub OIDC / provenance）。
 - 手順:
   1. checkout
-  2. pnpm / Node 22
+  2. pnpm / Node 24
   3. `pnpm install --frozen-lockfile`
   4. `pnpm typecheck && pnpm test`
   5. `pnpm --filter sys4sys build`
   6. `npm pack` で内容確認
-  7. `npm publish --provenance --access public`
+  7. `npm publish --access public`（Trusted Publishing 経由。provenance は自動）
   8. GitHub Release 作成
-- `NPM_TOKEN` は GitHub Secrets。リポジトリにコミットしない。
+- 通常 release では `NPM_TOKEN` を使わない。初期 `0.2.0` publish のためだけに使った bypass-2FA token は revoke する。
 - バージョンは `package.json` を手動で更新、または Changesets を導入する。P2-03 では手動 + タグで開始し、Changesets は任意。
 
 `Release CLI Dry Run`:
@@ -389,7 +389,7 @@ node apps/cli/dist/bin.js --help
 - [x] `bin` が動く。
 - [x] 配布物に禁止ファイルがない。
 - [x] リリース workflow がタグで動く（dry-run 可）。
-- [x] 本番 npm publish が tag `v*` で成功し、公開済み package として確認できる。
+- [x] 本番 npm publish が tag `v*` で成功し、公開済み package として確認できる。（`v0.2.0` token publish / `v0.2.2` Trusted Publishing publish）
 
 ---
 
@@ -796,7 +796,7 @@ P2-03 と P2-04 は P0/P1 完了後なら P2-01 と並列可。P2-05 は P2-03 �
 
 - [x] P2-01 MCP 読み取り
 - [x] P2-02 MCP 書き込み
-- [x] P2-03 npm 配布準備（ビルド / pack / 3 OS tarball install / Release Dry Run CI 検証済み）
+- [x] P2-03 npm 配布準備（ビルド / pack / 3 OS tarball install / Release Dry Run CI 検証済み / `0.2.0`・`0.2.2` publish 検証済み）
 - [x] 公開済み `sys4sys` package が npm registry と 3 OS `npx` で確認できる
 - [x] P2-04 クロスプラットフォーム CI
 - [x] P2-05 ライブ E2E
