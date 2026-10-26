@@ -295,7 +295,7 @@ SYS4SYS_TOKEN=<operator-token> pnpm sys4sys -- mcp serve --allow-write
   "version": "0.2.0",
   "private": false,
   "type": "module",
-  "bin": { "sys4sys": "./dist/bin.js" },
+  "bin": { "sys4sys": "dist/bin.js" },
   "main": "./dist/index.js",
   "exports": {
     ".": "./dist/index.js",

@@ -7,15 +7,15 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/sys4sys/sys4sys.git",
+    "url": "git+https://github.com/minato1198/sys4sys.git",
     "directory": "apps/cli"
   },
-  "homepage": "https://github.com/sys4sys/sys4sys#readme",
+  "homepage": "https://github.com/minato1198/sys4sys#readme",
   "bugs": {
-    "url": "https://github.com/sys4sys/sys4sys/issues"
+    "url": "https://github.com/minato1198/sys4sys/issues"
   },
   "bin": {
-    "sys4sys": "./dist/bin.js"
+    "sys4sys": "dist/bin.js"
   },
   "main": "./dist/index.js",
   "exports": {

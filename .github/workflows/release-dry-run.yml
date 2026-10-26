@@ -1,0 +1,53 @@
+name: Release CLI Dry Run
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  dry-run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.14.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Format
+        run: pnpm format:check
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+      - name: CLI schema is up to date
+        run: |
+          pnpm schema:generate
+          git diff --exit-code -- docs/cli-schema.json
+
+      - name: Build CLI
+        run: pnpm --filter sys4sys build
+
+      - name: Verify package contents and installed binary
+        run: node scripts/verify-cli-package.mjs
+
+      - name: npm publish dry-run
+        working-directory: apps/cli
+        run: npm publish --dry-run --access public --ignore-scripts

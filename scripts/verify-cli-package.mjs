@@ -63,8 +63,8 @@ async function assertPackageMetadata() {
   const errors = [];
   if (pkg.name !== "sys4sys") errors.push("package name must be sys4sys");
   if (pkg.private !== false) errors.push("package must not be private");
-  if (pkg.bin?.sys4sys !== "./dist/bin.js") {
-    errors.push("bin.sys4sys must point to ./dist/bin.js");
+  if (pkg.bin?.sys4sys !== "dist/bin.js") {
+    errors.push("bin.sys4sys must point to dist/bin.js");
   }
   if (pkg.main !== "./dist/index.js") {
     errors.push("main must be ./dist/index.js");
