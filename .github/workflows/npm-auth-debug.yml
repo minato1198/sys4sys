@@ -31,3 +31,9 @@ jobs:
         run: npm publish --dry-run --access public --ignore-scripts --loglevel verbose
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: npm publish dry-run with provenance
+        working-directory: apps/cli
+        run: npm publish --dry-run --access public --ignore-scripts --provenance --loglevel verbose
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
