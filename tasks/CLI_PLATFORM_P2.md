@@ -4,7 +4,7 @@
 - 前提: P0 / P1 完了
 - 対象: MCP、npm 配布、クロスプラットフォーム CI、ライブ E2E、doctor/completions、性能・運用ドキュメント
 - 完了条件: 親計画の **P2 Gate** を満たす。
-- ステータス: 実装完了（ローカル検証済み / CI検証完了 / リリース workflow 実行待ち）
+- ステータス: 実装完了（ローカル検証済み / CI検証完了 / Release Dry Run検証完了 / 本番 npm publish は tag `v*` と publish 認可待ち）
 
 ---
 
@@ -154,7 +154,7 @@ sys4sys mcp serve [--transport stdio] [--allow-write]
 ### 検証
 
 ```bash
-pnpm --filter @sys4sys/cli test
+pnpm --filter sys4sys test
 SYS4SYS_TOKEN=<token> pnpm sys4sys -- mcp serve
 ```
 
@@ -252,7 +252,7 @@ MCP には対話プロンプトがないため、破壊的ツールは入力に 
 ### 検証
 
 ```bash
-pnpm --filter @sys4sys/cli test
+pnpm --filter sys4sys test
 SYS4SYS_TOKEN=<operator-token> pnpm sys4sys -- mcp serve --allow-write
 ```
 
@@ -283,9 +283,9 @@ SYS4SYS_TOKEN=<operator-token> pnpm sys4sys -- mcp serve --allow-write
 
 ### パッケージ名
 
-- 第一候補: `sys4sys`（npm で利用可能か確認）
+- 第一候補: `sys4sys`（npm registry で 404 / 検索 0 件を確認済み）
 - 利用不可なら `@sys4sys/cli`
-- 決定は P2-03 の最初に済ませ、README / release workflow に反映する。
+- 決定: `sys4sys` を採用済み。README / release workflow / package verification に反映済み。
 
 ### package.json の目標
 
@@ -339,17 +339,24 @@ SYS4SYS_TOKEN=<operator-token> pnpm sys4sys -- mcp serve --allow-write
   2. pnpm / Node 22
   3. `pnpm install --frozen-lockfile`
   4. `pnpm typecheck && pnpm test`
-  5. `pnpm --filter @sys4sys/cli build`
+  5. `pnpm --filter sys4sys build`
   6. `npm pack` で内容確認
   7. `npm publish --provenance --access public`
   8. GitHub Release 作成
 - `NPM_TOKEN` は GitHub Secrets。リポジトリにコミットしない。
 - バージョンは `package.json` を手動で更新、または Changesets を導入する。P2-03 では手動 + タグで開始し、Changesets は任意。
 
+`Release CLI Dry Run`:
+
+- トリガー: `workflow_dispatch` と `dry-run/*` tag。
+- 手順: format / typecheck / test / schema drift / build / package verify / `npm publish --dry-run`。
+- `npm publish` 自体は実行しない。
+- 検証済み: tag `dry-run/v0.2.0` で `Release CLI Dry Run` が成功した。
+
 ### インストール検証
 
 ```bash
-pnpm --filter @sys4sys/cli build
+pnpm --filter sys4sys build
 npm pack ./apps/cli
 npm install --global ./sys4sys-*.tgz
 sys4sys --version
@@ -371,7 +378,7 @@ sys4sys schema --json > /dev/null
 ### 検証
 
 ```bash
-pnpm --filter @sys4sys/cli build
+pnpm --filter sys4sys build
 npm pack --dry-run ./apps/cli
 node apps/cli/dist/bin.js --help
 ```
@@ -381,7 +388,8 @@ node apps/cli/dist/bin.js --help
 - [x] npm パッケージとしてビルド・pack できる。
 - [x] `bin` が動く。
 - [x] 配布物に禁止ファイルがない。
-- [ ] リリース workflow がタグで動く（dry-run 可）。
+- [x] リリース workflow がタグで動く（dry-run 可）。
+- [ ] 本番 npm publish が tag `v*` で成功し、公開済み package として確認できる。
 
 ---
 
@@ -414,7 +422,7 @@ strategy:
 3. `pnpm install --frozen-lockfile`
 4. `pnpm typecheck`
 5. `pnpm test`
-6. `pnpm --filter @sys4sys/cli build`
+6. `pnpm --filter sys4sys build`
 7. `npm pack ./apps/cli`
 8. 一時ディレクトリに `npm install --prefix <tmp> ./sys4sys-*.tgz`
 9. `<tmp>/node_modules/.bin/sys4sys --version`（Windows は `.bin/sys4sys.cmd`。クロスプラットフォームには `npx --prefix <tmp> sys4sys --version` または `node <tmp>/node_modules/sys4sys/dist/bin.js` を使う）
@@ -451,7 +459,7 @@ strategy:
 ### 検証
 
 ```bash
-pnpm --filter @sys4sys/cli build
+pnpm --filter sys4sys build
 node scripts/verify-cli-package.mjs
 ```
 
@@ -535,7 +543,7 @@ node scripts/verify-cli-package.mjs
 ### CI
 
 - `e2e` ジョブは Linux で実行（Windows は任意）。
-- `pnpm --filter @sys4sys/cli test:e2e`。
+- `pnpm --filter sys4sys test:e2e`。
 - 失敗時に `apps/cli/test/e2e/.artifacts/` を upload（トークンはマスク）。
 
 ### テスト
@@ -547,7 +555,7 @@ node scripts/verify-cli-package.mjs
 ### 検証
 
 ```bash
-pnpm --filter @sys4sys/cli test:e2e
+pnpm --filter sys4sys test:e2e
 ```
 
 ### 完了条件
@@ -644,7 +652,7 @@ sys4sys completions powershell
 ### 検証
 
 ```bash
-pnpm --filter @sys4sys/cli test
+pnpm --filter sys4sys test
 pnpm sys4sys -- doctor --json
 pnpm sys4sys -- completions bash | bash -n
 ```
@@ -724,7 +732,7 @@ pnpm sys4sys -- completions bash | bash -n
 ### 検証
 
 ```bash
-pnpm --filter @sys4sys/cli test
+pnpm --filter sys4sys test
 node scripts/bench-cli.mjs --help
 ```
 
@@ -788,7 +796,8 @@ P2-03 と P2-04 は P0/P1 完了後なら P2-01 と並列可。P2-05 は P2-03 �
 
 - [x] P2-01 MCP 読み取り
 - [x] P2-02 MCP 書き込み
-- [ ] P2-03 npm 配布
+- [x] P2-03 npm 配布準備（ビルド / pack / 3 OS tarball install / Release Dry Run CI 検証済み）
+- [ ] 公開済み `sys4sys` package が npm registry と 3 OS `npx` で確認できる
 - [x] P2-04 クロスプラットフォーム CI
 - [x] P2-05 ライブ E2E
 - [x] P2-06 doctor/version/補完
