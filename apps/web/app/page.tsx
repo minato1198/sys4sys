@@ -9,6 +9,7 @@ import {
 } from "react";
 import Link from "next/link";
 import { AppShell } from "./components/AppShell";
+import { StatusRail } from "./components/StatusRail";
 import { ConfirmDialog } from "./components/ui/ConfirmDialog";
 import { EmptyState } from "./components/ui/EmptyState";
 import { StatusBanner } from "./components/ui/StatusBanner";
@@ -137,36 +138,6 @@ function formatDate(value: string | null | undefined): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "—";
   return date.toLocaleString("ja-JP", { hour12: false });
-}
-
-function StatCard({
-  label,
-  value,
-  hint,
-  tone = "default",
-}: {
-  label: string;
-  value: string | number;
-  hint: string;
-  tone?: "default" | "good" | "warn" | "danger";
-}) {
-  const valueTone =
-    tone === "good"
-      ? "text-signal-400"
-      : tone === "warn"
-        ? "text-warn-400"
-        : tone === "danger"
-          ? "text-danger-400"
-          : "text-white";
-  return (
-    <div className="rounded-xl border border-ink-700/70 bg-ink-900/60 p-4 shadow-[inset_0_1px_0_var(--theme-card-highlight)]">
-      <div className="text-xs font-medium text-mist-400">{label}</div>
-      <div className={`mt-2 font-mono text-2xl tabular-nums ${valueTone}`}>
-        {value}
-      </div>
-      <div className="mt-1 text-xs text-mist-400">{hint}</div>
-    </div>
-  );
 }
 
 function ScopeBadge({ item }: { item: PortItem }) {
@@ -602,8 +573,6 @@ export default function DashboardPage() {
     });
   }, [data, filter]);
 
-  const wslCount =
-    data?.items.filter((item) => item.scope === "wsl").length ?? 0;
   const relayCount =
     data?.items.filter((item) => item.likelyWslForward).length ?? 0;
   const reservationCount = data?.reservations.length ?? 0;
@@ -622,30 +591,28 @@ export default function DashboardPage() {
     ? (confirmKill.owner.process ?? confirmKill.endpoint.process ?? "unknown")
     : "";
 
+  function focusReservationForm() {
+    document
+      .getElementById("reservation-form")
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    document.getElementById("reservation-port")?.focus();
+  }
+
   return (
     <AppShell
       title="Ports"
       description="Windows / WSL の待受ポートと予約"
       user={user}
       actions={
-        <>
-          <span className="flex items-center gap-2 rounded-md border border-border bg-surface px-3 py-2 text-sm text-fg-muted">
-            <span
-              aria-hidden="true"
-              className={`size-2 rounded-full ${error ? "bg-danger" : "bg-accent"}`}
-            />
-            {error ? "API 接続エラー" : `最終スキャン ${scannedAt}`}
-          </span>
-          <button
-            type="button"
-            onClick={() => void load(true)}
-            disabled={refreshing}
-            aria-busy={refreshing}
-            className="min-h-11 rounded-md border border-border bg-surface px-3 text-sm font-medium text-fg transition hover:bg-surface-muted disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {refreshing ? "スキャン中…" : "再スキャン"}
-          </button>
-        </>
+        <button
+          type="button"
+          onClick={() => void load(true)}
+          disabled={refreshing}
+          aria-busy={refreshing}
+          className="min-h-11 rounded-md border border-border bg-surface px-3 text-sm font-medium text-fg transition hover:bg-surface-muted disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {refreshing ? "スキャン中…" : "再スキャン"}
+        </button>
       }
     >
       {error ? (
@@ -670,126 +637,16 @@ export default function DashboardPage() {
         </StatusBanner>
       ) : null}
 
-      <section className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard
-          label="Listening ports"
-          value={data?.items.length ?? "—"}
-          hint="TCP + UDP / 全ホスト"
-        />
-        <StatCard
-          label="Reservations"
-          value={reservationCount}
-          hint="予約済みエンドポイント"
-          tone="good"
-        />
-        <StatCard
-          label="Conflicts"
-          value={conflictCount}
-          hint="予約と実リスナーの競合"
-          tone={conflictCount > 0 ? "danger" : "default"}
-        />
-        <StatCard
-          label="WSL relay"
-          value={relayCount}
-          hint={`WSL ${wslCount} ports / 10s polling`}
-          tone="warn"
-        />
-      </section>
-
-      <section className="mt-6 grid gap-4 lg:grid-cols-2">
-        <div className="rounded-xl border border-ink-700/70 bg-ink-900/60 p-4">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <h2 className="text-sm font-semibold text-white">
-                Open incidents
-              </h2>
-              <p className="text-xs text-mist-400">未解決の監視インシデント</p>
-            </div>
-            <Link
-              href="/incidents"
-              className="rounded-md border border-ink-700 bg-ink-800/80 px-2.5 py-1 text-xs text-mist-200 transition hover:border-signal-400/40 hover:text-white"
-            >
-              開く
-            </Link>
-          </div>
-          <div
-            className={`mt-3 font-mono text-3xl tabular-nums ${
-              ops.openIncidents > 0 ? "text-danger-400" : "text-signal-400"
-            }`}
-          >
-            {ops.openIncidents}
-          </div>
-          {ops.incidents.length === 0 ? (
-            <p className="mt-2 text-xs text-mist-400">
-              アクティブなインシデントはありません。
-            </p>
-          ) : (
-            <ul className="mt-3 space-y-2">
-              {ops.incidents.slice(0, 3).map((incident) => (
-                <li key={incident.id}>
-                  <Link
-                    href={`/incidents?focus=${encodeURIComponent(incident.id)}`}
-                    className="flex items-start justify-between gap-3 rounded border border-ink-700/60 bg-ink-950/30 px-2.5 py-2 transition hover:border-danger-400/30"
-                  >
-                    <span className="min-w-0">
-                      <span className="block truncate text-xs text-mist-200">
-                        {incident.title}
-                      </span>
-                      <span className="mt-0.5 block text-xs text-mist-400">
-                        {incident.service?.name ?? "—"} /{" "}
-                        {formatDate(incident.startedAt)}
-                      </span>
-                    </span>
-                    <span
-                      className={`shrink-0 text-xs font-medium ${
-                        incident.severity === "critical" ||
-                        incident.severity === "error"
-                          ? "text-danger-400"
-                          : incident.severity === "warning"
-                            ? "text-warn-400"
-                            : "text-mist-400"
-                      }`}
-                    >
-                      {incident.severity}
-                    </span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-
-        <div className="rounded-xl border border-ink-700/70 bg-ink-900/60 p-4">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <h2 className="text-sm font-semibold text-white">
-                Pending approvals
-              </h2>
-              <p className="text-xs text-mist-400">
-                承認待ちの再起動リクエスト
-              </p>
-            </div>
-            <Link
-              href="/approvals"
-              className="rounded-md border border-ink-700 bg-ink-800/80 px-2.5 py-1 text-xs text-mist-200 transition hover:border-signal-400/40 hover:text-white"
-            >
-              開く
-            </Link>
-          </div>
-          <div
-            className={`mt-3 font-mono text-3xl tabular-nums ${
-              ops.pendingApprovals > 0 ? "text-warn-400" : "text-signal-400"
-            }`}
-          >
-            {ops.pendingApprovals}
-          </div>
-          <p className="mt-2 text-xs text-mist-400">
-            {ops.pendingApprovals > 0
-              ? "operator 以上が承認すると再起動と復旧確認を実行します。"
-              : "承認待ちはありません。"}
-          </p>
-        </div>
-      </section>
+      <StatusRail
+        error={error}
+        scannedAt={scannedAt}
+        listeningCount={data?.items.length ?? "—"}
+        reservationCount={reservationCount}
+        conflictCount={conflictCount}
+        relayCount={relayCount}
+        canOperate={canOperate}
+        onAddReservation={focusReservationForm}
+      />
 
       {conflictCount > 0 ? (
         <section className="mt-6 rounded-xl border border-danger-400/30 bg-danger-400/10 px-4 py-3">
@@ -808,6 +665,232 @@ export default function DashboardPage() {
               </li>
             ))}
           </ul>
+        </section>
+      ) : null}
+
+      <section
+        className="mt-6 overflow-hidden rounded-xl border border-ink-700/70 bg-ink-900/50"
+        aria-busy={refreshing}
+      >
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-ink-700/70 px-4 py-3">
+          <div>
+            <h2 className="text-sm font-semibold text-white">待受ポート</h2>
+            <p className="text-xs text-mist-400">
+              Windows と WSL を 1 つのビューに統合。WSL は distro
+              間でネットワークを共有します。
+            </p>
+          </div>
+          <div className="w-full max-w-xs">
+            <label htmlFor="port-filter" className="sr-only">
+              待受ポートを絞り込む
+            </label>
+            <input
+              id="port-filter"
+              value={filter}
+              onChange={(event) => setFilter(event.target.value)}
+              placeholder="プロセス / ポート / コマンド / 予約で絞り込み"
+              className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-3 py-2 text-xs text-mist-200 placeholder:text-mist-400 focus:border-signal-400/40"
+            />
+          </div>
+        </div>
+
+        <div className="scrollbar-thin overflow-x-auto">
+          <table className="w-full min-w-[1050px] border-collapse text-left">
+            <thead>
+              <tr className="border-b border-ink-700/70 bg-ink-950/40 text-xs text-mist-400">
+                <th scope="col" className="px-4 py-2 font-medium">
+                  Scope
+                </th>
+                <th scope="col" className="px-4 py-2 font-medium">
+                  Port
+                </th>
+                <th scope="col" className="px-4 py-2 font-medium">
+                  Bind
+                </th>
+                <th scope="col" className="px-4 py-2 font-medium">
+                  Process
+                </th>
+                <th scope="col" className="px-4 py-2 font-medium">
+                  PID / PPID
+                </th>
+                <th scope="col" className="px-4 py-2 font-medium">
+                  Reservation
+                </th>
+                <th scope="col" className="px-4 py-2 font-medium">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-ink-700/40">
+              {loading && !data ? (
+                <tr>
+                  <td
+                    colSpan={7}
+                    className="px-4 py-10 text-center text-sm text-mist-400"
+                  >
+                    スキャン中…
+                  </td>
+                </tr>
+              ) : items.length === 0 ? (
+                <tr>
+                  <td colSpan={7}>
+                    <EmptyState
+                      compact
+                      title={
+                        filter
+                          ? "条件に一致するポートがありません"
+                          : "待受ポートが見つかりません"
+                      }
+                      description={
+                        filter
+                          ? "絞り込み条件を変えるか、解除して再表示してください。"
+                          : "再スキャンして最新の状態を確認してください。"
+                      }
+                      action={
+                        filter ? (
+                          <button
+                            type="button"
+                            onClick={() => setFilter("")}
+                            className="min-h-9 rounded-md border border-ink-700 px-3 text-xs font-medium text-mist-200 transition hover:border-signal-400/40 hover:text-white"
+                          >
+                            絞り込みを解除
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => void load(true)}
+                            disabled={refreshing}
+                            className="min-h-9 rounded-md border border-ink-700 px-3 text-xs font-medium text-mist-200 transition hover:border-signal-400/40 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {refreshing ? "スキャン中…" : "再スキャン"}
+                          </button>
+                        )
+                      }
+                    />
+                  </td>
+                </tr>
+              ) : (
+                items.map((item) => (
+                  <FragmentRow
+                    key={item.id}
+                    item={item}
+                    expanded={expanded.has(item.id)}
+                    canOperate={canOperate}
+                    killBusyKey={killBusyKey}
+                    onToggle={() => toggleExpanded(item.id)}
+                    onHistory={() => void openHistory(item)}
+                    onKillOwner={(owner) => requestKillOwner(item, owner)}
+                  />
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-ink-700/70 px-4 py-2 text-xs text-mist-400">
+          <span>
+            {items.length} / {data?.items.length ?? 0} 行を表示
+          </span>
+          <span>
+            {data?.skipped.length
+              ? `スキップ: ${data.skipped.map((s) => s.distro).join(", ")}`
+              : "WSL 3.x の共有ネットワークを考慮してマージ済み"}
+          </span>
+        </div>
+      </section>
+
+      {historyFor ? (
+        <section className="mt-6 overflow-hidden rounded-xl border border-ink-700/70 bg-ink-900/50">
+          <div className="flex items-center justify-between gap-3 border-b border-ink-700/70 px-4 py-3">
+            <div>
+              <h2 className="text-sm font-semibold text-white">
+                ポート履歴 — {historyFor.scope.toUpperCase()} /{" "}
+                {historyFor.protocol.toUpperCase()} {historyFor.port}
+              </h2>
+              <p className="text-xs text-mist-400">
+                観測された opened / closed
+                の履歴。停止操作を行った場合は実行者も記録されます。
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setHistoryFor(null)}
+              className="rounded border border-ink-700 px-2 py-1 text-xs text-mist-400 transition hover:text-white"
+            >
+              閉じる
+            </button>
+          </div>
+          <div className="scrollbar-thin overflow-x-auto">
+            <table className="w-full min-w-[780px] border-collapse text-left">
+              <thead>
+                <tr className="border-b border-ink-700/70 bg-ink-950/40 text-xs text-mist-400">
+                  <th scope="col" className="px-4 py-2 font-medium">
+                    Opened
+                  </th>
+                  <th scope="col" className="px-4 py-2 font-medium">
+                    Closed
+                  </th>
+                  <th scope="col" className="px-4 py-2 font-medium">
+                    Process
+                  </th>
+                  <th scope="col" className="px-4 py-2 font-medium">
+                    PID
+                  </th>
+                  <th scope="col" className="px-4 py-2 font-medium">
+                    Released by
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-ink-700/40">
+                {historyLoading ? (
+                  <tr>
+                    <td
+                      colSpan={5}
+                      className="px-4 py-8 text-center text-sm text-mist-400"
+                    >
+                      読み込み中…
+                    </td>
+                  </tr>
+                ) : history.length === 0 ? (
+                  <tr>
+                    <td colSpan={5}>
+                      <EmptyState
+                        compact
+                        title="履歴はまだありません"
+                        description="このポートが開閉されると、ここに履歴が表示されます。"
+                      />
+                    </td>
+                  </tr>
+                ) : (
+                  history.map((entry) => (
+                    <tr key={entry.id} className="hover:bg-ink-800/40">
+                      <td className="whitespace-nowrap px-4 py-2 font-mono text-xs text-mist-200">
+                        {formatDate(entry.openedAt)}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-2 font-mono text-xs text-mist-400">
+                        {entry.closedAt ? formatDate(entry.closedAt) : "open"}
+                      </td>
+                      <td className="px-4 py-2 text-xs text-mist-200">
+                        {entry.process ?? "—"}
+                        <div
+                          className="max-w-[360px] truncate font-mono text-xs text-mist-400"
+                          title={entry.commandLine ?? ""}
+                        >
+                          {entry.commandLine ?? ""}
+                        </div>
+                      </td>
+                      <td className="px-4 py-2 font-mono text-xs text-mist-400">
+                        {entry.pid ?? "—"} / {entry.ppid ?? "—"}
+                      </td>
+                      <td className="px-4 py-2 text-xs text-mist-400">
+                        {entry.releasedBy ?? "—"}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </section>
       ) : null}
 
@@ -1037,231 +1120,100 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      <section
-        className="mt-6 overflow-hidden rounded-xl border border-ink-700/70 bg-ink-900/50"
-        aria-busy={refreshing}
-      >
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-ink-700/70 px-4 py-3">
-          <div>
-            <h2 className="text-sm font-semibold text-white">待受ポート</h2>
-            <p className="text-xs text-mist-400">
-              Windows と WSL を 1 つのビューに統合。WSL は distro
-              間でネットワークを共有します。
-            </p>
-          </div>
-          <div className="w-full max-w-xs">
-            <label htmlFor="port-filter" className="sr-only">
-              待受ポートを絞り込む
-            </label>
-            <input
-              id="port-filter"
-              value={filter}
-              onChange={(event) => setFilter(event.target.value)}
-              placeholder="プロセス / ポート / コマンド / 予約で絞り込み"
-              className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-3 py-2 text-xs text-mist-200 placeholder:text-mist-400 focus:border-signal-400/40"
-            />
-          </div>
-        </div>
-
-        <div className="scrollbar-thin overflow-x-auto">
-          <table className="w-full min-w-[1050px] border-collapse text-left">
-            <thead>
-              <tr className="border-b border-ink-700/70 bg-ink-950/40 text-xs text-mist-400">
-                <th scope="col" className="px-4 py-2 font-medium">
-                  Scope
-                </th>
-                <th scope="col" className="px-4 py-2 font-medium">
-                  Port
-                </th>
-                <th scope="col" className="px-4 py-2 font-medium">
-                  Bind
-                </th>
-                <th scope="col" className="px-4 py-2 font-medium">
-                  Process
-                </th>
-                <th scope="col" className="px-4 py-2 font-medium">
-                  PID / PPID
-                </th>
-                <th scope="col" className="px-4 py-2 font-medium">
-                  Reservation
-                </th>
-                <th scope="col" className="px-4 py-2 font-medium">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-ink-700/40">
-              {loading && !data ? (
-                <tr>
-                  <td
-                    colSpan={7}
-                    className="px-4 py-10 text-center text-sm text-mist-400"
-                  >
-                    スキャン中…
-                  </td>
-                </tr>
-              ) : items.length === 0 ? (
-                <tr>
-                  <td colSpan={7}>
-                    <EmptyState
-                      compact
-                      title={
-                        filter
-                          ? "条件に一致するポートがありません"
-                          : "待受ポートが見つかりません"
-                      }
-                      description={
-                        filter
-                          ? "絞り込み条件を変えるか、解除して再表示してください。"
-                          : "再スキャンして最新の状態を確認してください。"
-                      }
-                      action={
-                        filter ? (
-                          <button
-                            type="button"
-                            onClick={() => setFilter("")}
-                            className="min-h-9 rounded-md border border-ink-700 px-3 text-xs font-medium text-mist-200 transition hover:border-signal-400/40 hover:text-white"
-                          >
-                            絞り込みを解除
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => void load(true)}
-                            disabled={refreshing}
-                            className="min-h-9 rounded-md border border-ink-700 px-3 text-xs font-medium text-mist-200 transition hover:border-signal-400/40 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            {refreshing ? "スキャン中…" : "再スキャン"}
-                          </button>
-                        )
-                      }
-                    />
-                  </td>
-                </tr>
-              ) : (
-                items.map((item) => (
-                  <FragmentRow
-                    key={item.id}
-                    item={item}
-                    expanded={expanded.has(item.id)}
-                    canOperate={canOperate}
-                    killBusyKey={killBusyKey}
-                    onToggle={() => toggleExpanded(item.id)}
-                    onHistory={() => void openHistory(item)}
-                    onKillOwner={(owner) => requestKillOwner(item, owner)}
-                  />
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-ink-700/70 px-4 py-2 text-xs text-mist-400">
-          <span>
-            {items.length} / {data?.items.length ?? 0} 行を表示
-          </span>
-          <span>
-            {data?.skipped.length
-              ? `スキップ: ${data.skipped.map((s) => s.distro).join(", ")}`
-              : "WSL 3.x の共有ネットワークを考慮してマージ済み"}
-          </span>
-        </div>
-      </section>
-
-      {historyFor ? (
-        <section className="mt-6 overflow-hidden rounded-xl border border-ink-700/70 bg-ink-900/50">
-          <div className="flex items-center justify-between gap-3 border-b border-ink-700/70 px-4 py-3">
+      <section className="mt-6 grid gap-4 lg:grid-cols-2">
+        <div className="rounded-xl border border-ink-700/70 bg-ink-900/60 p-4">
+          <div className="flex items-start justify-between gap-3">
             <div>
               <h2 className="text-sm font-semibold text-white">
-                ポート履歴 — {historyFor.scope.toUpperCase()} /{" "}
-                {historyFor.protocol.toUpperCase()} {historyFor.port}
+                Open incidents
+              </h2>
+              <p className="text-xs text-mist-400">未解決の監視インシデント</p>
+            </div>
+            <Link
+              href="/incidents"
+              className="rounded-md border border-ink-700 bg-ink-800/80 px-2.5 py-1 text-xs text-mist-200 transition hover:border-signal-400/40 hover:text-white"
+            >
+              開く
+            </Link>
+          </div>
+          <div
+            className={`mt-3 font-mono text-3xl tabular-nums ${
+              ops.openIncidents > 0 ? "text-danger-400" : "text-signal-400"
+            }`}
+          >
+            {ops.openIncidents}
+          </div>
+          {ops.incidents.length === 0 ? (
+            <p className="mt-2 text-xs text-mist-400">
+              アクティブなインシデントはありません。
+            </p>
+          ) : (
+            <ul className="mt-3 space-y-2">
+              {ops.incidents.slice(0, 3).map((incident) => (
+                <li key={incident.id}>
+                  <Link
+                    href={`/incidents?focus=${encodeURIComponent(incident.id)}`}
+                    className="flex items-start justify-between gap-3 rounded border border-ink-700/60 bg-ink-950/30 px-2.5 py-2 transition hover:border-danger-400/30"
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate text-xs text-mist-200">
+                        {incident.title}
+                      </span>
+                      <span className="mt-0.5 block text-xs text-mist-400">
+                        {incident.service?.name ?? "—"} /{" "}
+                        {formatDate(incident.startedAt)}
+                      </span>
+                    </span>
+                    <span
+                      className={`shrink-0 text-xs font-medium ${
+                        incident.severity === "critical" ||
+                        incident.severity === "error"
+                          ? "text-danger-400"
+                          : incident.severity === "warning"
+                            ? "text-warn-400"
+                            : "text-mist-400"
+                      }`}
+                    >
+                      {incident.severity}
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <div className="rounded-xl border border-ink-700/70 bg-ink-900/60 p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold text-white">
+                Pending approvals
               </h2>
               <p className="text-xs text-mist-400">
-                観測された opened / closed
-                の履歴。停止操作を行った場合は実行者も記録されます。
+                承認待ちの再起動リクエスト
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => setHistoryFor(null)}
-              className="rounded border border-ink-700 px-2 py-1 text-xs text-mist-400 transition hover:text-white"
+            <Link
+              href="/approvals"
+              className="rounded-md border border-ink-700 bg-ink-800/80 px-2.5 py-1 text-xs text-mist-200 transition hover:border-signal-400/40 hover:text-white"
             >
-              閉じる
-            </button>
+              開く
+            </Link>
           </div>
-          <div className="scrollbar-thin overflow-x-auto">
-            <table className="w-full min-w-[780px] border-collapse text-left">
-              <thead>
-                <tr className="border-b border-ink-700/70 bg-ink-950/40 text-xs text-mist-400">
-                  <th scope="col" className="px-4 py-2 font-medium">
-                    Opened
-                  </th>
-                  <th scope="col" className="px-4 py-2 font-medium">
-                    Closed
-                  </th>
-                  <th scope="col" className="px-4 py-2 font-medium">
-                    Process
-                  </th>
-                  <th scope="col" className="px-4 py-2 font-medium">
-                    PID
-                  </th>
-                  <th scope="col" className="px-4 py-2 font-medium">
-                    Released by
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-ink-700/40">
-                {historyLoading ? (
-                  <tr>
-                    <td
-                      colSpan={5}
-                      className="px-4 py-8 text-center text-sm text-mist-400"
-                    >
-                      読み込み中…
-                    </td>
-                  </tr>
-                ) : history.length === 0 ? (
-                  <tr>
-                    <td colSpan={5}>
-                      <EmptyState
-                        compact
-                        title="履歴はまだありません"
-                        description="このポートが開閉されると、ここに履歴が表示されます。"
-                      />
-                    </td>
-                  </tr>
-                ) : (
-                  history.map((entry) => (
-                    <tr key={entry.id} className="hover:bg-ink-800/40">
-                      <td className="whitespace-nowrap px-4 py-2 font-mono text-xs text-mist-200">
-                        {formatDate(entry.openedAt)}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-2 font-mono text-xs text-mist-400">
-                        {entry.closedAt ? formatDate(entry.closedAt) : "open"}
-                      </td>
-                      <td className="px-4 py-2 text-xs text-mist-200">
-                        {entry.process ?? "—"}
-                        <div
-                          className="max-w-[360px] truncate font-mono text-xs text-mist-400"
-                          title={entry.commandLine ?? ""}
-                        >
-                          {entry.commandLine ?? ""}
-                        </div>
-                      </td>
-                      <td className="px-4 py-2 font-mono text-xs text-mist-400">
-                        {entry.pid ?? "—"} / {entry.ppid ?? "—"}
-                      </td>
-                      <td className="px-4 py-2 text-xs text-mist-400">
-                        {entry.releasedBy ?? "—"}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+          <div
+            className={`mt-3 font-mono text-3xl tabular-nums ${
+              ops.pendingApprovals > 0 ? "text-warn-400" : "text-signal-400"
+            }`}
+          >
+            {ops.pendingApprovals}
           </div>
-        </section>
-      ) : null}
+          <p className="mt-2 text-xs text-mist-400">
+            {ops.pendingApprovals > 0
+              ? "operator 以上が承認すると再起動と復旧確認を実行します。"
+              : "承認待ちはありません。"}
+          </p>
+        </div>
+      </section>
 
       <footer className="mt-8 flex flex-wrap items-center justify-between gap-2 text-xs text-mist-400">
         <span>sys4sys v0.1</span>
