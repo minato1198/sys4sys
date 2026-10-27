@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { ThemeToggle } from "./ThemeToggle";
 
 const LINKS = [
   { href: "/", label: "Ports", adminOnly: false },
@@ -31,6 +32,7 @@ export function NavLinks({ role }: { role?: string | null }) {
             <Link
               key={link.href}
               href={link.href}
+              aria-current={active ? "page" : undefined}
               className={`rounded-md px-2.5 py-1 transition ${
                 active
                   ? "bg-ink-800 text-white"
@@ -42,6 +44,8 @@ export function NavLinks({ role }: { role?: string | null }) {
           );
         },
       )}
+      <span className="mx-0.5 h-4 w-px bg-ink-700" aria-hidden="true" />
+      <ThemeToggle />
     </nav>
   );
 }

@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import { ThemeToggle } from "../components/ThemeToggle";
 
 interface Problem {
   detail?: string;
@@ -46,6 +47,9 @@ export default function LoginPage() {
 
   return (
     <main className="grid min-h-dvh place-items-center px-4 py-10">
+      <div className="fixed right-4 top-4 z-20">
+        <ThemeToggle />
+      </div>
       <div className="grid w-full max-w-4xl overflow-hidden rounded-2xl border border-ink-700/70 bg-ink-900/60 shadow-2xl shadow-black/30 lg:grid-cols-[1.05fr_1fr]">
         <section className="hidden flex-col justify-between border-r border-ink-700/70 bg-ink-950/50 p-8 lg:flex">
           <div className="flex items-center gap-3">

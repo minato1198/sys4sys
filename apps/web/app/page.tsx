@@ -152,7 +152,7 @@ function StatCard({
           ? "text-danger-400"
           : "text-white";
   return (
-    <div className="rounded-xl border border-ink-700/70 bg-ink-900/60 p-4 shadow-[0_1px_0_rgba(255,255,255,0.03)_inset]">
+    <div className="rounded-xl border border-ink-700/70 bg-ink-900/60 p-4 shadow-[inset_0_1px_0_var(--theme-card-highlight)]">
       <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-mist-400">
         {label}
       </div>
