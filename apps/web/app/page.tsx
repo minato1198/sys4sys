@@ -8,7 +8,7 @@ import {
   type FormEvent,
 } from "react";
 import Link from "next/link";
-import { NavLinks } from "./components/NavLinks";
+import { AppShell } from "./components/AppShell";
 import { ConfirmDialog } from "./components/ui/ConfirmDialog";
 import { EmptyState } from "./components/ui/EmptyState";
 import { StatusBanner } from "./components/ui/StatusBanner";
@@ -371,11 +371,6 @@ export default function DashboardPage() {
     return () => clearInterval(timer);
   }, [load, loadOps]);
 
-  async function logout() {
-    await fetch("/api/auth/logout", { method: "POST" });
-    window.location.href = "/login";
-  }
-
   async function createReservation(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setReservationError(null);
@@ -628,34 +623,16 @@ export default function DashboardPage() {
     : "";
 
   return (
-    <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <Link
-            href="/"
-            aria-label="sys4sys ホーム"
-            className="grid size-10 place-items-center rounded-lg border border-signal-400/30 bg-signal-400/10"
-          >
-            <span className="font-mono text-sm font-bold text-signal-400">
-              s4s
-            </span>
-          </Link>
-          <div>
-            <p className="text-xs font-medium text-mist-400">sys4sys</p>
-            <h1 className="text-xl font-semibold tracking-tight text-white">
-              Ports
-            </h1>
-            <p className="text-xs text-mist-400">
-              Windows / WSL の待受ポートと予約
-            </p>
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <NavLinks role={user?.role} />
-          <span className="flex items-center gap-2 text-xs text-mist-400">
+    <AppShell
+      title="Ports"
+      description="Windows / WSL の待受ポートと予約"
+      user={user}
+      actions={
+        <>
+          <span className="flex items-center gap-2 rounded-md border border-border bg-surface px-3 py-2 text-sm text-fg-muted">
             <span
               aria-hidden="true"
-              className={`size-1.5 rounded-full ${error ? "bg-danger-400" : "bg-signal-400"}`}
+              className={`size-2 rounded-full ${error ? "bg-danger" : "bg-accent"}`}
             />
             {error ? "API 接続エラー" : `最終スキャン ${scannedAt}`}
           </span>
@@ -664,30 +641,13 @@ export default function DashboardPage() {
             onClick={() => void load(true)}
             disabled={refreshing}
             aria-busy={refreshing}
-            className="min-h-9 rounded-md border border-ink-700 bg-ink-800/80 px-3 py-1.5 text-xs font-medium text-mist-200 transition hover:border-mist-400/40 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+            className="min-h-11 rounded-md border border-border bg-surface px-3 text-sm font-medium text-fg transition hover:bg-surface-muted disabled:cursor-not-allowed disabled:opacity-50"
           >
             {refreshing ? "スキャン中…" : "再スキャン"}
           </button>
-          <div className="flex items-center gap-2 rounded-md border border-ink-700 bg-ink-800/60 px-3 py-1.5">
-            <div className="text-right">
-              <div className="text-xs text-mist-200">
-                {user?.email ?? "認証確認中…"}
-              </div>
-              <div className="text-xs font-medium text-mist-400">
-                {user?.role ?? ""}
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => void logout()}
-              className="min-h-9 rounded border border-ink-700 px-2 py-1 text-xs text-mist-400 transition hover:border-danger-400/40 hover:text-danger-400"
-            >
-              ログアウト
-            </button>
-          </div>
-        </div>
-      </header>
-
+        </>
+      }
+    >
       {error ? (
         <StatusBanner
           tone="error"
@@ -1367,7 +1327,7 @@ export default function DashboardPage() {
           }}
         />
       ) : null}
-    </main>
+    </AppShell>
   );
 }
 

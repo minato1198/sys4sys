@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { NavLinks } from "../components/NavLinks";
+import { AppShell } from "../components/AppShell";
 import { useConfirmDialog } from "../components/ui/useConfirmDialog";
 
 interface AuthUser {
@@ -304,11 +304,6 @@ export default function IncidentsPage() {
     return () => window.clearInterval(timer);
   }, [loadDetail, loadList, selectedId]);
 
-  async function logout() {
-    await fetch("/api/auth/logout", { method: "POST" });
-    window.location.href = "/login";
-  }
-
   async function act(action: "ack" | "resolve"): Promise<string | null> {
     if (!selectedId) return null;
     setBusy(true);
@@ -389,45 +384,11 @@ export default function IncidentsPage() {
   }, [items, total]);
 
   return (
-    <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="grid size-10 place-items-center rounded-lg border border-signal-400/30 bg-signal-400/10">
-            <span className="font-mono text-sm font-bold text-signal-400">
-              s4s
-            </span>
-          </div>
-          <div>
-            <h1 className="text-xl font-semibold tracking-tight text-white">
-              Incidents
-            </h1>
-            <p className="text-xs text-mist-400">
-              監視ルールが検知した異常、承認、再起動の履歴を確認します。
-            </p>
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <NavLinks role={user?.role} />
-          <div className="flex items-center gap-2 rounded-md border border-ink-700 bg-ink-800/60 px-3 py-1.5">
-            <div className="text-right">
-              <div className="text-xs text-mist-200">
-                {user?.email ?? "認証確認中…"}
-              </div>
-              <div className="text-xs font-medium text-mist-400">
-                {user?.role ?? ""}
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => void logout()}
-              className="rounded border border-ink-700 px-2 py-1 text-xs text-mist-400 transition hover:border-danger-400/40 hover:text-danger-400"
-            >
-              ログアウト
-            </button>
-          </div>
-        </div>
-      </header>
-
+    <AppShell
+      title="Incidents"
+      description="監視ルールが検知した異常、承認、再起動の履歴を確認します。"
+      user={user}
+    >
       {error ? (
         <div className="mt-6 rounded-lg border border-danger-400/30 bg-danger-400/10 px-4 py-3 text-sm text-danger-400">
           {error}
@@ -1048,6 +1009,6 @@ export default function IncidentsPage() {
       ) : null}
 
       {confirmDialog}
-    </main>
+    </AppShell>
   );
 }

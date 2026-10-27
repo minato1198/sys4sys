@@ -897,8 +897,8 @@ P3 では services / logs / settings / approvals も追加。
 
 ## 14. 実装状況（2026-10-27）
 
-- 状態: 未コミット / 未プッシュ
-- 検証: `pnpm --filter @sys4sys/web typecheck` / `pnpm --filter @sys4sys/web build` / `pnpm exec prettier --check "apps/web/app/**/*.{ts,tsx,css}"` / `http://127.0.0.1:3000/login` の HTTP 200 確認済み
+- 状態: `feat/web-uiux` ブランチでフェーズ単位にローカルコミット中 / push 未実施
+- 検証: `pnpm --filter @sys4sys/web typecheck` / `pnpm --filter @sys4sys/web build` / `pnpm exec prettier --write "apps/web/app/**/*.{ts,tsx,css}"` / `http://127.0.0.1:3000/login` / `http://127.0.0.1:8787/api/health` 確認済み
 
 ### 14.1 タスク別ステータス
 
@@ -909,7 +909,7 @@ P3 では services / logs / settings / approvals も追加。
 | P0-03 | 完了   | `StatusBanner` 追加、success / error 分離、API error と action error 分離、`role` / `aria-live`、manual refreshing、aria-busy、EmptyState 追加                                            | 10 秒ポーリングの視覚的 progress、既存インシデント / 承認カードの EmptyState 化、スクリーンリーダー確認 |
 | P0-04 | 完了   | `ConfirmDialog` / `useConfirmDialog` 追加。dashboard、services、approvals、logs、incidents の `window.confirm` をアプリ内確認に置換                                                       | 全 dialog の focus trap 動作をキーボードで手動確認、dialog 内 error の実測確認                          |
 | P0-05 | 部分   | mobile で input 16px、主要な操作ボタンに `min-h-9` / `min-h-11`、ThemeToggle mobile 44px 対応                                                                                             | 390×844 でポートテーブルのカード化、ページ全体の横スクロール確認、隣接タップ間隔の実測                  |
-| P1-01 | 未着手 | –                                                                                                                                                                                         | AppShell、Sidebar、PageHeader、モバイルドロワー、全ページ移行                                           |
+| P1-01 | 完了   | AppShell 追加。監視 / 運用 / 管理のグループ Sidebar、モバイルドロワー、skip link、共通ログアウト、ThemeToggle utility、全認証ページを AppShell へ移行、旧 NavLinks 削除                   | ログイン済み状態での sidebar 実測、390 / 1440 の visual regression、モバイルドロワーの focus 往復確認   |
 | P1-02 | 未着手 | –                                                                                                                                                                                         | StatusRail、KPI 圧縮、ポート台帳のファーストビュー化                                                    |
 | P1-03 | 未着手 | –                                                                                                                                                                                         | PortLedger 分割、desktop sticky columns、mobile cards、filters / sort                                   |
 | P1-04 | 未着手 | login と一部フォームは改善済み                                                                                                                                                            | Field / Button / Input / Select 共通化、全フォームへの適用                                              |
@@ -942,23 +942,26 @@ rg -n "uppercase|tracking-\[" apps/web/app -g "*.tsx"
 
 ### 14.3 次の着手タスク
 
-1. P1-01: AppShell + Sidebar + PageHeader + モバイルドロワー
-2. P1-02: dashboard の StatusRail とポート台帳優先
-3. P1-03: PortTable / PortCard 分割とモバイルカード表示
+1. P1-02: dashboard の StatusRail とポート台帳優先
+2. P1-03: PortTable / PortCard 分割とモバイルカード表示
+3. P2-01: Port Switchboard の dashboard 表現
 4. P2-03: Light mode の影・面・コントラストの実測
-5. P3-02: axe / keyboard / screenshot matrix
+5. P2-04: motion / reduced motion 最終調整
+6. P3-02: axe / Playwright / screenshot matrix
 
-### 14.4 未コミットの主な変更範囲
+### 14.4 P0 / P1-01 の主な変更範囲
 
-- `apps/web/app/globals.css`
-- `apps/web/app/layout.tsx`
-- `apps/web/app/page.tsx`
-- `apps/web/app/login/page.tsx`
-- `apps/web/app/components/ThemeToggle.tsx`
-- `apps/web/app/components/NavLinks.tsx`
-- `apps/web/app/components/ui/StatusBanner.tsx`
-- `apps/web/app/components/ui/EmptyState.tsx`
-- `apps/web/app/components/ui/ConfirmDialog.tsx`
-- `apps/web/app/components/ui/useConfirmDialog.tsx`
-- services / approvals / logs / incidents / settings / audit のフォームアクセシビリティと destructive action 修正
-- MarkdownPreview の table header semantics
+- P0: `apps/web/app/globals.css`
+- P0: `apps/web/app/layout.tsx`
+- P0: `apps/web/app/page.tsx`
+- P0: `apps/web/app/login/page.tsx`
+- P0: `apps/web/app/components/ThemeToggle.tsx`
+- P0: `apps/web/app/components/ui/StatusBanner.tsx`
+- P0: `apps/web/app/components/ui/EmptyState.tsx`
+- P0: `apps/web/app/components/ui/ConfirmDialog.tsx`
+- P0: `apps/web/app/components/ui/useConfirmDialog.tsx`
+- P0: services / approvals / logs / incidents / settings / audit のフォームアクセシビリティと destructive action 修正
+- P0: MarkdownPreview の table header semantics
+- P1-01: `apps/web/app/components/AppShell.tsx`
+- P1-01: 旧 `apps/web/app/components/NavLinks.tsx` 削除
+- P1-01: dashboard / services / logs / incidents / reports / approvals / hosts / admin users / audit / settings を AppShell へ移行
