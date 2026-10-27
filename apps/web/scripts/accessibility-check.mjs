@@ -134,7 +134,9 @@ try {
   await browser.close();
 }
 
-console.log(JSON.stringify({ baseUrl, outDir, screenshots, axeSummaries }, null, 2));
+console.log(
+  JSON.stringify({ baseUrl, outDir, screenshots, axeSummaries }, null, 2),
+);
 
 if (failures.length > 0) {
   console.error("accessibility check failed:");

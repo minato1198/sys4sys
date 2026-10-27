@@ -55,7 +55,24 @@ jobs:
         working-directory: apps/cli
         run: npm publish --access public
 
+      - name: Prepare release notes
+        run: |
+          if [ -f CHANGELOG.md ]; then
+            awk -v tag="${GITHUB_REF_NAME}" '
+              BEGIN { printing = 0 }
+              /^## / { printing = ($0 == "## " tag " ") }
+              printing { print }
+            ' CHANGELOG.md > release-notes.md
+          else
+            : > release-notes.md
+          fi
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${GITHUB_REF_NAME}" --generate-notes --title "${GITHUB_REF_NAME}"
+        run: |
+          if [ -s release-notes.md ]; then
+            gh release create "${GITHUB_REF_NAME}" --title "${GITHUB_REF_NAME}" --notes-file release-notes.md
+          else
+            gh release create "${GITHUB_REF_NAME}" --generate-notes --title "${GITHUB_REF_NAME}"
+          fi

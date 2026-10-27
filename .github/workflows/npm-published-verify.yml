@@ -25,10 +25,10 @@ jobs:
           node-version: 22
 
       - name: Verify published sys4sys version
-        run: npx -y sys4sys@0.2.2 version --json
+        run: npx -y sys4sys@0.3.0 version --json
 
       - name: Verify published sys4sys schema
-        run: npx -y sys4sys@0.2.2 schema --json
+        run: npx -y sys4sys@0.3.0 schema --json
 
       - name: Verify published sys4sys doctor
-        run: npx -y sys4sys@0.2.2 doctor --json
+        run: npx -y sys4sys@0.3.0 doctor --json

@@ -152,6 +152,7 @@ pnpm sys4sys -- services restart <id> --yes --wait --json
 - [CLI README](./apps/cli/README.md)
 - [AI エージェント向け SKILL.md](./apps/cli/SKILL.md)
 - [CLI Schema](./docs/cli-schema.json)
+- [変更履歴](./CHANGELOG.md)
 - [UI/UX 計画](./tasks/UI_UX_PLAN.md)
 
 ## セキュリティ

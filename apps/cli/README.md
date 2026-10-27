@@ -8,18 +8,18 @@ CLI は SQLite を直接操作せず、必ず API 経由で実行します。
 Node.js 22 以上が必要です。
 
 ```bash
-npm install -g sys4sys@0.2.2
+npm install -g sys4sys@0.3.0
 sys4sys version --json
 sys4sys doctor --json
 ```
 
-`npm install -g sys4sys@0.2.2` は tag `v0.2.2` の `Release CLI` workflow によって Trusted Publishing で公開済みです。次のバージョン以降は、tag `v*` で `Release CLI` workflow が publish 成功した後に成立します。
+`npm install -g sys4sys@0.3.0` は tag `v0.3.0` の `Release CLI` workflow によって Trusted Publishing で公開されます。tag `v*` では `Release CLI` workflow の publish 成功後に成立します。
 
 `npx` で試す場合:
 
 ```bash
-npx -y sys4sys@0.2.2 --help
-npx -y sys4sys@0.2.2 schema --json
+npx -y sys4sys@0.3.0 --help
+npx -y sys4sys@0.3.0 schema --json
 ```
 
 リポジトリから実行する場合は依存関係をインストールし、CLI をビルドします。
