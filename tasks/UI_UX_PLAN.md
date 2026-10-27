@@ -902,25 +902,25 @@ P3 では services / logs / settings / approvals も追加。
 
 ### 14.1 タスク別ステータス
 
-| ID    | 状態   | 完了内容                                                                                                                                                                                                      | 残作業                                                                                                        |
-| ----- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| P0-01 | 完了   | セマンティックトークン追加、placeholder 色、focus トークン、mobile input 16px、danger-solid トークン追加                                                                                                      | セマンティックトークンへの全ページ移行、cobalt パレットへの置換                                               |
-| P0-02 | 完了   | `focus:outline-none` / `outline-none` 削除、global `:focus-visible`、`h1` 修正、`scope="col"`、filter label、`aria-expanded` / `aria-controls`、操作ボタン aria-label、装飾 `aria-hidden`                     | axe 自動化、ThemeToggle を AppShell utility へ移動、スクリーンリーダー手動確認                                |
-| P0-03 | 完了   | `StatusBanner` 追加、success / error 分離、API error と action error 分離、`role` / `aria-live`、manual refreshing、aria-busy、EmptyState 追加                                                                | 10 秒ポーリングの視覚的 progress、既存インシデント / 承認カードの EmptyState 化、スクリーンリーダー確認       |
-| P0-04 | 完了   | `ConfirmDialog` / `useConfirmDialog` 追加。dashboard、services、approvals、logs、incidents の `window.confirm` をアプリ内確認に置換                                                                           | 全 dialog の focus trap 動作をキーボードで手動確認、dialog 内 error の実測確認                                |
-| P0-05 | 部分   | mobile で input 16px、主要な操作ボタンに `min-h-9` / `min-h-11`、ThemeToggle mobile 44px 対応、ポート台帳を mobile カード表示へ変更                                                                           | 390×844 でのページ全体の横スクロール実測、隣接タップ間隔の実測、カード overflow action の実測                 |
-| P1-01 | 完了   | AppShell 追加。監視 / 運用 / 管理のグループ Sidebar、モバイルドロワー、skip link、共通ログアウト、ThemeToggle utility、全認証ページを AppShell へ移行、旧 NavLinks 削除                                       | ログイン済み状態での sidebar 実測、390 / 1440 の visual regression、モバイルドロワーの focus 往復確認         |
-| P1-02 | 完了   | `StatusRail` 追加。競合 / 予約 / 待受 / WSL relay を圧縮メトリクスへ統合、KPI 4 カード廃止、競合詳細とポート台帳をインシデント / 承認より上へ移動、予約フォームを副次的な下段へ移動                           | 1440×900 での初期表示実測、競合あり / なしのスクリーンショット、StatusRail のモバイル折り返し確認             |
-| P1-03 | 完了   | `PortLedger` / `PortTable` / `PortCard` / `PortFilters` / `PortActions` を追加。desktop sticky Scope / Port、競合行強調、可視 search / filter / sort、mobile card 表示、履歴 / 停止の accessible name を改善  | 390 / 768 / 1024 / 1440 の視覚確認、長い command line / 複数 owners の実測、sticky 列の影または背景境界の調整 |
-| P1-04 | 未着手 | login と一部フォームは改善済み                                                                                                                                                                                | Field / Button / Input / Select 共通化、全フォームへの適用                                                    |
-| P1-05 | 完了   | login をサインイン中心に変更。開発者向け env 注記、marketing pills、M1 削除。日本語 sentence case に変更                                                                                                      | Light / Dark / 390 / 1440 のスクリーンショット確認、初期管理者導線の最终文言                                  |
-| P2-01 | 部分   | BrandMark を port-spine wordmark へ変更、body の常時 glow を削除、login の s4s バッジを BrandMark へ置換、PortLedger に Windows / WSL / Relay lane counts、競合を「接続不良」と表現、台帳の border 階層を強化 | 1440×900 Light / Dark 実測、競合あり / なしスクリーンショット、ロゴなしでも sys4sys らしいか reviewer 確認    |
-| P2-02 | 部分   | ALL CAPS + tracking を全ページで 0 にした。`observe →`、`backend operations`、footer の M1、API 起動コマンド指示を削除                                                                                        | 全見出し / 補助文言の日本語コピーレビュー、mono の目的外使用チェック                                          |
-| P2-03 | 部分   | semantic tokens に Light / Dark を追加。placeholder と focus を両テーマで調整                                                                                                                                 | `--color-white` 再定義の完全撤廃、Light の影 / surface / shadow 実測、コントラスト監査                        |
-| P2-04 | 部分   | dashboard の status dot から `animate-pulse` を削除                                                                                                                                                           | 他ページの装飾 motion 監査、スキャン progress、reduced motion 手動確認                                        |
-| P3-01 | 部分   | StatusBanner / EmptyState / ConfirmDialog / useConfirmDialog / AppShell / StatusRail / PortTable / PortCard / PortLedger を追加。重複 header 撤廃                                                             | Button / Field の共通化、全フォームへの適用                                                                   |
-| P3-02 | 未着手 | 静的チェック実施                                                                                                                                                                                              | screenshot matrix、axe / Playwright、キーボードウォークスルー                                                 |
-| P3-03 | 部分   | 本計画に実装状況を追記                                                                                                                                                                                        | README 更新、PLAN.md からのリンク、完了後のステータス更新                                                     |
+| ID    | 状態   | 完了内容                                                                                                                                                                                                                  | 残作業                                                                                                        |
+| ----- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| P0-01 | 完了   | セマンティックトークン追加、placeholder 色、focus トークン、mobile input 16px、danger-solid トークン追加、全 TSX を semantic tokens へ移行、raw ink / mist / signal / warn / danger / sky class と `--color-white` を削除 | 1440 / 390 の Light / Dark でコントラストと影の実測、axe 自動監査                                             |
+| P0-02 | 完了   | `focus:outline-none` / `outline-none` 削除、global `:focus-visible`、`h1` 修正、`scope="col"`、filter label、`aria-expanded` / `aria-controls`、操作ボタン aria-label、装飾 `aria-hidden`                                 | axe 自動化、ThemeToggle を AppShell utility へ移動、スクリーンリーダー手動確認                                |
+| P0-03 | 完了   | `StatusBanner` 追加、success / error 分離、API error と action error 分離、`role` / `aria-live`、manual refreshing、aria-busy、EmptyState 追加                                                                            | 10 秒ポーリングの視覚的 progress、既存インシデント / 承認カードの EmptyState 化、スクリーンリーダー確認       |
+| P0-04 | 完了   | `ConfirmDialog` / `useConfirmDialog` 追加。dashboard、services、approvals、logs、incidents の `window.confirm` をアプリ内確認に置換                                                                                       | 全 dialog の focus trap 動作をキーボードで手動確認、dialog 内 error の実測確認                                |
+| P0-05 | 部分   | mobile で input 16px、主要な操作ボタンに `min-h-9` / `min-h-11`、ThemeToggle mobile 44px 対応、ポート台帳を mobile カード表示へ変更                                                                                       | 390×844 でのページ全体の横スクロール実測、隣接タップ間隔の実測、カード overflow action の実測                 |
+| P1-01 | 完了   | AppShell 追加。監視 / 運用 / 管理のグループ Sidebar、モバイルドロワー、skip link、共通ログアウト、ThemeToggle utility、全認証ページを AppShell へ移行、旧 NavLinks 削除                                                   | ログイン済み状態での sidebar 実測、390 / 1440 の visual regression、モバイルドロワーの focus 往復確認         |
+| P1-02 | 完了   | `StatusRail` 追加。競合 / 予約 / 待受 / WSL relay を圧縮メトリクスへ統合、KPI 4 カード廃止、競合詳細とポート台帳をインシデント / 承認より上へ移動、予約フォームを副次的な下段へ移動                                       | 1440×900 での初期表示実測、競合あり / なしのスクリーンショット、StatusRail のモバイル折り返し確認             |
+| P1-03 | 完了   | `PortLedger` / `PortTable` / `PortCard` / `PortFilters` / `PortActions` を追加。desktop sticky Scope / Port、競合行強調、可視 search / filter / sort、mobile card 表示、履歴 / 停止の accessible name を改善              | 390 / 768 / 1024 / 1440 の視覚確認、長い command line / 複数 owners の実測、sticky 列の影または背景境界の調整 |
+| P1-04 | 未着手 | login と一部フォームは改善済み                                                                                                                                                                                            | Field / Button / Input / Select 共通化、全フォームへの適用                                                    |
+| P1-05 | 完了   | login をサインイン中心に変更。開発者向け env 注記、marketing pills、M1 削除。日本語 sentence case に変更                                                                                                                  | Light / Dark / 390 / 1440 のスクリーンショット確認、初期管理者導線の最终文言                                  |
+| P2-01 | 部分   | BrandMark を port-spine wordmark へ変更、body の常時 glow を削除、login の s4s バッジを BrandMark へ置換、PortLedger に Windows / WSL / Relay lane counts、競合を「接続不良」と表現、台帳の border 階層を強化             | 1440×900 Light / Dark 実測、競合あり / なしスクリーンショット、ロゴなしでも sys4sys らしいか reviewer 確認    |
+| P2-02 | 部分   | ALL CAPS + tracking を全ページで 0 にした。`observe →`、`backend operations`、footer の M1、API 起動コマンド指示を削除                                                                                                    | 全見出し / 補助文言の日本語コピーレビュー、mono の目的外使用チェック                                          |
+| P2-03 | 完了   | semantic tokens に Light / Dark を追加。placeholder と focus を両テーマで調整。raw palette を CSS から削除し、全 TSX を semantic tokens へ移行。accent / focus を cobalt に、`--color-white` 再定義を撤廃                 | 1440 / 390 の Light / Dark スクリーンショット、axe contrast 自動監査、Light の影 / surface 実測レビュー       |
+| P2-04 | 部分   | dashboard の status dot から `animate-pulse` を削除                                                                                                                                                                       | 他ページの装飾 motion 監査、スキャン progress、reduced motion 手動確認                                        |
+| P3-01 | 部分   | StatusBanner / EmptyState / ConfirmDialog / useConfirmDialog / AppShell / StatusRail / PortTable / PortCard / PortLedger を追加。重複 header 撤廃                                                                         | Button / Field の共通化、全フォームへの適用                                                                   |
+| P3-02 | 未着手 | 静的チェック実施                                                                                                                                                                                                          | screenshot matrix、axe / Playwright、キーボードウォークスルー                                                 |
+| P3-03 | 部分   | 本計画に実装状況を追記                                                                                                                                                                                                    | README 更新、PLAN.md からのリンク、完了後のステータス更新                                                     |
 
 ### 14.2 静的チェック結果
 
@@ -930,6 +930,7 @@ rg -n "text-mist-400/(50|60|70)" apps/web/app -g "*.tsx"
 rg -n "outline-none" apps/web/app -g "*.tsx"
 rg -n "window\.confirm" apps/web/app -g "*.tsx"
 rg -n "uppercase|tracking-\[" apps/web/app -g "*.tsx"
+rg -n "text-white|bg-ink|border-ink|divide-ink|text-mist|signal-400|warn-400|danger-400|sky-400|--color-white" apps/web/app -g "*.tsx" -g "*.css"
 ```
 
 - 12px 未満の Tailwind text utility: 0
@@ -937,17 +938,16 @@ rg -n "uppercase|tracking-\[" apps/web/app -g "*.tsx"
 - `outline-none`: 0
 - `window.confirm`: 0
 - `uppercase` class / `tracking-[...]`: 0
+- raw palette class と `--color-white`: 0
 - `M1` は SVG path 内にのみ残存。UI 文言としての `M1` は dashboard footer と login から削除済み
 - `observe →`, `backend operations`, `ports · services` は UI コピーから削除済み
 
 ### 14.3 次の着手タスク
 
-1. P1-02: dashboard の StatusRail とポート台帳優先
-2. P1-03: PortTable / PortCard 分割とモバイルカード表示
-3. P2-01: Port Switchboard の dashboard 表現
-4. P2-03: Light mode の影・面・コントラストの実測
-5. P2-04: motion / reduced motion 最終調整
-6. P3-02: axe / Playwright / screenshot matrix
+1. P2-04: motion / reduced motion 最終調整
+2. P3-02: axe / Playwright / screenshot matrix
+3. P3-03: README / 計画ステータスの最終更新
+4. P1-04 を追加で進めるなら: Field / Button / Input / Select 共通化と全フォーム適用
 
 ### 14.4 P0 / P1-01 の主な変更範囲
 

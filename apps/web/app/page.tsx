@@ -507,14 +507,14 @@ export default function DashboardPage() {
       </p>
 
       {historyFor ? (
-        <section className="mt-6 overflow-hidden rounded-xl border border-ink-700/70 bg-ink-900/50">
-          <div className="flex items-center justify-between gap-3 border-b border-ink-700/70 px-4 py-3">
+        <section className="mt-6 overflow-hidden rounded-xl border border-border bg-surface">
+          <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
             <div>
-              <h2 className="text-sm font-semibold text-white">
+              <h2 className="text-sm font-semibold text-fg">
                 ポート履歴 — {historyFor.scope.toUpperCase()} /{" "}
                 {historyFor.protocol.toUpperCase()} {historyFor.port}
               </h2>
-              <p className="text-xs text-mist-400">
+              <p className="text-xs text-fg-muted">
                 観測された opened / closed
                 の履歴。停止操作を行った場合は実行者も記録されます。
               </p>
@@ -522,7 +522,7 @@ export default function DashboardPage() {
             <button
               type="button"
               onClick={() => setHistoryFor(null)}
-              className="rounded border border-ink-700 px-2 py-1 text-xs text-mist-400 transition hover:text-white"
+              className="rounded border border-border px-2 py-1 text-xs text-fg-muted transition hover:text-fg"
             >
               閉じる
             </button>
@@ -530,7 +530,7 @@ export default function DashboardPage() {
           <div className="scrollbar-thin overflow-x-auto">
             <table className="w-full min-w-[780px] border-collapse text-left">
               <thead>
-                <tr className="border-b border-ink-700/70 bg-ink-950/40 text-xs text-mist-400">
+                <tr className="border-b border-border bg-surface-muted text-xs text-fg-muted">
                   <th scope="col" className="px-4 py-2 font-medium">
                     Opened
                   </th>
@@ -548,12 +548,12 @@ export default function DashboardPage() {
                   </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-ink-700/40">
+              <tbody className="divide-y divide-border">
                 {historyLoading ? (
                   <tr>
                     <td
                       colSpan={5}
-                      className="px-4 py-8 text-center text-sm text-mist-400"
+                      className="px-4 py-8 text-center text-sm text-fg-muted"
                     >
                       読み込み中…
                     </td>
@@ -570,26 +570,26 @@ export default function DashboardPage() {
                   </tr>
                 ) : (
                   history.map((entry) => (
-                    <tr key={entry.id} className="hover:bg-ink-800/40">
-                      <td className="whitespace-nowrap px-4 py-2 font-mono text-xs text-mist-200">
+                    <tr key={entry.id} className="hover:bg-surface-muted">
+                      <td className="whitespace-nowrap px-4 py-2 font-mono text-xs text-fg">
                         {formatDate(entry.openedAt)}
                       </td>
-                      <td className="whitespace-nowrap px-4 py-2 font-mono text-xs text-mist-400">
+                      <td className="whitespace-nowrap px-4 py-2 font-mono text-xs text-fg-muted">
                         {entry.closedAt ? formatDate(entry.closedAt) : "open"}
                       </td>
-                      <td className="px-4 py-2 text-xs text-mist-200">
+                      <td className="px-4 py-2 text-xs text-fg">
                         {entry.process ?? "—"}
                         <div
-                          className="max-w-[360px] truncate font-mono text-xs text-mist-400"
+                          className="max-w-[360px] truncate font-mono text-xs text-fg-muted"
                           title={entry.commandLine ?? ""}
                         >
                           {entry.commandLine ?? ""}
                         </div>
                       </td>
-                      <td className="px-4 py-2 font-mono text-xs text-mist-400">
+                      <td className="px-4 py-2 font-mono text-xs text-fg-muted">
                         {entry.pid ?? "—"} / {entry.ppid ?? "—"}
                       </td>
-                      <td className="px-4 py-2 text-xs text-mist-400">
+                      <td className="px-4 py-2 text-xs text-fg-muted">
                         {entry.releasedBy ?? "—"}
                       </td>
                     </tr>
@@ -605,17 +605,17 @@ export default function DashboardPage() {
         <form
           id="reservation-form"
           onSubmit={createReservation}
-          className="rounded-xl border border-ink-700/70 bg-ink-900/50 p-4"
+          className="rounded-xl border border-border bg-surface p-4"
         >
-          <h2 className="text-sm font-semibold text-white">ポート予約</h2>
-          <p className="mt-1 text-xs leading-relaxed text-mist-400">
+          <h2 className="text-sm font-semibold text-fg">ポート予約</h2>
+          <p className="mt-1 text-xs leading-relaxed text-fg-muted">
             Windows と WSL はネットワークを共有するため、同じ protocol + port は
             1 つだけ予約できます。予約後に別プロセスが listen
             すると競合として表示されます。
           </p>
           <div className="mt-4 grid grid-cols-2 gap-3">
             <label className="block">
-              <span className="mb-1 block text-xs text-mist-400">Scope</span>
+              <span className="mb-1 block text-xs text-fg-muted">Scope</span>
               <select
                 value={form.scope}
                 onChange={(event) =>
@@ -625,14 +625,14 @@ export default function DashboardPage() {
                   })
                 }
                 disabled={!canOperate}
-                className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 text-xs text-mist-200 focus:border-signal-400/40"
+                className="w-full rounded-md border border-border bg-bg px-2 py-1.5 text-xs text-fg focus:border-success/40"
               >
                 <option value="windows">windows</option>
                 <option value="wsl">wsl</option>
               </select>
             </label>
             <label className="block">
-              <span className="mb-1 block text-xs text-mist-400">Protocol</span>
+              <span className="mb-1 block text-xs text-fg-muted">Protocol</span>
               <select
                 value={form.protocol}
                 onChange={(event) =>
@@ -642,7 +642,7 @@ export default function DashboardPage() {
                   })
                 }
                 disabled={!canOperate}
-                className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 text-xs text-mist-200 focus:border-signal-400/40"
+                className="w-full rounded-md border border-border bg-bg px-2 py-1.5 text-xs text-fg focus:border-success/40"
               >
                 <option value="tcp">tcp</option>
                 <option value="udp">udp</option>
@@ -650,7 +650,7 @@ export default function DashboardPage() {
             </label>
           </div>
           <label className="mt-3 block">
-            <span className="mb-1 block text-xs text-mist-400">Port</span>
+            <span className="mb-1 block text-xs text-fg-muted">Port</span>
             <input
               id="reservation-port"
               type="number"
@@ -663,11 +663,11 @@ export default function DashboardPage() {
               }
               disabled={!canOperate}
               placeholder="34567"
-              className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 font-mono text-xs text-mist-200 placeholder:text-mist-400 focus:border-signal-400/40"
+              className="w-full rounded-md border border-border bg-bg px-2 py-1.5 font-mono text-xs text-fg placeholder:text-fg-muted focus:border-success/40"
             />
           </label>
           <label className="mt-3 block">
-            <span className="mb-1 block text-xs text-mist-400">Service ID</span>
+            <span className="mb-1 block text-xs text-fg-muted">Service ID</span>
             <input
               type="text"
               required
@@ -677,11 +677,11 @@ export default function DashboardPage() {
               }
               disabled={!canOperate}
               placeholder="my-api"
-              className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 text-xs text-mist-200 placeholder:text-mist-400 focus:border-signal-400/40"
+              className="w-full rounded-md border border-border bg-bg px-2 py-1.5 text-xs text-fg placeholder:text-fg-muted focus:border-success/40"
             />
           </label>
           <label className="mt-3 block">
-            <span className="mb-1 block text-xs text-mist-400">Note</span>
+            <span className="mb-1 block text-xs text-fg-muted">Note</span>
             <input
               type="text"
               value={form.note}
@@ -690,39 +690,39 @@ export default function DashboardPage() {
               }
               disabled={!canOperate}
               placeholder="用途・担当など"
-              className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 text-xs text-mist-200 placeholder:text-mist-400 focus:border-signal-400/40"
+              className="w-full rounded-md border border-border bg-bg px-2 py-1.5 text-xs text-fg placeholder:text-fg-muted focus:border-success/40"
             />
           </label>
           {reservationError ? (
-            <div className="mt-3 rounded-md border border-danger-400/30 bg-danger-400/10 px-2 py-1.5 text-xs text-danger-400">
+            <div className="mt-3 rounded-md border border-danger/30 bg-danger/10 px-2 py-1.5 text-xs text-danger">
               {reservationError}
             </div>
           ) : null}
           <button
             type="submit"
             disabled={!canOperate || submittingReservation}
-            className="mt-4 w-full rounded-md bg-signal-400 px-3 py-2 text-xs font-semibold text-ink-950 transition hover:bg-signal-400/90 disabled:cursor-not-allowed disabled:opacity-50"
+            className="mt-4 w-full rounded-md bg-success px-3 py-2 text-xs font-semibold text-ink-950 transition hover:bg-success/90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {submittingReservation ? "予約中…" : "予約する"}
           </button>
           {!canOperate ? (
-            <p className="mt-2 text-xs text-mist-400">
+            <p className="mt-2 text-xs text-fg-muted">
               予約には operator 以上の権限が必要です。
             </p>
           ) : null}
         </form>
 
-        <div className="overflow-hidden rounded-xl border border-ink-700/70 bg-ink-900/50">
-          <div className="border-b border-ink-700/70 px-4 py-3">
-            <h2 className="text-sm font-semibold text-white">予約一覧</h2>
-            <p className="text-xs text-mist-400">
+        <div className="overflow-hidden rounded-xl border border-border bg-surface">
+          <div className="border-b border-border px-4 py-3">
+            <h2 className="text-sm font-semibold text-fg">予約一覧</h2>
+            <p className="text-xs text-fg-muted">
               起動前チェック用の予約。競合は赤で表示されます。
             </p>
           </div>
           <div className="scrollbar-thin overflow-x-auto">
             <table className="w-full min-w-[620px] border-collapse text-left">
               <thead>
-                <tr className="border-b border-ink-700/70 bg-ink-950/40 text-xs text-mist-400">
+                <tr className="border-b border-border bg-surface-muted text-xs text-fg-muted">
                   <th scope="col" className="px-4 py-2 font-medium">
                     Endpoint
                   </th>
@@ -740,7 +740,7 @@ export default function DashboardPage() {
                   </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-ink-700/40">
+              <tbody className="divide-y divide-border">
                 {(data?.reservations.length ?? 0) === 0 ? (
                   <tr>
                     <td colSpan={5}>
@@ -763,7 +763,7 @@ export default function DashboardPage() {
                                   .getElementById("reservation-port")
                                   ?.focus();
                               }}
-                              className="min-h-9 rounded-md border border-ink-700 px-3 text-xs font-medium text-mist-200 transition hover:border-signal-400/40 hover:text-white"
+                              className="min-h-9 rounded-md border border-border px-3 text-xs font-medium text-fg transition hover:border-success/40 hover:text-fg"
                             >
                               予約を追加
                             </button>
@@ -774,15 +774,15 @@ export default function DashboardPage() {
                   </tr>
                 ) : (
                   data?.reservations.map((reservation) => (
-                    <tr key={reservation.id} className="hover:bg-ink-800/40">
-                      <td className="whitespace-nowrap px-4 py-2 font-mono text-xs text-white">
+                    <tr key={reservation.id} className="hover:bg-surface-muted">
+                      <td className="whitespace-nowrap px-4 py-2 font-mono text-xs text-fg">
                         {reservation.scope.toUpperCase()} /{" "}
                         {reservation.protocol.toUpperCase()} {reservation.port}
                       </td>
-                      <td className="px-4 py-2 font-mono text-xs text-mist-200">
+                      <td className="px-4 py-2 font-mono text-xs text-fg">
                         {reservation.serviceId}
                       </td>
-                      <td className="max-w-[220px] px-4 py-2 text-xs text-mist-400">
+                      <td className="max-w-[220px] px-4 py-2 text-xs text-fg-muted">
                         <span
                           className="line-clamp-1"
                           title={reservation.note ?? ""}
@@ -794,8 +794,8 @@ export default function DashboardPage() {
                         <span
                           className={`inline-flex rounded px-1.5 py-0.5 text-xs font-medium ${
                             reservation.status === "conflict"
-                              ? "bg-danger-400/15 text-danger-400"
-                              : "bg-signal-400/15 text-signal-400"
+                              ? "bg-danger/15 text-danger"
+                              : "bg-success/15 text-success"
                           }`}
                         >
                           {reservation.status === "conflict"
@@ -811,7 +811,7 @@ export default function DashboardPage() {
                             !canOperate || busyReservationId === reservation.id
                           }
                           aria-label={`${reservation.protocol.toUpperCase()} ${reservation.port} (${reservation.serviceId}) の予約を解除`}
-                          className="min-h-9 rounded border border-ink-700 px-2.5 py-1 text-xs text-mist-400 transition hover:border-danger-400/40 hover:text-danger-400 disabled:cursor-not-allowed disabled:opacity-40"
+                          className="min-h-9 rounded border border-border px-2.5 py-1 text-xs text-fg-muted transition hover:border-danger/40 hover:text-danger disabled:cursor-not-allowed disabled:opacity-40"
                         >
                           {busyReservationId === reservation.id
                             ? "解除中…"
@@ -828,30 +828,28 @@ export default function DashboardPage() {
       </section>
 
       <section className="mt-6 grid gap-4 lg:grid-cols-2">
-        <div className="rounded-xl border border-ink-700/70 bg-ink-900/60 p-4">
+        <div className="rounded-xl border border-border bg-surface p-4">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <h2 className="text-sm font-semibold text-white">
-                Open incidents
-              </h2>
-              <p className="text-xs text-mist-400">未解決の監視インシデント</p>
+              <h2 className="text-sm font-semibold text-fg">Open incidents</h2>
+              <p className="text-xs text-fg-muted">未解決の監視インシデント</p>
             </div>
             <Link
               href="/incidents"
-              className="rounded-md border border-ink-700 bg-ink-800/80 px-2.5 py-1 text-xs text-mist-200 transition hover:border-signal-400/40 hover:text-white"
+              className="rounded-md border border-border bg-surface-muted px-2.5 py-1 text-xs text-fg transition hover:border-success/40 hover:text-fg"
             >
               開く
             </Link>
           </div>
           <div
             className={`mt-3 font-mono text-3xl tabular-nums ${
-              ops.openIncidents > 0 ? "text-danger-400" : "text-signal-400"
+              ops.openIncidents > 0 ? "text-danger" : "text-success"
             }`}
           >
             {ops.openIncidents}
           </div>
           {ops.incidents.length === 0 ? (
-            <p className="mt-2 text-xs text-mist-400">
+            <p className="mt-2 text-xs text-fg-muted">
               アクティブなインシデントはありません。
             </p>
           ) : (
@@ -860,13 +858,13 @@ export default function DashboardPage() {
                 <li key={incident.id}>
                   <Link
                     href={`/incidents?focus=${encodeURIComponent(incident.id)}`}
-                    className="flex items-start justify-between gap-3 rounded border border-ink-700/60 bg-ink-950/30 px-2.5 py-2 transition hover:border-danger-400/30"
+                    className="flex items-start justify-between gap-3 rounded border border-border bg-surface-muted px-2.5 py-2 transition hover:border-danger/30"
                   >
                     <span className="min-w-0">
-                      <span className="block truncate text-xs text-mist-200">
+                      <span className="block truncate text-xs text-fg">
                         {incident.title}
                       </span>
-                      <span className="mt-0.5 block text-xs text-mist-400">
+                      <span className="mt-0.5 block text-xs text-fg-muted">
                         {incident.service?.name ?? "—"} /{" "}
                         {formatDate(incident.startedAt)}
                       </span>
@@ -875,10 +873,10 @@ export default function DashboardPage() {
                       className={`shrink-0 text-xs font-medium ${
                         incident.severity === "critical" ||
                         incident.severity === "error"
-                          ? "text-danger-400"
+                          ? "text-danger"
                           : incident.severity === "warning"
-                            ? "text-warn-400"
-                            : "text-mist-400"
+                            ? "text-warning"
+                            : "text-fg-muted"
                       }`}
                     >
                       {incident.severity}
@@ -890,31 +888,31 @@ export default function DashboardPage() {
           )}
         </div>
 
-        <div className="rounded-xl border border-ink-700/70 bg-ink-900/60 p-4">
+        <div className="rounded-xl border border-border bg-surface p-4">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <h2 className="text-sm font-semibold text-white">
+              <h2 className="text-sm font-semibold text-fg">
                 Pending approvals
               </h2>
-              <p className="text-xs text-mist-400">
+              <p className="text-xs text-fg-muted">
                 承認待ちの再起動リクエスト
               </p>
             </div>
             <Link
               href="/approvals"
-              className="rounded-md border border-ink-700 bg-ink-800/80 px-2.5 py-1 text-xs text-mist-200 transition hover:border-signal-400/40 hover:text-white"
+              className="rounded-md border border-border bg-surface-muted px-2.5 py-1 text-xs text-fg transition hover:border-success/40 hover:text-fg"
             >
               開く
             </Link>
           </div>
           <div
             className={`mt-3 font-mono text-3xl tabular-nums ${
-              ops.pendingApprovals > 0 ? "text-warn-400" : "text-signal-400"
+              ops.pendingApprovals > 0 ? "text-warning" : "text-success"
             }`}
           >
             {ops.pendingApprovals}
           </div>
-          <p className="mt-2 text-xs text-mist-400">
+          <p className="mt-2 text-xs text-fg-muted">
             {ops.pendingApprovals > 0
               ? "operator 以上が承認すると再起動と復旧確認を実行します。"
               : "承認待ちはありません。"}
@@ -922,7 +920,7 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      <footer className="mt-8 flex flex-wrap items-center justify-between gap-2 text-xs text-mist-400">
+      <footer className="mt-8 flex flex-wrap items-center justify-between gap-2 text-xs text-fg-muted">
         <span>sys4sys v0.1</span>
         <span>Ports / reservations / history / process control</span>
       </footer>

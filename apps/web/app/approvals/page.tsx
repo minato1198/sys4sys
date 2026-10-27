@@ -72,20 +72,19 @@ function formatDate(value: string | null | undefined): string {
 
 function severityBadge(severity: string): string {
   if (severity === "critical" || severity === "error")
-    return "border-danger-400/30 bg-danger-400/10 text-danger-400";
+    return "border-danger/30 bg-danger/10 text-danger";
   if (severity === "warning")
-    return "border-warn-400/30 bg-warn-400/10 text-warn-400";
-  return "border-ink-700 bg-ink-800 text-mist-200";
+    return "border-warning/30 bg-warning/10 text-warning";
+  return "border-border bg-surface-muted text-fg";
 }
 
 function approvalBadge(status: ApprovalStatus): string {
   if (status === "pending")
-    return "border-warn-400/40 bg-warn-400/10 text-warn-400";
+    return "border-warning/40 bg-warning/10 text-warning";
   if (status === "approved")
-    return "border-signal-400/40 bg-signal-400/10 text-signal-400";
-  if (status === "rejected")
-    return "border-danger-400/40 bg-danger-400/10 text-danger-400";
-  return "border-ink-700 bg-ink-800 text-mist-400";
+    return "border-success/40 bg-success/10 text-success";
+  if (status === "rejected") return "border-danger/40 bg-danger/10 text-danger";
+  return "border-border bg-surface-muted text-fg-muted";
 }
 
 function requestedReason(value: Record<string, unknown>): string {
@@ -211,12 +210,12 @@ export default function ApprovalsPage() {
       user={user}
     >
       {error ? (
-        <div className="mt-6 rounded-lg border border-danger-400/30 bg-danger-400/10 px-4 py-3 text-sm text-danger-400">
+        <div className="mt-6 rounded-lg border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
           {error}
         </div>
       ) : null}
       {message ? (
-        <div className="mt-6 rounded-lg border border-signal-400/30 bg-signal-400/10 px-4 py-3 text-sm text-signal-400">
+        <div className="mt-6 rounded-lg border border-success/30 bg-success/10 px-4 py-3 text-sm text-success">
           {message}
         </div>
       ) : null}
@@ -229,20 +228,20 @@ export default function ApprovalsPage() {
             onClick={() => setStatus(tab.value)}
             className={`rounded-xl border p-4 text-left transition ${
               status === tab.value
-                ? "border-signal-400/40 bg-signal-400/10"
-                : "border-ink-700/70 bg-ink-900/60 hover:border-signal-400/30"
+                ? "border-success/40 bg-success/10"
+                : "border-border bg-surface hover:border-success/30"
             }`}
           >
-            <div className="text-xs font-medium text-mist-400">{tab.label}</div>
+            <div className="text-xs font-medium text-fg-muted">{tab.label}</div>
             <div
               className={`mt-2 font-mono text-2xl tabular-nums ${
                 tab.value === "pending"
-                  ? "text-warn-400"
+                  ? "text-warning"
                   : tab.value === "approved"
-                    ? "text-signal-400"
+                    ? "text-success"
                     : tab.value === "rejected"
-                      ? "text-danger-400"
-                      : "text-mist-200"
+                      ? "text-danger"
+                      : "text-fg"
               }`}
             >
               {status === tab.value ? total : "—"}
@@ -251,11 +250,11 @@ export default function ApprovalsPage() {
         ))}
       </section>
 
-      <section className="mt-6 overflow-hidden rounded-xl border border-ink-700/70 bg-ink-900/50">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-ink-700/70 px-4 py-3">
+      <section className="mt-6 overflow-hidden rounded-xl border border-border bg-surface">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
           <div>
-            <h2 className="text-sm font-semibold text-white">承認キュー</h2>
-            <p className="text-xs text-mist-400">
+            <h2 className="text-sm font-semibold text-fg">承認キュー</h2>
+            <p className="text-xs text-fg-muted">
               5
               秒ごとに自動更新します。承認後は再起動と復旧確認が非同期で実行されます。
             </p>
@@ -263,14 +262,14 @@ export default function ApprovalsPage() {
           <button
             type="button"
             onClick={() => void load()}
-            className="rounded-md border border-ink-700 bg-ink-800/80 px-3 py-1.5 text-xs font-medium text-mist-200 transition hover:border-signal-400/40 hover:text-white"
+            className="rounded-md border border-border bg-surface-muted px-3 py-1.5 text-xs font-medium text-fg transition hover:border-success/40 hover:text-fg"
           >
             更新
           </button>
         </div>
 
-        <div className="border-b border-ink-700/70 px-4 py-3">
-          <label className="text-xs font-medium text-mist-400">
+        <div className="border-b border-border px-4 py-3">
+          <label className="text-xs font-medium text-fg-muted">
             判断メモ（任意）
           </label>
           <textarea
@@ -278,14 +277,14 @@ export default function ApprovalsPage() {
             onChange={(event) => setNote(event.target.value)}
             rows={2}
             placeholder="承認・却下の理由など"
-            className="mt-1 w-full rounded-md border border-ink-700 bg-ink-800/80 px-2.5 py-2 text-xs text-mist-200 focus:border-signal-400/50"
+            className="mt-1 w-full rounded-md border border-border bg-surface-muted px-2.5 py-2 text-xs text-fg focus:border-success/50"
           />
         </div>
 
         <div className="scrollbar-thin overflow-x-auto">
           <table className="w-full min-w-[1020px] border-collapse text-left">
             <thead>
-              <tr className="border-b border-ink-700/70 bg-ink-950/40 text-xs text-mist-400">
+              <tr className="border-b border-border bg-surface-muted text-xs text-fg-muted">
                 <th scope="col" className="px-4 py-2 font-medium">
                   Status
                 </th>
@@ -306,12 +305,12 @@ export default function ApprovalsPage() {
                 </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-ink-700/40">
+            <tbody className="divide-y divide-border">
               {loading ? (
                 <tr>
                   <td
                     colSpan={6}
-                    className="px-4 py-8 text-center text-sm text-mist-400"
+                    className="px-4 py-8 text-center text-sm text-fg-muted"
                   >
                     読み込み中…
                   </td>
@@ -320,7 +319,7 @@ export default function ApprovalsPage() {
                 <tr>
                   <td
                     colSpan={6}
-                    className="px-4 py-8 text-center text-sm text-mist-400"
+                    className="px-4 py-8 text-center text-sm text-fg-muted"
                   >
                     承認はありません
                   </td>
@@ -334,8 +333,8 @@ export default function ApprovalsPage() {
                       onClick={() => setSelectedId(approval.id)}
                       className={`cursor-pointer align-top transition ${
                         selectedId === approval.id
-                          ? "bg-ink-800/70"
-                          : "hover:bg-ink-800/40"
+                          ? "bg-surface-muted"
+                          : "hover:bg-surface-muted"
                       }`}
                     >
                       <td className="px-4 py-3">
@@ -348,10 +347,10 @@ export default function ApprovalsPage() {
                         </span>
                       </td>
                       <td className="px-4 py-3">
-                        <div className="text-sm font-medium text-white">
+                        <div className="text-sm font-medium text-fg">
                           {approval.service?.name ?? "—"}
                         </div>
-                        <div className="mt-0.5 text-xs text-mist-400">
+                        <div className="mt-0.5 text-xs text-fg-muted">
                           {approval.host?.kind?.toUpperCase() ?? "?"}{" "}
                           {approval.host?.distro ?? approval.host?.name ?? ""}
                           {approval.service
@@ -364,12 +363,12 @@ export default function ApprovalsPage() {
                           href={`/incidents?focus=${encodeURIComponent(
                             approval.incidentId,
                           )}`}
-                          className="text-xs text-mist-200 hover:text-signal-400"
+                          className="text-xs text-fg hover:text-success"
                           onClick={(event) => event.stopPropagation()}
                         >
                           {approval.incident?.title ?? approval.incidentId}
                         </Link>
-                        <div className="mt-0.5 max-w-96 truncate text-xs text-mist-400">
+                        <div className="mt-0.5 max-w-96 truncate text-xs text-fg-muted">
                           {requestedReason(approval.requestedAction) ||
                             approval.incident?.summary ||
                             "—"}
@@ -384,7 +383,7 @@ export default function ApprovalsPage() {
                           {approval.incident?.severity ?? "—"}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-xs text-mist-200">
+                      <td className="px-4 py-3 text-xs text-fg">
                         {formatDate(approval.requestedAt)}
                       </td>
                       <td className="px-4 py-3">
@@ -397,7 +396,7 @@ export default function ApprovalsPage() {
                                 event.stopPropagation();
                                 void decide(approval, "approve");
                               }}
-                              className="min-h-9 rounded border border-signal-400/40 bg-signal-400/10 px-2.5 py-1 text-xs font-medium text-signal-400 transition hover:bg-signal-400/20 disabled:opacity-50"
+                              className="min-h-9 rounded border border-success/40 bg-success/10 px-2.5 py-1 text-xs font-medium text-success transition hover:bg-success/20 disabled:opacity-50"
                             >
                               承認
                             </button>
@@ -438,13 +437,13 @@ export default function ApprovalsPage() {
                                   () => decide(approval, "reject"),
                                 );
                               }}
-                              className="min-h-9 rounded border border-danger-400/40 bg-danger-400/10 px-2.5 py-1 text-xs font-medium text-danger-400 transition hover:bg-danger-400/20 disabled:opacity-50"
+                              className="min-h-9 rounded border border-danger/40 bg-danger/10 px-2.5 py-1 text-xs font-medium text-danger transition hover:bg-danger/20 disabled:opacity-50"
                             >
                               却下
                             </button>
                           </div>
                         ) : (
-                          <span className="text-xs text-mist-400">
+                          <span className="text-xs text-fg-muted">
                             {approval.decidedBy
                               ? `${approval.decidedBy} / ${formatDate(
                                   approval.decidedAt,
@@ -465,45 +464,45 @@ export default function ApprovalsPage() {
       </section>
 
       {selected ? (
-        <section className="mt-6 rounded-xl border border-ink-700/70 bg-ink-900/50 p-4">
+        <section className="mt-6 rounded-xl border border-border bg-surface p-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold text-white">
+            <h2 className="text-sm font-semibold text-fg">
               承認リクエスト詳細
             </h2>
             <Link
               href={`/incidents?focus=${encodeURIComponent(selected.incidentId)}`}
-              className="text-xs text-signal-400 hover:underline"
+              className="text-xs text-success hover:underline"
             >
               インシデントを開く
             </Link>
           </div>
           <dl className="mt-3 grid gap-3 text-xs sm:grid-cols-2 lg:grid-cols-4">
             <div>
-              <dt className="text-xs text-mist-400">Approval</dt>
-              <dd className="font-mono text-xs text-mist-200">{selected.id}</dd>
+              <dt className="text-xs text-fg-muted">Approval</dt>
+              <dd className="font-mono text-xs text-fg">{selected.id}</dd>
             </div>
             <div>
-              <dt className="text-xs text-mist-400">Incident</dt>
-              <dd className="text-mist-200">
+              <dt className="text-xs text-fg-muted">Incident</dt>
+              <dd className="text-fg">
                 {selected.incident?.title ?? selected.incidentId}
               </dd>
             </div>
             <div>
-              <dt className="text-xs text-mist-400">Requested action</dt>
-              <dd className="break-words font-mono text-xs text-mist-200">
+              <dt className="text-xs text-fg-muted">Requested action</dt>
+              <dd className="break-words font-mono text-xs text-fg">
                 {JSON.stringify(selected.requestedAction)}
               </dd>
             </div>
             <div>
-              <dt className="text-xs text-mist-400">Decision</dt>
-              <dd className="text-mist-200">
+              <dt className="text-xs text-fg-muted">Decision</dt>
+              <dd className="text-fg">
                 {selected.status}
                 {selected.decidedBy ? ` / ${selected.decidedBy}` : ""}
               </dd>
             </div>
           </dl>
           {selected.note ? (
-            <p className="mt-3 whitespace-pre-wrap rounded border border-ink-700/60 bg-ink-950/30 px-3 py-2 text-xs text-mist-200">
+            <p className="mt-3 whitespace-pre-wrap rounded border border-border bg-surface-muted px-3 py-2 text-xs text-fg">
               {selected.note}
             </p>
           ) : null}

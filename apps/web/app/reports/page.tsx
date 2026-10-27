@@ -75,12 +75,11 @@ function formatDate(value: string | null | undefined): string {
 
 function severityBadge(severity: IncidentSeverity): string {
   if (severity === "critical")
-    return "border-danger-400/40 bg-danger-400/15 text-danger-400";
-  if (severity === "error")
-    return "border-danger-400/30 bg-danger-400/10 text-danger-400";
+    return "border-danger/40 bg-danger/15 text-danger";
+  if (severity === "error") return "border-danger/30 bg-danger/10 text-danger";
   if (severity === "warning")
-    return "border-warn-400/30 bg-warn-400/10 text-warn-400";
-  return "border-ink-700 bg-ink-800 text-mist-200";
+    return "border-warning/30 bg-warning/10 text-warning";
+  return "border-border bg-surface-muted text-fg";
 }
 
 export default function ReportsPage() {
@@ -190,26 +189,26 @@ export default function ReportsPage() {
       user={user}
     >
       {error ? (
-        <div className="mt-6 rounded-lg border border-danger-400/30 bg-danger-400/10 px-4 py-3 text-sm text-danger-400">
+        <div className="mt-6 rounded-lg border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
           {error}
         </div>
       ) : null}
 
       <section className="mt-6 grid grid-cols-3 gap-3">
         {[
-          { label: "Reports", value: stats.total, tone: "text-white" },
-          { label: "Markdown", value: stats.markdown, tone: "text-signal-400" },
+          { label: "Reports", value: stats.total, tone: "text-fg" },
+          { label: "Markdown", value: stats.markdown, tone: "text-success" },
           {
             label: "Critical (recent)",
             value: stats.ai,
-            tone: "text-danger-400",
+            tone: "text-danger",
           },
         ].map((card) => (
           <div
             key={card.label}
-            className="rounded-xl border border-ink-700/70 bg-ink-900/60 p-4"
+            className="rounded-xl border border-border bg-surface p-4"
           >
-            <div className="text-xs font-medium text-mist-400">
+            <div className="text-xs font-medium text-fg-muted">
               {card.label}
             </div>
             <div
@@ -222,33 +221,33 @@ export default function ReportsPage() {
       </section>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-[0.8fr_1.2fr]">
-        <section className="overflow-hidden rounded-xl border border-ink-700/70 bg-ink-900/50">
-          <div className="flex items-center justify-between border-b border-ink-700/70 px-4 py-3">
+        <section className="overflow-hidden rounded-xl border border-border bg-surface">
+          <div className="flex items-center justify-between border-b border-border px-4 py-3">
             <div>
-              <h2 className="text-sm font-semibold text-white">レポート一覧</h2>
-              <p className="text-xs text-mist-400">
+              <h2 className="text-sm font-semibold text-fg">レポート一覧</h2>
+              <p className="text-xs text-fg-muted">
                 15 秒ごとに自動更新します。
               </p>
             </div>
             <button
               type="button"
               onClick={() => void loadList()}
-              className="rounded-md border border-ink-700 bg-ink-800/80 px-3 py-1.5 text-xs font-medium text-mist-200 transition hover:border-signal-400/40 hover:text-white"
+              className="rounded-md border border-border bg-surface-muted px-3 py-1.5 text-xs font-medium text-fg transition hover:border-success/40 hover:text-fg"
             >
               更新
             </button>
           </div>
           <div className="scrollbar-thin max-h-[70vh] overflow-y-auto">
             {loading ? (
-              <div className="px-4 py-8 text-center text-sm text-mist-400">
+              <div className="px-4 py-8 text-center text-sm text-fg-muted">
                 読み込み中…
               </div>
             ) : items.length === 0 ? (
-              <div className="px-4 py-8 text-center text-sm text-mist-400">
+              <div className="px-4 py-8 text-center text-sm text-fg-muted">
                 レポートはまだありません。インシデント作成時に自動生成されます。
               </div>
             ) : (
-              <ul className="divide-y divide-ink-700/40">
+              <ul className="divide-y divide-border">
                 {items.map((item) => (
                   <li key={item.id}>
                     <button
@@ -256,16 +255,16 @@ export default function ReportsPage() {
                       onClick={() => setSelectedId(item.id)}
                       className={`w-full px-4 py-3 text-left transition ${
                         selectedId === item.id
-                          ? "bg-ink-800/70"
-                          : "hover:bg-ink-800/40"
+                          ? "bg-surface-muted"
+                          : "hover:bg-surface-muted"
                       }`}
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                          <div className="truncate text-xs font-medium text-mist-200">
+                          <div className="truncate text-xs font-medium text-fg">
                             {item.incident?.title ?? item.incidentId}
                           </div>
-                          <div className="mt-0.5 truncate text-xs text-mist-400">
+                          <div className="mt-0.5 truncate text-xs text-fg-muted">
                             {item.incident?.serviceName ?? "unknown service"} ·{" "}
                             {formatDate(item.createdAt)}
                           </div>
@@ -280,7 +279,7 @@ export default function ReportsPage() {
                           </span>
                         ) : null}
                       </div>
-                      <div className="mt-1 truncate font-mono text-xs text-mist-400">
+                      <div className="mt-1 truncate font-mono text-xs text-fg-muted">
                         {item.id}
                       </div>
                     </button>
@@ -291,15 +290,15 @@ export default function ReportsPage() {
           </div>
         </section>
 
-        <section className="rounded-xl border border-ink-700/70 bg-ink-900/50">
+        <section className="rounded-xl border border-border bg-surface">
           {detail ? (
             <>
-              <div className="flex flex-wrap items-start justify-between gap-3 border-b border-ink-700/70 px-4 py-3">
+              <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border px-4 py-3">
                 <div className="min-w-0">
-                  <h2 className="text-sm font-semibold text-white">
+                  <h2 className="text-sm font-semibold text-fg">
                     {detail.incident?.title ?? "レポート"}
                   </h2>
-                  <p className="mt-0.5 font-mono text-xs text-mist-400">
+                  <p className="mt-0.5 font-mono text-xs text-fg-muted">
                     {detail.id} · {formatDate(detail.createdAt)}
                   </p>
                 </div>
@@ -309,7 +308,7 @@ export default function ReportsPage() {
                       href={`/incidents?focus=${encodeURIComponent(
                         detail.incident.id,
                       )}`}
-                      className="rounded border border-ink-700 px-2 py-1 text-xs text-mist-400 transition hover:border-signal-400/40 hover:text-white"
+                      className="rounded border border-border px-2 py-1 text-xs text-fg-muted transition hover:border-success/40 hover:text-fg"
                     >
                       インシデント
                     </Link>
@@ -319,7 +318,7 @@ export default function ReportsPage() {
                       detail.id,
                     )}/export?format=md`}
                     download
-                    className="rounded border border-signal-400/30 bg-signal-400/10 px-2 py-1 text-xs font-medium text-signal-400 transition hover:bg-signal-400/20"
+                    className="rounded border border-success/30 bg-success/10 px-2 py-1 text-xs font-medium text-success transition hover:bg-success/20"
                   >
                     Markdown
                   </a>
@@ -328,7 +327,7 @@ export default function ReportsPage() {
                       detail.id,
                     )}/export?format=json`}
                     download
-                    className="rounded border border-ink-700 px-2 py-1 text-xs text-mist-400 transition hover:border-signal-400/40 hover:text-white"
+                    className="rounded border border-border px-2 py-1 text-xs text-fg-muted transition hover:border-success/40 hover:text-fg"
                   >
                     JSON
                   </a>
@@ -337,7 +336,7 @@ export default function ReportsPage() {
 
               <div className="space-y-4 p-4">
                 {detail.incident ? (
-                  <div className="flex flex-wrap items-center gap-2 text-xs text-mist-400">
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-fg-muted">
                     <span
                       className={`rounded border px-1.5 py-0.5 font-medium ${severityBadge(
                         detail.incident.severity,
@@ -345,7 +344,7 @@ export default function ReportsPage() {
                     >
                       {detail.incident.severity}
                     </span>
-                    <span className="rounded border border-ink-700 bg-ink-800/60 px-1.5 py-0.5">
+                    <span className="rounded border border-border bg-surface-muted px-1.5 py-0.5">
                       {detail.incident.status}
                     </span>
                     <span>
@@ -356,12 +355,12 @@ export default function ReportsPage() {
                 ) : null}
 
                 {detail.analysis ? (
-                  <div className="rounded-lg border border-ink-700/70 bg-ink-950/40 p-3">
+                  <div className="rounded-lg border border-border bg-surface-muted p-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="text-xs font-medium text-mist-400">
+                      <div className="text-xs font-medium text-fg-muted">
                         AI summary
                       </div>
-                      <div className="flex flex-wrap items-center gap-2 text-xs text-mist-400">
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-fg-muted">
                         <span className="font-mono">
                           {detail.analysis.provider}
                         </span>
@@ -372,22 +371,22 @@ export default function ReportsPage() {
                         </span>
                       </div>
                     </div>
-                    <p className="mt-2 text-xs leading-relaxed text-mist-200">
+                    <p className="mt-2 text-xs leading-relaxed text-fg">
                       {detail.analysis.result.summary}
                     </p>
-                    <p className="mt-2 text-xs leading-relaxed text-mist-400">
+                    <p className="mt-2 text-xs leading-relaxed text-fg-muted">
                       {detail.analysis.result.rootCauseHypothesis}
                     </p>
                   </div>
                 ) : null}
 
-                <div className="rounded-lg border border-ink-700/70 bg-ink-950/30 p-4">
+                <div className="rounded-lg border border-border bg-surface-muted p-4">
                   <MarkdownPreview markdown={detail.body} />
                 </div>
               </div>
             </>
           ) : (
-            <div className="px-4 py-12 text-center text-sm text-mist-400">
+            <div className="px-4 py-12 text-center text-sm text-fg-muted">
               レポートを選択してください。
             </div>
           )}
