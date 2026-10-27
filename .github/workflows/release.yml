@@ -60,7 +60,7 @@ jobs:
           if [ -f CHANGELOG.md ]; then
             awk -v tag="${GITHUB_REF_NAME}" '
               BEGIN { printing = 0 }
-              /^## / { printing = ($0 == "## " tag " ") }
+              /^## / { printing = (index($0, "## " tag " ") == 1) }
               printing { print }
             ' CHANGELOG.md > release-notes.md
           else
