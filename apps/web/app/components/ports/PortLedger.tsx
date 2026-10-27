@@ -99,6 +99,11 @@ export function PortLedger({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {refreshing ? (
+            <span className="rounded-md border border-accent/30 bg-accent/10 px-2 py-1 text-sm text-accent">
+              更新中
+            </span>
+          ) : null}
           <span className="rounded-md border border-info/30 bg-info/10 px-2 py-1 text-sm text-info">
             Windows {windowsCount}
           </span>
@@ -123,6 +128,19 @@ export function PortLedger({
         onFilterChange={setFilter}
         onSortChange={setSort}
       />
+
+      {refreshing ? (
+        <div
+          role="progressbar"
+          aria-label="ポートスキャン中"
+          aria-busy="true"
+          className="px-4 pt-3"
+        >
+          <div className="h-1 overflow-hidden rounded bg-surface-muted">
+            <div className="scan-progress h-full bg-accent" />
+          </div>
+        </div>
+      ) : null}
 
       {loading && items.length === 0 ? (
         <div className="px-4 py-10 text-center text-sm text-fg-muted">

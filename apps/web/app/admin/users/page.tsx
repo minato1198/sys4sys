@@ -385,7 +385,7 @@ export default function UsersPage() {
                 <button
                   type="submit"
                   disabled={busyId === passwordFor.id}
-                  className="rounded-md bg-success px-3 py-2 text-xs font-semibold text-ink-950 transition hover:bg-success/90 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="rounded-md bg-success px-3 py-2 text-xs font-semibold text-success-fg transition hover:bg-success/90 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {busyId === passwordFor.id ? "変更中…" : "再設定する"}
                 </button>
@@ -467,7 +467,7 @@ export default function UsersPage() {
             <button
               type="submit"
               disabled={submitting}
-              className="mt-4 rounded-md bg-success px-4 py-2 text-xs font-semibold text-ink-950 transition hover:bg-success/90 disabled:cursor-not-allowed disabled:opacity-50"
+              className="mt-4 rounded-md bg-success px-4 py-2 text-xs font-semibold text-success-fg transition hover:bg-success/90 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {submitting ? "作成中…" : "作成する"}
             </button>

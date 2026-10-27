@@ -553,7 +553,7 @@ export default function LogsPage() {
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <button
             type="submit"
-            className="rounded-md bg-success px-3 py-1.5 text-xs font-semibold text-ink-950 transition hover:bg-success/90"
+            className="rounded-md bg-success px-3 py-1.5 text-xs font-semibold text-success-fg transition hover:bg-success/90"
           >
             適用
           </button>
@@ -846,7 +846,7 @@ export default function LogsPage() {
                 <button
                   type="submit"
                   disabled={sourceBusy}
-                  className="w-full rounded-md bg-success px-3 py-1.5 text-xs font-semibold text-ink-950 transition hover:bg-success/90 disabled:opacity-50"
+                  className="w-full rounded-md bg-success px-3 py-1.5 text-xs font-semibold text-success-fg transition hover:bg-success/90 disabled:opacity-50"
                 >
                   {sourceBusy ? "処理中…" : "ソースを追加"}
                 </button>

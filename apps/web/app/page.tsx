@@ -701,7 +701,7 @@ export default function DashboardPage() {
           <button
             type="submit"
             disabled={!canOperate || submittingReservation}
-            className="mt-4 w-full rounded-md bg-success px-3 py-2 text-xs font-semibold text-ink-950 transition hover:bg-success/90 disabled:cursor-not-allowed disabled:opacity-50"
+            className="mt-4 w-full rounded-md bg-success px-3 py-2 text-xs font-semibold text-success-fg transition hover:bg-success/90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {submittingReservation ? "予約中…" : "予約する"}
           </button>
@@ -919,11 +919,6 @@ export default function DashboardPage() {
           </p>
         </div>
       </section>
-
-      <footer className="mt-8 flex flex-wrap items-center justify-between gap-2 text-xs text-fg-muted">
-        <span>sys4sys v0.1</span>
-        <span>Ports / reservations / history / process control</span>
-      </footer>
 
       {confirmAction ? (
         <ConfirmDialog

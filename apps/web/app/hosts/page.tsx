@@ -462,7 +462,7 @@ export default function HostsPage() {
             <button
               type="submit"
               disabled={submitting}
-              className="mt-4 w-full rounded-md bg-success px-3 py-2 text-xs font-semibold text-ink-950 transition hover:bg-success/90 disabled:cursor-not-allowed disabled:opacity-50"
+              className="mt-4 w-full rounded-md bg-success px-3 py-2 text-xs font-semibold text-success-fg transition hover:bg-success/90 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {submitting ? "登録中…" : "登録する"}
             </button>

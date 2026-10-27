@@ -14,6 +14,7 @@
   --color-accent: #4f8cff;
   --color-accent-fg: #07090c;
   --color-success: #4ade80;
+  --color-success-fg: #07090c;
   --color-warning: #fbbf24;
   --color-danger: #f87171;
   --color-danger-solid: #b91c1c;
@@ -44,6 +45,7 @@
   --color-accent: #1d4ed8;
   --color-accent-fg: #f3f6fa;
   --color-success: #15803d;
+  --color-success-fg: #ffffff;
   --color-warning: #b45309;
   --color-danger: #b91c1c;
   --color-danger-solid: #b91c1c;
@@ -111,6 +113,26 @@ body {
 .scrollbar-thin::-webkit-scrollbar-thumb {
   background: var(--color-border);
   border-radius: 999px;
+}
+
+.scan-progress {
+  width: 28%;
+  transform: translateX(-120%);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .scan-progress {
+    animation: sys4sys-scan-progress 1s ease-in-out infinite;
+  }
+}
+
+@keyframes sys4sys-scan-progress {
+  from {
+    transform: translateX(-120%);
+  }
+  to {
+    transform: translateX(400%);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

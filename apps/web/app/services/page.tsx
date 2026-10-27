@@ -1734,7 +1734,7 @@ export default function ServicesPage() {
           <button
             type="submit"
             disabled={submitting}
-            className="mt-4 rounded-md bg-success px-4 py-2 text-xs font-semibold text-ink-950 transition hover:bg-success/90 disabled:cursor-not-allowed disabled:opacity-50"
+            className="mt-4 rounded-md bg-success px-4 py-2 text-xs font-semibold text-success-fg transition hover:bg-success/90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {submitting ? "保存中…" : editingId ? "更新する" : "登録する"}
           </button>
