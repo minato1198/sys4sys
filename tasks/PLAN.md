@@ -717,3 +717,17 @@ sys4sys/
 5. ~~M1 ポート予約・競合検出・履歴・プロセス停止・ホスト/ユーザー管理・CSRF・UI・テスト~~: 完了。
 6. ~~M2 サービス管理（CRUD / 起動停止 / ヘルスチェック / ログ / WSL）~~: 完了。次は **M3 監視 + 自動復旧 + メール**。
 7. SMTP / LLM の実値は M3 / M4 の設定画面で入力する。
+
+---
+
+## 15. Web UI/UX overhaul 進捗
+
+詳細計画とフェーズ別ステータスは [`tasks/UI_UX_PLAN.md`](./UI_UX_PLAN.md) を参照してください。
+
+現在の状態:
+
+- `feat/web-uiux` ブランチにフェーズ単位でローカルコミット済み。push は未実施。
+- P0 / P1-01 / P1-02 / P1-03 / P2-01 / P2-03 / P2-04 は実装済み。
+- P3-02 は Playwright + axe-core による公開画面検証を追加済み。`/login` と未認証 `/` の redirect 画面で axe violations 0、390 / 1440 の Dark / Light 截图、キーボードフォーカス確認、reduced-motion emulation を実施。
+- 認証済み dashboard の axe / screenshot matrix は `ADMIN_PASSWORD` が未設定のため自動検証に含まれていない。ログイン済み検証は環境変数または運用アカウントが必要。
+- P1-04 / P3-01 のフォーム共通化（Field / Button / Input / Select）は次フェーズとして残っている。

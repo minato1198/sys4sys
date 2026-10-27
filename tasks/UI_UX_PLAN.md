@@ -1,10 +1,10 @@
 # sys4sys Web UI/UX 改善計画
 
-- 版: v0.2（実装状況追記）
+- 版: v0.3（指定フェーズ実装 / 検証進捗）
 - 作成日: 2026-10-27 / 更新日: 2026-10-27
 - 対象: `apps/web`
-- 基準コミット: `1a9f7d4`（IBM Plex フォント変更と UI/UX P0 の一部は未コミット）
-- ステータス: P0 主要完了 / P1・P2 着手 / 未コミット
+- 基準コミット: `1a9f7d4`
+- ステータス: 指定フェーズ（P1-01 / P1-02 / P1-03 / P2-01 / P2-03 / P2-04 / P3 検証）を `feat/web-uiux` にローカルコミット済み。push 未実施
 - 実装状況: 14. 実装状況を参照
 - 参照:
   - `tasks/PLAN.md`（プロダクト計画）
@@ -898,7 +898,7 @@ P3 では services / logs / settings / approvals も追加。
 ## 14. 実装状況（2026-10-27）
 
 - 状態: `feat/web-uiux` ブランチでフェーズ単位にローカルコミット中 / push 未実施
-- 検証: `pnpm --filter @sys4sys/web typecheck` / `pnpm --filter @sys4sys/web build` / `pnpm exec prettier --write "apps/web/app/**/*.{ts,tsx,css}"` / `http://127.0.0.1:3000/login` / `http://127.0.0.1:8787/api/health` 確認済み
+- 検証: `pnpm --filter @sys4sys/web typecheck` / `pnpm --filter @sys4sys/web build` / `pnpm exec prettier --write "apps/web/app/**/*.{ts,tsx,css}"` / `pnpm --filter @sys4sys/web test:accessibility` / `http://127.0.0.1:3000/login` / `http://127.0.0.1:8787/api/health` 確認済み
 
 ### 14.1 タスク別ステータス
 
@@ -920,7 +920,7 @@ P3 では services / logs / settings / approvals も追加。
 | P2-04 | 部分   | dashboard の status dot から `animate-pulse` を削除。PortLedger に refreshing 表示と scan progress bar、reduced-motion で animation を停止、dashboard footer meta を削除                                                  | 他ページの motion 監査、reduced-motion 手動確認、scan progress のスクリーンリーダー / 視覚確認                |
 | P3-01 | 部分   | StatusBanner / EmptyState / ConfirmDialog / useConfirmDialog / AppShell / StatusRail / PortTable / PortCard / PortLedger を追加。重複 header 撤廃                                                                         | Button / Field の共通化、全フォームへの適用                                                                   |
 | P3-02 | 部分   | Playwright + axe-core を devDependency に追加。`scripts/accessibility-check.mjs` で login / root redirect の axe 0 violations、390 / 1440 Dark / Light 截图、login keyboard focus 確認、reduced motion emulation を実施   | 認証済み dashboard の axe / screenshot、ログイン状態での keyboard walkthrough、全ページ screenshot matrix     |
-| P3-03 | 部分   | 本計画に実装状況を追記                                                                                                                                                                                                    | README 更新、PLAN.md からのリンク、完了後のステータス更新                                                     |
+| P3-03 | 完了   | 本計画に実装状況を追記。README の画面一覧 / テーマ説明 / 開発コマンドを更新し、UI/UX 計画とアクセシビリティチェックへのリンクを追加。PLAN.md に Web UI/UX overhaul 進捗セクションを追加                                   | 認証済み dashboard の visual regression、ログイン済み keyboard walkthrough、P1-04 / P3-01 のフォーム共通化    |
 
 ### 14.2 静的チェック結果
 
@@ -944,10 +944,11 @@ rg -n "text-white|bg-ink|border-ink|divide-ink|text-mist|signal-400|warn-400|dan
 
 ### 14.3 次の着手タスク
 
-1. P2-04: motion / reduced motion 最終調整
-2. P3-02: axe / Playwright / screenshot matrix
-3. P3-03: README / 計画ステータスの最終更新
-4. P1-04 を追加で進めるなら: Field / Button / Input / Select 共通化と全フォーム適用
+指定された P1-01 / P1-02 / P1-03 / P2-01 / P2-03 / P2-04 / P3 検証はローカルコミット済み。追加で進める場合は以下を優先する:
+
+1. 認証済み dashboard の axe / screenshot matrix。`ADMIN_PASSWORD` またはテスト用アカウントが必要。
+2. P1-04: Field / Button / Input / Select 共通化と全フォーム適用。
+3. P3-01 残作業: 共通フォームコンポーネントの適用とスクリーンリーダー確認。
 
 ### 14.4 P0 / P1-01 の主な変更範囲
 
@@ -978,6 +979,9 @@ rg -n "text-white|bg-ink|border-ink|divide-ink|text-mist|signal-400|warn-400|dan
 - P3-02: `apps/web/scripts/accessibility-check.mjs`
 - P3-02: Playwright / axe-core devDependency 追加
 - P3-02: `test-results/accessibility/` 出力を gitignore へ追加
+- P3-03: README の画面一覧 / テーマ説明 / 開発コマンド / ドキュメントリンクを更新
+- P3-03: `tasks/PLAN.md` に Web UI/UX overhaul 進捗セクションを追加
+- P3-03: `tasks/UI_UX_PLAN.md` のフェーズ別ステータスと次の着手タスクを更新
 
 ### 14.5 P3-02 検証結果
 

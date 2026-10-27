@@ -79,8 +79,8 @@ SMTP、AI、保持期間、バックアップは Web の `/settings` からも�
 
 ## 画面
 
-- `/`: ダッシュボード
-- `/ports`: ポート一覧・予約・競合
+- `/login`: ログイン
+- `/`: ダッシュボード / ポート台帳・予約・競合
 - `/services`: サービス管理・デプロイ
 - `/logs`: ログ検索・tail
 - `/incidents`: インシデント
@@ -93,7 +93,7 @@ SMTP、AI、保持期間、バックアップは Web の `/settings` からも�
 
 ロールは `admin`、`operator`、`viewer` の 3 種類です。設定変更とユーザー管理は `admin`、運用操作と承認は `operator` 以上が実行できます。
 
-テーマは OS の外観設定を初期値にし、各画面の Light / Dark スイッチで切り替えられます。選択内容はブラウザに保存されます。
+テーマは OS の外観設定を初期値にし、認証後画面の AppShell にある Light / Dark スイッチで切り替えられます。選択内容はブラウザに保存されます。
 
 ## 開発
 
@@ -106,20 +106,23 @@ pnpm audit --prod
 
 主なスクリプト:
 
-| コマンド                           | 内容                         |
-| ---------------------------------- | ---------------------------- |
-| `pnpm dev`                         | API と Web を同時起動        |
-| `pnpm dev:api`                     | API のみ起動                 |
-| `pnpm dev:web`                     | Web のみ起動                 |
-| `pnpm scan`                        | ポートスキャン CLI           |
-| `pnpm sys4sys -- --help`           | sys4sys CLI                  |
-| `pnpm schema:generate`             | CLI Schema 生成              |
-| `pnpm db:generate`                 | Drizzle マイグレーション生成 |
-| `pnpm db:migrate`                  | マイグレーション適用         |
-| `pnpm db:backup`                   | SQLite バックアップ          |
-| `pnpm --filter @sys4sys/api smoke` | 統合スモークテスト           |
+| コマンド                                        | 内容                                                           |
+| ----------------------------------------------- | -------------------------------------------------------------- |
+| `pnpm dev`                                      | API と Web を同時起動                                          |
+| `pnpm dev:api`                                  | API のみ起動                                                   |
+| `pnpm dev:web`                                  | Web のみ起動                                                   |
+| `pnpm scan`                                     | ポートスキャン CLI                                             |
+| `pnpm sys4sys -- --help`                        | sys4sys CLI                                                    |
+| `pnpm schema:generate`                          | CLI Schema 生成                                                |
+| `pnpm db:generate`                              | Drizzle マイグレーション生成                                   |
+| `pnpm db:migrate`                               | マイグレーション適用                                           |
+| `pnpm db:backup`                                | SQLite バックアップ                                            |
+| `pnpm --filter @sys4sys/api smoke`              | 統合スモークテスト                                             |
+| `pnpm --filter @sys4sys/web test:accessibility` | Playwright / axe-core による公開画面のアクセシビリティチェック |
 
 スモークテストは一時ポートと一時 DB を使用します。WSL やローカル LLM が利用できない環境では、該当するチェックがスキップされます。
+
+アクセシビリティチェックは、先に `pnpm --filter @sys4sys/web build` と `pnpm --filter @sys4sys/web start` で Web を起動し、`http://127.0.0.1:3000` に到達できる状態で `pnpm --filter @sys4sys/web test:accessibility` を実行します。既定では `/login` と、未認証の `/` から `/login` へのリダイレクトを axe で確認し、`test-results/accessibility/` にスクリーンショットを書き出します。
 
 ## CLI
 
@@ -149,6 +152,7 @@ pnpm sys4sys -- services restart <id> --yes --wait --json
 - [CLI README](./apps/cli/README.md)
 - [AI エージェント向け SKILL.md](./apps/cli/SKILL.md)
 - [CLI Schema](./docs/cli-schema.json)
+- [UI/UX 計画](./tasks/UI_UX_PLAN.md)
 
 ## セキュリティ
 
