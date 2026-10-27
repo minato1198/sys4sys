@@ -919,7 +919,7 @@ P3 では services / logs / settings / approvals も追加。
 | P2-03 | 完了   | semantic tokens に Light / Dark を追加。placeholder と focus を両テーマで調整。raw palette を CSS から削除し、全 TSX を semantic tokens へ移行。accent / focus を cobalt に、`--color-white` 再定義を撤廃                 | 1440 / 390 の Light / Dark スクリーンショット、axe contrast 自動監査、Light の影 / surface 実測レビュー       |
 | P2-04 | 部分   | dashboard の status dot から `animate-pulse` を削除。PortLedger に refreshing 表示と scan progress bar、reduced-motion で animation を停止、dashboard footer meta を削除                                                  | 他ページの motion 監査、reduced-motion 手動確認、scan progress のスクリーンリーダー / 視覚確認                |
 | P3-01 | 部分   | StatusBanner / EmptyState / ConfirmDialog / useConfirmDialog / AppShell / StatusRail / PortTable / PortCard / PortLedger を追加。重複 header 撤廃                                                                         | Button / Field の共通化、全フォームへの適用                                                                   |
-| P3-02 | 未着手 | 静的チェック実施                                                                                                                                                                                                          | screenshot matrix、axe / Playwright、キーボードウォークスルー                                                 |
+| P3-02 | 部分   | Playwright + axe-core を devDependency に追加。`scripts/accessibility-check.mjs` で login / root redirect の axe 0 violations、390 / 1440 Dark / Light 截图、login keyboard focus 確認、reduced motion emulation を実施   | 認証済み dashboard の axe / screenshot、ログイン状態での keyboard walkthrough、全ページ screenshot matrix     |
 | P3-03 | 部分   | 本計画に実装状況を追記                                                                                                                                                                                                    | README 更新、PLAN.md からのリンク、完了後のステータス更新                                                     |
 
 ### 14.2 静的チェック結果
@@ -975,3 +975,21 @@ rg -n "text-white|bg-ink|border-ink|divide-ink|text-mist|signal-400|warn-400|dan
 - P2-02: dashboard footer のテンプレ meta を削除
 - P2-03: `text-success-fg` を追加し、primary success ボタンを semantic token へ移行。raw palette CSS を削除
 - P2-04: PortLedger scanning progress bar と reduced-motion keyframe を追加
+- P3-02: `apps/web/scripts/accessibility-check.mjs`
+- P3-02: Playwright / axe-core devDependency 追加
+- P3-02: `test-results/accessibility/` 出力を gitignore へ追加
+
+### 14.5 P3-02 検証結果
+
+```bash
+pnpm --filter @sys4sys/web build
+pnpm --filter @sys4sys/web start
+pnpm --filter @sys4sys/web test:accessibility
+```
+
+- Login axe: 390 / 1440 の Dark / Light で critical / serious 0、全 violations 0。
+- Unauthenticated root: `/` から `/login` へ redirect 確認。1440 dark で axe critical / serious 0。
+- Keyboard: login で autofocus email から Tab により password input へ焦点が移ることを確認。
+- Reduced motion: Playwright context で `reducedMotion: "reduce"` を使用。CSS の reduced-motion rule で animation / transition 时间是短縮される。
+- Screenshots: `test-results/accessibility/login-390-dark.png`, `login-390-light.png`, `login-1440-dark.png`, `login-1440-light.png`, `root-redirects-login-1440-dark.png`。
+- Limitation: `ADMIN_PASSWORD` が空のため、認証済み dashboard の axe / screenshot はこの自動チェックには含めていない。ログイン済み検証は環境変数または運用側アカウントが必要。

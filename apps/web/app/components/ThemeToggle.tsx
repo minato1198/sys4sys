@@ -83,20 +83,16 @@ export function ThemeToggle({ className = "" }: { className?: string }) {
   }
 
   const isLight = theme === "light";
-  const actionLabel = isLight
-    ? "ダークモードに切り替え"
-    : "ライトモードに切り替え";
 
   return (
     <button
       type="button"
       onClick={toggleTheme}
-      aria-label={actionLabel}
-      title={actionLabel}
       className={`inline-flex min-h-11 items-center gap-1.5 rounded-md border border-border bg-surface-muted/70 px-2.5 py-1.5 text-xs font-medium text-fg-muted transition hover:border-accent/40 hover:text-fg sm:min-h-9 ${className}`}
     >
       {isLight ? <SunIcon /> : <MoonIcon />}
       <span>{isLight ? "Light" : "Dark"}</span>
+      <span className="sr-only">テーマ</span>
     </button>
   );
 }
