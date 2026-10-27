@@ -6,7 +6,8 @@
     "dev": "next dev -p 3000",
     "build": "next build",
     "start": "next start -p 3000",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:accessibility": "node scripts/accessibility-check.mjs"
   },
   "dependencies": {
     "@sys4sys/shared": "workspace:*",
@@ -19,6 +20,8 @@
     "@types/node": "^24.10.1",
     "@types/react": "^19.1.9",
     "@types/react-dom": "^19.1.7",
+    "axe-core": "^4.14.0",
+    "playwright": "^1.64.1",
     "tailwindcss": "^4.1.14",
     "typescript": "^5.9.3"
   }

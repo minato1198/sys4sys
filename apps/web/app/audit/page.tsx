@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { NavLinks } from "../components/NavLinks";
+import { AppShell } from "../components/AppShell";
 
 interface AuthUser {
   id: string;
@@ -41,12 +41,12 @@ function formatJson(value: Record<string, unknown> | null): string {
 }
 
 function actionTone(action: string): string {
-  if (action.includes("backup")) return "text-signal-400";
+  if (action.includes("backup")) return "text-success";
   if (action.includes("update") || action.includes("create"))
-    return "text-sky-300";
+    return "text-info";
   if (action.includes("delete") || action.includes("kill"))
-    return "text-danger-400";
-  return "text-mist-200";
+    return "text-danger";
+  return "text-fg";
 }
 
 export default function AuditPage() {
@@ -125,11 +125,6 @@ export default function AuditPage() {
     return () => window.clearInterval(timer);
   }, [load]);
 
-  async function logout() {
-    await fetch("/api/auth/logout", { method: "POST" });
-    window.location.href = "/login";
-  }
-
   const summary = useMemo(
     () => ({
       total,
@@ -141,70 +136,36 @@ export default function AuditPage() {
   );
 
   return (
-    <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="grid size-10 place-items-center rounded-lg border border-signal-400/30 bg-signal-400/10">
-            <span className="font-mono text-sm font-bold text-signal-400">
-              s4s
-            </span>
-          </div>
-          <div>
-            <h1 className="text-xl font-semibold tracking-tight text-white">
-              Audit log
-            </h1>
-            <p className="text-xs text-mist-400">
-              設定変更、承認、再起動、バックアップなどの操作履歴を確認します。
-            </p>
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <NavLinks role={user?.role} />
-          <div className="flex items-center gap-2 rounded-md border border-ink-700 bg-ink-800/60 px-3 py-1.5">
-            <div className="text-right">
-              <div className="text-xs text-mist-200">
-                {user?.email ?? "認証確認中…"}
-              </div>
-              <div className="text-[9px] font-medium uppercase tracking-[0.14em] text-mist-400">
-                {user?.role ?? ""}
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => void logout()}
-              className="rounded border border-ink-700 px-2 py-1 text-[11px] text-mist-400 transition hover:border-danger-400/40 hover:text-danger-400"
-            >
-              ログアウト
-            </button>
-          </div>
-        </div>
-      </header>
-
+    <AppShell
+      title="監査ログ"
+      description="設定変更、承認、再起動、バックアップなどの操作履歴を確認します。"
+      user={user}
+    >
       {error ? (
-        <div className="mt-6 rounded-lg border border-danger-400/30 bg-danger-400/10 px-4 py-3 text-sm text-danger-400">
+        <div className="mt-6 rounded-lg border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
           {error}
         </div>
       ) : null}
 
       <section className="mt-6 grid grid-cols-3 gap-3">
         {[
-          { label: "Entries", value: summary.total, tone: "text-white" },
+          { label: "Entries", value: summary.total, tone: "text-fg" },
           {
             label: "Settings changes",
             value: summary.settings,
-            tone: "text-warn-400",
+            tone: "text-warning",
           },
           {
             label: "Backups",
             value: summary.backups,
-            tone: "text-signal-400",
+            tone: "text-success",
           },
         ].map((card) => (
           <div
             key={card.label}
-            className="rounded-xl border border-ink-700/70 bg-ink-900/60 p-4"
+            className="rounded-xl border border-border bg-surface p-4"
           >
-            <div className="text-[10px] font-medium uppercase tracking-[0.14em] text-mist-400">
+            <div className="text-xs font-medium text-fg-muted">
               {card.label}
             </div>
             <div
@@ -216,74 +177,64 @@ export default function AuditPage() {
         ))}
       </section>
 
-      <section className="mt-6 overflow-hidden rounded-xl border border-ink-700/70 bg-ink-900/50">
-        <div className="flex flex-wrap items-end justify-between gap-3 border-b border-ink-700/70 px-4 py-3">
+      <section className="mt-6 overflow-hidden rounded-xl border border-border bg-surface">
+        <div className="flex flex-wrap items-end justify-between gap-3 border-b border-border px-4 py-3">
           <div>
-            <h2 className="text-sm font-semibold text-white">操作履歴</h2>
-            <p className="text-[11px] text-mist-400">
+            <h2 className="text-sm font-semibold text-fg">操作履歴</h2>
+            <p className="text-xs text-fg-muted">
               最新 200 件を表示します。20 秒ごとに自動更新します。
             </p>
           </div>
           <div className="flex flex-wrap items-end gap-2">
             <label className="block">
-              <span className="block text-[9px] uppercase tracking-[0.12em] text-mist-400">
-                Action
-              </span>
+              <span className="block text-xs text-fg-muted">Action</span>
               <input
                 value={action}
                 onChange={(event) => setAction(event.target.value)}
                 placeholder="settings.ai.update"
-                className="mt-1 w-44 rounded-md border border-ink-700 bg-ink-800/80 px-2 py-1.5 text-[11px] text-mist-200 outline-none focus:border-signal-400/50"
+                className="mt-1 w-44 rounded-md border border-border bg-surface-muted px-2 py-1.5 text-xs text-fg focus:border-success/50"
               />
             </label>
             <label className="block">
-              <span className="block text-[9px] uppercase tracking-[0.12em] text-mist-400">
-                Target
-              </span>
+              <span className="block text-xs text-fg-muted">Target</span>
               <input
                 value={target}
                 onChange={(event) => setTarget(event.target.value)}
                 placeholder="incident:..."
-                className="mt-1 w-40 rounded-md border border-ink-700 bg-ink-800/80 px-2 py-1.5 text-[11px] text-mist-200 outline-none focus:border-signal-400/50"
+                className="mt-1 w-40 rounded-md border border-border bg-surface-muted px-2 py-1.5 text-xs text-fg focus:border-success/50"
               />
             </label>
             <label className="block">
-              <span className="block text-[9px] uppercase tracking-[0.12em] text-mist-400">
-                Actor
-              </span>
+              <span className="block text-xs text-fg-muted">Actor</span>
               <input
                 value={actor}
                 onChange={(event) => setActor(event.target.value)}
                 placeholder="admin@..."
-                className="mt-1 w-40 rounded-md border border-ink-700 bg-ink-800/80 px-2 py-1.5 text-[11px] text-mist-200 outline-none focus:border-signal-400/50"
+                className="mt-1 w-40 rounded-md border border-border bg-surface-muted px-2 py-1.5 text-xs text-fg focus:border-success/50"
               />
             </label>
             <label className="block">
-              <span className="block text-[9px] uppercase tracking-[0.12em] text-mist-400">
-                From
-              </span>
+              <span className="block text-xs text-fg-muted">From</span>
               <input
                 type="datetime-local"
                 value={from}
                 onChange={(event) => setFrom(event.target.value)}
-                className="mt-1 rounded-md border border-ink-700 bg-ink-800/80 px-2 py-1.5 text-[11px] text-mist-200 outline-none focus:border-signal-400/50"
+                className="mt-1 rounded-md border border-border bg-surface-muted px-2 py-1.5 text-xs text-fg focus:border-success/50"
               />
             </label>
             <label className="block">
-              <span className="block text-[9px] uppercase tracking-[0.12em] text-mist-400">
-                To
-              </span>
+              <span className="block text-xs text-fg-muted">To</span>
               <input
                 type="datetime-local"
                 value={to}
                 onChange={(event) => setTo(event.target.value)}
-                className="mt-1 rounded-md border border-ink-700 bg-ink-800/80 px-2 py-1.5 text-[11px] text-mist-200 outline-none focus:border-signal-400/50"
+                className="mt-1 rounded-md border border-border bg-surface-muted px-2 py-1.5 text-xs text-fg focus:border-success/50"
               />
             </label>
             <button
               type="button"
               onClick={() => void load()}
-              className="rounded-md border border-ink-700 bg-ink-800/80 px-3 py-1.5 text-xs font-medium text-mist-200 transition hover:border-signal-400/40 hover:text-white"
+              className="rounded-md border border-border bg-surface-muted px-3 py-1.5 text-xs font-medium text-fg transition hover:border-success/40 hover:text-fg"
             >
               更新
             </button>
@@ -296,7 +247,7 @@ export default function AuditPage() {
                 setFrom("");
                 setTo("");
               }}
-              className="rounded-md border border-ink-700 px-3 py-1.5 text-xs text-mist-400 transition hover:border-signal-400/40 hover:text-white"
+              className="rounded-md border border-border px-3 py-1.5 text-xs text-fg-muted transition hover:border-success/40 hover:text-fg"
             >
               クリア
             </button>
@@ -306,21 +257,33 @@ export default function AuditPage() {
         <div className="scrollbar-thin overflow-x-auto">
           <table className="w-full min-w-[1050px] border-collapse text-left">
             <thead>
-              <tr className="border-b border-ink-700/70 bg-ink-950/40 text-[10px] uppercase tracking-[0.12em] text-mist-400">
-                <th className="px-4 py-2 font-medium">Time</th>
-                <th className="px-4 py-2 font-medium">Actor</th>
-                <th className="px-4 py-2 font-medium">Action</th>
-                <th className="px-4 py-2 font-medium">Target</th>
-                <th className="px-4 py-2 font-medium">Reason</th>
-                <th className="px-4 py-2 font-medium">IP</th>
+              <tr className="border-b border-border bg-surface-muted text-xs text-fg-muted">
+                <th scope="col" className="px-4 py-2 font-medium">
+                  Time
+                </th>
+                <th scope="col" className="px-4 py-2 font-medium">
+                  Actor
+                </th>
+                <th scope="col" className="px-4 py-2 font-medium">
+                  Action
+                </th>
+                <th scope="col" className="px-4 py-2 font-medium">
+                  Target
+                </th>
+                <th scope="col" className="px-4 py-2 font-medium">
+                  Reason
+                </th>
+                <th scope="col" className="px-4 py-2 font-medium">
+                  IP
+                </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-ink-700/40">
+            <tbody className="divide-y divide-border">
               {loading ? (
                 <tr>
                   <td
                     colSpan={6}
-                    className="px-4 py-8 text-center text-sm text-mist-400"
+                    className="px-4 py-8 text-center text-sm text-fg-muted"
                   >
                     読み込み中…
                   </td>
@@ -329,7 +292,7 @@ export default function AuditPage() {
                 <tr>
                   <td
                     colSpan={6}
-                    className="px-4 py-8 text-center text-sm text-mist-400"
+                    className="px-4 py-8 text-center text-sm text-fg-muted"
                   >
                     条件に一致する監査ログはありません
                   </td>
@@ -337,31 +300,31 @@ export default function AuditPage() {
               ) : (
                 items.map((entry) => (
                   <tr key={entry.id} className="align-top">
-                    <td className="whitespace-nowrap px-4 py-2 text-[11px] text-mist-200">
+                    <td className="whitespace-nowrap px-4 py-2 text-xs text-fg">
                       {formatDate(entry.ts)}
                     </td>
-                    <td className="px-4 py-2 text-[11px] text-mist-200">
+                    <td className="px-4 py-2 text-xs text-fg">
                       {entry.actorLabel}
                       {entry.actorUserId ? (
-                        <div className="font-mono text-[9px] text-mist-400">
+                        <div className="font-mono text-xs text-fg-muted">
                           {entry.actorUserId}
                         </div>
                       ) : null}
                     </td>
                     <td className="px-4 py-2">
                       <span
-                        className={`font-mono text-[11px] ${actionTone(entry.action)}`}
+                        className={`font-mono text-xs ${actionTone(entry.action)}`}
                       >
                         {entry.action}
                       </span>
                     </td>
-                    <td className="max-w-64 break-all px-4 py-2 font-mono text-[10px] text-mist-200">
+                    <td className="max-w-64 break-all px-4 py-2 font-mono text-xs text-fg">
                       {entry.target}
                     </td>
-                    <td className="max-w-56 break-words px-4 py-2 text-[10px] text-mist-400">
+                    <td className="max-w-56 break-words px-4 py-2 text-xs text-fg-muted">
                       {entry.reason ?? "—"}
                     </td>
-                    <td className="px-4 py-2 font-mono text-[10px] text-mist-400">
+                    <td className="px-4 py-2 font-mono text-xs text-fg-muted">
                       {entry.ip ?? "—"}
                     </td>
                   </tr>
@@ -372,33 +335,29 @@ export default function AuditPage() {
         </div>
 
         {items.length > 0 ? (
-          <details className="border-t border-ink-700/70 px-4 py-3">
-            <summary className="cursor-pointer text-xs text-mist-400">
+          <details className="border-t border-border px-4 py-3">
+            <summary className="cursor-pointer text-xs text-fg-muted">
               変更前後の JSON を表示
             </summary>
             <div className="mt-3 grid gap-3 lg:grid-cols-2">
               {items.slice(0, 20).map((entry) => (
                 <div
                   key={entry.id}
-                  className="rounded-lg border border-ink-700/60 bg-ink-950/40 p-2"
+                  className="rounded-lg border border-border bg-surface-muted p-2"
                 >
-                  <div className="font-mono text-[10px] text-mist-400">
+                  <div className="font-mono text-xs text-fg-muted">
                     {entry.action} · {formatDate(entry.ts)}
                   </div>
                   <div className="mt-2 grid gap-2">
                     <div>
-                      <div className="text-[9px] uppercase text-mist-400">
-                        before
-                      </div>
-                      <pre className="scrollbar-thin mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-all font-mono text-[9px] text-mist-400">
+                      <div className="text-xs text-fg-muted">before</div>
+                      <pre className="scrollbar-thin mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-all font-mono text-xs text-fg-muted">
                         {formatJson(entry.before)}
                       </pre>
                     </div>
                     <div>
-                      <div className="text-[9px] uppercase text-mist-400">
-                        after
-                      </div>
-                      <pre className="scrollbar-thin mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-all font-mono text-[9px] text-mist-400">
+                      <div className="text-xs text-fg-muted">after</div>
+                      <pre className="scrollbar-thin mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-all font-mono text-xs text-fg-muted">
                         {formatJson(entry.after)}
                       </pre>
                     </div>
@@ -409,6 +368,6 @@ export default function AuditPage() {
           </details>
         ) : null}
       </section>
-    </main>
+    </AppShell>
   );
 }

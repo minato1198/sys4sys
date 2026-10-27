@@ -6,7 +6,7 @@ function inline(text: string, keyPrefix: string): ReactNode[] {
     const key = `${keyPrefix}-${index}`;
     if (part.startsWith("**") && part.endsWith("**") && part.length > 4) {
       return (
-        <strong key={key} className="font-semibold text-white">
+        <strong key={key} className="font-semibold text-fg">
           {part.slice(2, -2)}
         </strong>
       );
@@ -15,7 +15,7 @@ function inline(text: string, keyPrefix: string): ReactNode[] {
       return (
         <code
           key={key}
-          className="rounded bg-ink-800 px-1 py-0.5 font-mono text-[0.9em] text-signal-400"
+          className="rounded bg-surface-muted px-1 py-0.5 font-mono text-[0.9em] text-success"
         >
           {part.slice(1, -1)}
         </code>
@@ -60,7 +60,7 @@ export function MarkdownPreview({ markdown }: { markdown: string }) {
       blocks.push(
         <pre
           key={`code-${key++}`}
-          className="scrollbar-thin overflow-x-auto rounded-lg border border-ink-700/70 bg-ink-950/70 p-3 font-mono text-[11px] leading-relaxed text-mist-400"
+          className="scrollbar-thin overflow-x-auto rounded-lg border border-border bg-bg p-3 font-mono text-xs leading-relaxed text-fg-muted"
         >
           <code>{code.join("\n")}</code>
         </pre>,
@@ -74,10 +74,10 @@ export function MarkdownPreview({ markdown }: { markdown: string }) {
       const text = heading[2] ?? "";
       const className =
         level === 1
-          ? "text-lg font-semibold tracking-tight text-white"
+          ? "text-lg font-semibold tracking-tight text-fg"
           : level === 2
-            ? "mt-5 border-b border-ink-700/60 pb-1 text-sm font-semibold text-white"
-            : "mt-4 text-xs font-semibold uppercase tracking-[0.12em] text-mist-400";
+            ? "mt-5 border-b border-border pb-1 text-sm font-semibold text-fg"
+            : "mt-4 text-xs font-semibold text-fg-muted";
       blocks.push(
         <div key={`heading-${key++}`} className={className}>
           {inline(text, `h-${key}`)}
@@ -96,7 +96,7 @@ export function MarkdownPreview({ markdown }: { markdown: string }) {
       blocks.push(
         <ul
           key={`ul-${key++}`}
-          className="list-disc space-y-1 pl-5 text-xs leading-relaxed text-mist-200"
+          className="list-disc space-y-1 pl-5 text-xs leading-relaxed text-fg"
         >
           {items.map((item, itemIndex) => (
             <li key={`li-${key}-${itemIndex}`}>
@@ -129,22 +129,23 @@ export function MarkdownPreview({ markdown }: { markdown: string }) {
         blocks.push(
           <div
             key={`table-${key++}`}
-            className="scrollbar-thin overflow-x-auto rounded-lg border border-ink-700/70"
+            className="scrollbar-thin overflow-x-auto rounded-lg border border-border"
           >
             <table className="w-full border-collapse text-left text-xs">
-              <thead className="bg-ink-950/60 text-[10px] uppercase tracking-wide text-mist-400">
+              <thead className="bg-surface-muted text-xs text-fg-muted">
                 <tr>
                   {cells(header).map((cell, cellIndex) => (
                     <th
                       key={`th-${key}-${cellIndex}`}
-                      className="border-b border-ink-700/70 px-3 py-2 font-medium"
+                      scope="col"
+                      className="border-b border-border px-3 py-2 font-medium"
                     >
                       {inline(cell, `th-${key}-${cellIndex}`)}
                     </th>
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-ink-700/40 text-mist-200">
+              <tbody className="divide-y divide-border text-fg">
                 {body.map((row, rowIndex) => (
                   <tr key={`tr-${key}-${rowIndex}`}>
                     {cells(row).map((cell, cellIndex) => (
@@ -178,7 +179,7 @@ export function MarkdownPreview({ markdown }: { markdown: string }) {
       index += 1;
     }
     blocks.push(
-      <p key={`p-${key++}`} className="text-xs leading-relaxed text-mist-200">
+      <p key={`p-${key++}`} className="text-xs leading-relaxed text-fg">
         {inline(paragraph.join(" "), `p-${key}`)}
       </p>,
     );

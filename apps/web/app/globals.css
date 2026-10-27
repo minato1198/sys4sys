@@ -1,47 +1,59 @@
 @import "tailwindcss";
 
 @theme {
-  --color-ink-950: #07090c;
-  --color-ink-900: #0c1016;
-  --color-ink-800: #141a23;
-  --color-ink-700: #1e2733;
-  --color-mist-400: #8a97a8;
-  --color-mist-300: #aab6c4;
-  --color-mist-200: #c9d3df;
-  --color-signal-400: #4ade80;
-  --color-warn-400: #fbbf24;
-  --color-danger-400: #f87171;
+  /*
+   * Semantic tokens. Components should use these names so Light / Dark can
+   * change independently.
+   */
+  --color-bg: #07090c;
+  --color-surface: #0c1016;
+  --color-surface-muted: #141a23;
+  --color-fg: #c9d3df;
+  --color-fg-muted: #8a97a8;
+  --color-border: #1e2733;
+  --color-accent: #4f8cff;
+  --color-accent-fg: #07090c;
+  --color-success: #4ade80;
+  --color-success-fg: #07090c;
+  --color-warning: #fbbf24;
+  --color-danger: #f87171;
+  --color-danger-solid: #b91c1c;
+  --color-danger-solid-fg: #ffffff;
+  --color-info: #7dd3fc;
+  --color-focus: #4f8cff;
+
   --font-sans:
-    "Inter", "Hiragino Kaku Gothic ProN", "Yu Gothic", system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", "Cascadia Code", ui-monospace, monospace;
+    var(--font-plex-sans), "Hiragino Kaku Gothic ProN", "Yu Gothic", system-ui,
+    sans-serif;
+  --font-mono: var(--font-plex-mono), "Cascadia Code", ui-monospace, monospace;
 }
 
 :root {
   color-scheme: dark;
-  --theme-glow-signal: rgba(74, 222, 128, 0.08);
-  --theme-glow-sky: rgba(96, 165, 250, 0.07);
-  --theme-selection: rgba(74, 222, 128, 0.25);
+  --theme-selection: rgba(79, 140, 255, 0.25);
   --theme-card-highlight: rgba(255, 255, 255, 0.03);
 }
 
 [data-theme="light"] {
   color-scheme: light;
-  --color-ink-950: #f3f6fa;
-  --color-ink-900: #ffffff;
-  --color-ink-800: #eef3f8;
-  --color-ink-700: #d7e0ea;
-  --color-mist-400: #5d6f84;
-  --color-mist-300: #475569;
-  --color-mist-200: #1e293b;
-  --color-white: #0b1220;
-  --color-signal-400: #15803d;
-  --color-warn-400: #b45309;
-  --color-danger-400: #b91c1c;
-  --color-sky-300: #0369a1;
-  --color-sky-400: #0284c7;
-  --theme-glow-signal: rgba(21, 128, 61, 0.1);
-  --theme-glow-sky: rgba(2, 132, 199, 0.08);
-  --theme-selection: rgba(21, 128, 61, 0.18);
+  --color-bg: #f3f6fa;
+  --color-surface: #ffffff;
+  --color-surface-muted: #eef3f8;
+  --color-fg: #1e293b;
+  --color-fg-muted: #5d6f84;
+  --color-border: #d7e0ea;
+  --color-accent: #1d4ed8;
+  --color-accent-fg: #f3f6fa;
+  --color-success: #15803d;
+  --color-success-fg: #ffffff;
+  --color-warning: #92400e;
+  --color-danger: #b91c1c;
+  --color-danger-solid: #b91c1c;
+  --color-danger-solid-fg: #ffffff;
+  --color-info: #0369a1;
+  --color-focus: #1d4ed8;
+
+  --theme-selection: rgba(29, 78, 216, 0.18);
   --theme-card-highlight: rgba(15, 23, 42, 0.04);
 }
 
@@ -55,28 +67,42 @@ body {
 }
 
 body {
-  background:
-    radial-gradient(
-      1200px 600px at 15% -10%,
-      var(--theme-glow-signal),
-      transparent 60%
-    ),
-    radial-gradient(
-      900px 500px at 100% 0%,
-      var(--theme-glow-sky),
-      transparent 55%
-    ),
-    var(--color-ink-950);
-  color: var(--color-mist-200);
+  background: var(--color-bg);
+  color: var(--color-fg);
 }
 
 ::selection {
   background: var(--theme-selection);
 }
 
-:where(button, a, input, select, textarea):focus-visible {
-  outline: 2px solid var(--color-signal-400);
+::placeholder {
+  color: var(--color-fg-muted);
+  opacity: 1;
+}
+
+:where(
+  button,
+  a,
+  input,
+  select,
+  textarea,
+  summary,
+  [tabindex]:not([tabindex="-1"])
+):focus-visible {
+  outline: 2px solid var(--color-focus);
   outline-offset: 2px;
+}
+
+/*
+ * iOS zooms focused form controls below 16px. The desktop UI is intentionally
+ * denser, so enforce the readable size only on small screens.
+ */
+@media (max-width: 767px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
 }
 
 .scrollbar-thin::-webkit-scrollbar {
@@ -85,8 +111,28 @@ body {
 }
 
 .scrollbar-thin::-webkit-scrollbar-thumb {
-  background: var(--color-ink-700);
+  background: var(--color-border);
   border-radius: 999px;
+}
+
+.scan-progress {
+  width: 28%;
+  transform: translateX(-120%);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .scan-progress {
+    animation: sys4sys-scan-progress 1s ease-in-out infinite;
+  }
+}
+
+@keyframes sys4sys-scan-progress {
+  from {
+    transform: translateX(-120%);
+  }
+  to {
+    transform: translateX(400%);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { NavLinks } from "../../components/NavLinks";
+import { AppShell } from "../../components/AppShell";
 
 interface AuthUser {
   id: string;
@@ -81,11 +81,6 @@ export default function UsersPage() {
   useEffect(() => {
     void load();
   }, [load]);
-
-  async function logout() {
-    await fetch("/api/auth/logout", { method: "POST" });
-    window.location.href = "/login";
-  }
 
   async function createUser(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -192,85 +187,65 @@ export default function UsersPage() {
   }
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="grid size-10 place-items-center rounded-lg border border-signal-400/30 bg-signal-400/10">
-            <span className="font-mono text-sm font-bold text-signal-400">
-              s4s
-            </span>
-          </div>
-          <div>
-            <h1 className="text-xl font-semibold tracking-tight text-white">
-              Users
-            </h1>
-            <p className="text-xs text-mist-400">
-              admin / operator / viewer のロールとセッションを管理します。
-            </p>
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <NavLinks role={me?.role} />
-          <div className="flex items-center gap-2 rounded-md border border-ink-700 bg-ink-800/60 px-3 py-1.5">
-            <div className="text-right">
-              <div className="text-xs text-mist-200">
-                {me?.email ?? "認証確認中…"}
-              </div>
-              <div className="text-[9px] font-medium uppercase tracking-[0.14em] text-mist-400">
-                {me?.role ?? ""}
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => void logout()}
-              className="rounded border border-ink-700 px-2 py-1 text-[11px] text-mist-400 transition hover:border-danger-400/40 hover:text-danger-400"
-            >
-              ログアウト
-            </button>
-          </div>
-        </div>
-      </header>
-
+    <AppShell
+      title="ユーザー"
+      description="admin / operator / viewer のロールとセッションを管理します。"
+      user={{ role: me?.role, email: me?.email }}
+    >
       {error ? (
-        <div className="mt-6 rounded-lg border border-danger-400/30 bg-danger-400/10 px-4 py-3 text-sm text-danger-400">
+        <div className="mt-6 rounded-lg border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
           {error}
         </div>
       ) : null}
 
       {message ? (
-        <div className="mt-6 rounded-lg border border-signal-400/30 bg-signal-400/10 px-4 py-3 text-sm text-signal-400">
+        <div className="mt-6 rounded-lg border border-success/30 bg-success/10 px-4 py-3 text-sm text-success">
           {message}
         </div>
       ) : null}
 
       {me?.role === "admin" ? (
         <>
-          <section className="mt-6 overflow-hidden rounded-xl border border-ink-700/70 bg-ink-900/50">
-            <div className="border-b border-ink-700/70 px-4 py-3">
-              <h2 className="text-sm font-semibold text-white">ユーザー一覧</h2>
-              <p className="text-[11px] text-mist-400">
+          <section className="mt-6 overflow-hidden rounded-xl border border-border bg-surface">
+            <div className="border-b border-border px-4 py-3">
+              <h2 className="text-sm font-semibold text-fg">ユーザー一覧</h2>
+              <p className="text-xs text-fg-muted">
                 最後の有効な管理者は降格・無効化できません。パスワード再設定は対象ユーザーの全セッションを無効化します。
               </p>
             </div>
             <div className="scrollbar-thin overflow-x-auto">
               <table className="w-full min-w-[860px] border-collapse text-left">
                 <thead>
-                  <tr className="border-b border-ink-700/70 bg-ink-950/40 text-[10px] uppercase tracking-[0.12em] text-mist-400">
-                    <th className="px-4 py-2 font-medium">Email</th>
-                    <th className="px-4 py-2 font-medium">Name</th>
-                    <th className="px-4 py-2 font-medium">Role</th>
-                    <th className="px-4 py-2 font-medium">Active</th>
-                    <th className="px-4 py-2 font-medium">Last login</th>
-                    <th className="px-4 py-2 font-medium">Created</th>
-                    <th className="px-4 py-2 font-medium">Actions</th>
+                  <tr className="border-b border-border bg-surface-muted text-xs text-fg-muted">
+                    <th scope="col" className="px-4 py-2 font-medium">
+                      Email
+                    </th>
+                    <th scope="col" className="px-4 py-2 font-medium">
+                      Name
+                    </th>
+                    <th scope="col" className="px-4 py-2 font-medium">
+                      Role
+                    </th>
+                    <th scope="col" className="px-4 py-2 font-medium">
+                      Active
+                    </th>
+                    <th scope="col" className="px-4 py-2 font-medium">
+                      Last login
+                    </th>
+                    <th scope="col" className="px-4 py-2 font-medium">
+                      Created
+                    </th>
+                    <th scope="col" className="px-4 py-2 font-medium">
+                      Actions
+                    </th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-ink-700/40">
+                <tbody className="divide-y divide-border">
                   {loading ? (
                     <tr>
                       <td
                         colSpan={7}
-                        className="px-4 py-8 text-center text-sm text-mist-400"
+                        className="px-4 py-8 text-center text-sm text-fg-muted"
                       >
                         読み込み中…
                       </td>
@@ -279,23 +254,23 @@ export default function UsersPage() {
                     <tr>
                       <td
                         colSpan={7}
-                        className="px-4 py-8 text-center text-sm text-mist-400"
+                        className="px-4 py-8 text-center text-sm text-fg-muted"
                       >
                         ユーザーがいません
                       </td>
                     </tr>
                   ) : (
                     users.map((user) => (
-                      <tr key={user.id} className="hover:bg-ink-800/40">
-                        <td className="px-4 py-2 text-xs text-white">
+                      <tr key={user.id} className="hover:bg-surface-muted">
+                        <td className="px-4 py-2 text-xs text-fg">
                           {user.email}
                           {user.id === me.id ? (
-                            <span className="ml-2 rounded bg-ink-800 px-1 text-[9px] text-mist-400">
+                            <span className="ml-2 rounded bg-surface-muted px-1 text-xs text-fg-muted">
                               you
                             </span>
                           ) : null}
                         </td>
-                        <td className="px-4 py-2 text-xs text-mist-200">
+                        <td className="px-4 py-2 text-xs text-fg">
                           {user.name}
                         </td>
                         <td className="px-4 py-2">
@@ -309,7 +284,7 @@ export default function UsersPage() {
                                 `${user.email} のロールを ${event.target.value} に変更しました`,
                               )
                             }
-                            className="rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1 text-xs text-mist-200 focus:border-signal-400/40 focus:outline-none disabled:opacity-50"
+                            className="rounded-md border border-border bg-bg px-2 py-1 text-xs text-fg focus:border-success/40 disabled:opacity-50"
                           >
                             <option value="admin">admin</option>
                             <option value="operator">operator</option>
@@ -318,19 +293,19 @@ export default function UsersPage() {
                         </td>
                         <td className="px-4 py-2">
                           <span
-                            className={`inline-flex rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                            className={`inline-flex rounded px-1.5 py-0.5 text-xs font-medium ${
                               user.isActive
-                                ? "bg-signal-400/15 text-signal-400"
-                                : "bg-danger-400/15 text-danger-400"
+                                ? "bg-success/15 text-success"
+                                : "bg-danger/15 text-danger"
                             }`}
                           >
                             {user.isActive ? "active" : "disabled"}
                           </span>
                         </td>
-                        <td className="px-4 py-2 font-mono text-[11px] text-mist-400">
+                        <td className="px-4 py-2 font-mono text-xs text-fg-muted">
                           {formatDate(user.lastLoginAt)}
                         </td>
-                        <td className="px-4 py-2 font-mono text-[11px] text-mist-400">
+                        <td className="px-4 py-2 font-mono text-xs text-fg-muted">
                           {formatDate(user.createdAt)}
                         </td>
                         <td className="px-4 py-2">
@@ -345,7 +320,7 @@ export default function UsersPage() {
                                 )
                               }
                               disabled={busyId === user.id}
-                              className="rounded border border-ink-700 px-2 py-1 text-[10px] text-mist-400 transition hover:border-warn-400/40 hover:text-warn-400 disabled:cursor-not-allowed disabled:opacity-40"
+                              className="rounded border border-border px-2 py-1 text-xs text-fg-muted transition hover:border-warning/40 hover:text-warning disabled:cursor-not-allowed disabled:opacity-40"
                             >
                               {user.isActive ? "無効化" : "有効化"}
                             </button>
@@ -356,7 +331,7 @@ export default function UsersPage() {
                                 setNewPassword("");
                               }}
                               disabled={busyId === user.id}
-                              className="rounded border border-ink-700 px-2 py-1 text-[10px] text-mist-400 transition hover:border-signal-400/40 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                              className="rounded border border-border px-2 py-1 text-xs text-fg-muted transition hover:border-success/40 hover:text-fg disabled:cursor-not-allowed disabled:opacity-40"
                             >
                               PW 再設定
                             </button>
@@ -373,14 +348,14 @@ export default function UsersPage() {
           {passwordFor ? (
             <form
               onSubmit={submitPassword}
-              className="mt-4 rounded-xl border border-signal-400/30 bg-signal-400/5 p-4"
+              className="mt-4 rounded-xl border border-success/30 bg-success/5 p-4"
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <h2 className="text-sm font-semibold text-white">
+                  <h2 className="text-sm font-semibold text-fg">
                     {passwordFor.email} のパスワードを再設定
                   </h2>
-                  <p className="text-[11px] text-mist-400">
+                  <p className="text-xs text-fg-muted">
                     12
                     文字以上。対象ユーザーの既存セッションはすべて無効化されます。
                   </p>
@@ -391,7 +366,7 @@ export default function UsersPage() {
                     setPasswordFor(null);
                     setNewPassword("");
                   }}
-                  className="rounded border border-ink-700 px-2 py-1 text-[11px] text-mist-400 transition hover:text-white"
+                  className="rounded border border-border px-2 py-1 text-xs text-fg-muted transition hover:text-fg"
                 >
                   キャンセル
                 </button>
@@ -405,12 +380,12 @@ export default function UsersPage() {
                   value={newPassword}
                   onChange={(event) => setNewPassword(event.target.value)}
                   placeholder="新しいパスワード"
-                  className="min-w-[240px] flex-1 rounded-md border border-ink-700 bg-ink-950/70 px-3 py-2 text-xs text-white placeholder:text-mist-400/50 focus:border-signal-400/40 focus:outline-none"
+                  className="min-w-[240px] flex-1 rounded-md border border-border bg-bg px-3 py-2 text-xs text-fg placeholder:text-fg-muted focus:border-success/40"
                 />
                 <button
                   type="submit"
                   disabled={busyId === passwordFor.id}
-                  className="rounded-md bg-signal-400 px-3 py-2 text-xs font-semibold text-ink-950 transition hover:bg-signal-400/90 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="rounded-md bg-success px-3 py-2 text-xs font-semibold text-success-fg transition hover:bg-success/90 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {busyId === passwordFor.id ? "変更中…" : "再設定する"}
                 </button>
@@ -420,18 +395,16 @@ export default function UsersPage() {
 
           <form
             onSubmit={createUser}
-            className="mt-6 rounded-xl border border-ink-700/70 bg-ink-900/50 p-4"
+            className="mt-6 rounded-xl border border-border bg-surface p-4"
           >
-            <h2 className="text-sm font-semibold text-white">ユーザーを追加</h2>
-            <p className="mt-1 text-[11px] text-mist-400">
+            <h2 className="text-sm font-semibold text-fg">ユーザーを追加</h2>
+            <p className="mt-1 text-xs text-fg-muted">
               初期パスワードは 12
               文字以上。作成後、本人に安全な方法で伝えてください。
             </p>
             <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <label className="block">
-                <span className="mb-1 block text-[10px] uppercase tracking-[0.12em] text-mist-400">
-                  Email
-                </span>
+                <span className="mb-1 block text-xs text-fg-muted">Email</span>
                 <input
                   type="email"
                   required
@@ -440,13 +413,11 @@ export default function UsersPage() {
                     setForm({ ...form, email: event.target.value })
                   }
                   placeholder="user@example.com"
-                  className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 text-xs text-mist-200 placeholder:text-mist-400/50 focus:border-signal-400/40 focus:outline-none"
+                  className="w-full rounded-md border border-border bg-bg px-2 py-1.5 text-xs text-fg placeholder:text-fg-muted focus:border-success/40"
                 />
               </label>
               <label className="block">
-                <span className="mb-1 block text-[10px] uppercase tracking-[0.12em] text-mist-400">
-                  Name
-                </span>
+                <span className="mb-1 block text-xs text-fg-muted">Name</span>
                 <input
                   required
                   value={form.name}
@@ -454,11 +425,11 @@ export default function UsersPage() {
                     setForm({ ...form, name: event.target.value })
                   }
                   placeholder="Operator"
-                  className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 text-xs text-mist-200 placeholder:text-mist-400/50 focus:border-signal-400/40 focus:outline-none"
+                  className="w-full rounded-md border border-border bg-bg px-2 py-1.5 text-xs text-fg placeholder:text-fg-muted focus:border-success/40"
                 />
               </label>
               <label className="block">
-                <span className="mb-1 block text-[10px] uppercase tracking-[0.12em] text-mist-400">
+                <span className="mb-1 block text-xs text-fg-muted">
                   Password
                 </span>
                 <input
@@ -471,13 +442,11 @@ export default function UsersPage() {
                     setForm({ ...form, password: event.target.value })
                   }
                   placeholder="12+ characters"
-                  className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 text-xs text-mist-200 placeholder:text-mist-400/50 focus:border-signal-400/40 focus:outline-none"
+                  className="w-full rounded-md border border-border bg-bg px-2 py-1.5 text-xs text-fg placeholder:text-fg-muted focus:border-success/40"
                 />
               </label>
               <label className="block">
-                <span className="mb-1 block text-[10px] uppercase tracking-[0.12em] text-mist-400">
-                  Role
-                </span>
+                <span className="mb-1 block text-xs text-fg-muted">Role</span>
                 <select
                   value={form.role}
                   onChange={(event) =>
@@ -487,7 +456,7 @@ export default function UsersPage() {
                         "admin" | "operator" | "viewer",
                     })
                   }
-                  className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 text-xs text-mist-200 focus:border-signal-400/40 focus:outline-none"
+                  className="w-full rounded-md border border-border bg-bg px-2 py-1.5 text-xs text-fg focus:border-success/40"
                 >
                   <option value="viewer">viewer</option>
                   <option value="operator">operator</option>
@@ -498,13 +467,13 @@ export default function UsersPage() {
             <button
               type="submit"
               disabled={submitting}
-              className="mt-4 rounded-md bg-signal-400 px-4 py-2 text-xs font-semibold text-ink-950 transition hover:bg-signal-400/90 disabled:cursor-not-allowed disabled:opacity-50"
+              className="mt-4 rounded-md bg-success px-4 py-2 text-xs font-semibold text-success-fg transition hover:bg-success/90 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {submitting ? "作成中…" : "作成する"}
             </button>
           </form>
         </>
       ) : null}
-    </main>
+    </AppShell>
   );
 }
