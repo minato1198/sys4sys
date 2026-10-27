@@ -111,7 +111,7 @@ export function PortLedger({
             WSL {wslCount}
           </span>
           <span className="rounded-md border border-warning/30 bg-warning/10 px-2 py-1 text-sm text-warning">
-            Relay {relayCount}
+            中継 {relayCount}
           </span>
           <span className="font-mono text-sm tabular-nums text-fg-muted">
             {visibleItems.length} / {items.length}

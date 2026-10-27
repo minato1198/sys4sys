@@ -422,7 +422,7 @@ export default function DashboardPage() {
 
   return (
     <AppShell
-      title="Ports"
+      title="ポート"
       description="Windows / WSL の待受ポートと予約"
       user={user}
       actions={
@@ -615,7 +615,7 @@ export default function DashboardPage() {
           </p>
           <div className="mt-4 grid grid-cols-2 gap-3">
             <label className="block">
-              <span className="mb-1 block text-xs text-fg-muted">Scope</span>
+              <span className="mb-1 block text-xs text-fg-muted">スコープ</span>
               <select
                 value={form.scope}
                 onChange={(event) =>
@@ -632,7 +632,9 @@ export default function DashboardPage() {
               </select>
             </label>
             <label className="block">
-              <span className="mb-1 block text-xs text-fg-muted">Protocol</span>
+              <span className="mb-1 block text-xs text-fg-muted">
+                プロトコル
+              </span>
               <select
                 value={form.protocol}
                 onChange={(event) =>
@@ -650,7 +652,7 @@ export default function DashboardPage() {
             </label>
           </div>
           <label className="mt-3 block">
-            <span className="mb-1 block text-xs text-fg-muted">Port</span>
+            <span className="mb-1 block text-xs text-fg-muted">ポート</span>
             <input
               id="reservation-port"
               type="number"
@@ -667,7 +669,9 @@ export default function DashboardPage() {
             />
           </label>
           <label className="mt-3 block">
-            <span className="mb-1 block text-xs text-fg-muted">Service ID</span>
+            <span className="mb-1 block text-xs text-fg-muted">
+              サービス ID
+            </span>
             <input
               type="text"
               required
@@ -681,7 +685,7 @@ export default function DashboardPage() {
             />
           </label>
           <label className="mt-3 block">
-            <span className="mb-1 block text-xs text-fg-muted">Note</span>
+            <span className="mb-1 block text-xs text-fg-muted">メモ</span>
             <input
               type="text"
               value={form.note}
@@ -724,19 +728,19 @@ export default function DashboardPage() {
               <thead>
                 <tr className="border-b border-border bg-surface-muted text-xs text-fg-muted">
                   <th scope="col" className="px-4 py-2 font-medium">
-                    Endpoint
+                    エンドポイント
                   </th>
                   <th scope="col" className="px-4 py-2 font-medium">
-                    Service
+                    サービス
                   </th>
                   <th scope="col" className="px-4 py-2 font-medium">
-                    Note
+                    メモ
                   </th>
                   <th scope="col" className="px-4 py-2 font-medium">
-                    Status
+                    状態
                   </th>
                   <th scope="col" className="px-4 py-2 font-medium">
-                    Action
+                    操作
                   </th>
                 </tr>
               </thead>
@@ -831,7 +835,9 @@ export default function DashboardPage() {
         <div className="rounded-xl border border-border bg-surface p-4">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <h2 className="text-sm font-semibold text-fg">Open incidents</h2>
+              <h2 className="text-sm font-semibold text-fg">
+                未解決インシデント
+              </h2>
               <p className="text-xs text-fg-muted">未解決の監視インシデント</p>
             </div>
             <Link
@@ -891,9 +897,7 @@ export default function DashboardPage() {
         <div className="rounded-xl border border-border bg-surface p-4">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <h2 className="text-sm font-semibold text-fg">
-                Pending approvals
-              </h2>
+              <h2 className="text-sm font-semibold text-fg">承認待ち再起動</h2>
               <p className="text-xs text-fg-muted">
                 承認待ちの再起動リクエスト
               </p>
@@ -936,24 +940,24 @@ export default function DashboardPage() {
           target={
             confirmReservation ? (
               <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5">
-                <dt className="text-fg-muted">Endpoint</dt>
+                <dt className="text-fg-muted">エンドポイント</dt>
                 <dd className="font-mono">
                   {confirmReservation.scope.toUpperCase()} /{" "}
                   {confirmReservation.protocol.toUpperCase()}{" "}
                   {confirmReservation.port}
                 </dd>
-                <dt className="text-fg-muted">Service</dt>
+                <dt className="text-fg-muted">サービス</dt>
                 <dd className="font-mono">{confirmReservation.serviceId}</dd>
-                <dt className="text-fg-muted">Note</dt>
+                <dt className="text-fg-muted">メモ</dt>
                 <dd>{confirmReservation.note || "—"}</dd>
               </dl>
             ) : confirmKill ? (
               <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5">
                 <dt className="text-fg-muted">PID</dt>
                 <dd className="font-mono">{confirmKillPid ?? "—"}</dd>
-                <dt className="text-fg-muted">Process</dt>
+                <dt className="text-fg-muted">プロセス</dt>
                 <dd className="font-mono">{confirmKillProcess}</dd>
-                <dt className="text-fg-muted">Endpoint</dt>
+                <dt className="text-fg-muted">エンドポイント</dt>
                 <dd className="font-mono">
                   {confirmKill.endpoint.scope.toUpperCase()} /{" "}
                   {confirmKill.endpoint.protocol.toUpperCase()}{" "}

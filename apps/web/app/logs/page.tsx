@@ -465,7 +465,7 @@ export default function LogsPage() {
 
   return (
     <AppShell
-      title="Logs"
+      title="ログ"
       description="stdout / stderr / ファイル / WSL ファイルを横断して検索・tail します。"
       user={user}
     >

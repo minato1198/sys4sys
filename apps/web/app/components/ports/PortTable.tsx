@@ -35,30 +35,33 @@ export function PortTable({
           <tr className="border-b border-border bg-surface-muted text-sm text-fg-muted">
             <th
               scope="col"
-              className="sticky left-0 z-30 w-32 bg-surface-muted px-4 py-2 font-medium"
+              className="sticky left-0 z-30 w-32 whitespace-nowrap bg-surface-muted px-4 py-2 font-medium"
             >
-              Scope
+              スコープ
             </th>
             <th
               scope="col"
-              className="sticky left-32 z-20 w-24 bg-surface-muted px-4 py-2 font-medium"
+              className="sticky left-32 z-20 w-24 whitespace-nowrap bg-surface-muted px-4 py-2 font-medium"
             >
-              Port
+              ポート
             </th>
-            <th scope="col" className="px-4 py-2 font-medium">
-              Process / Owner
+            <th scope="col" className="whitespace-nowrap px-4 py-2 font-medium">
+              プロセス / オーナー
             </th>
-            <th scope="col" className="px-4 py-2 font-medium">
-              Reservation / Status
+            <th scope="col" className="whitespace-nowrap px-4 py-2 font-medium">
+              予約 / 状態
             </th>
-            <th scope="col" className="px-4 py-2 font-medium">
-              Bind
+            <th scope="col" className="whitespace-nowrap px-4 py-2 font-medium">
+              アドレス
             </th>
-            <th scope="col" className="px-4 py-2 font-medium">
+            <th scope="col" className="whitespace-nowrap px-4 py-2 font-medium">
               PID / PPID
             </th>
-            <th scope="col" className="px-4 py-2 font-medium">
-              Actions
+            <th
+              scope="col"
+              className="w-64 whitespace-nowrap px-4 py-2 font-medium"
+            >
+              操作
             </th>
           </tr>
         </thead>
@@ -124,12 +127,13 @@ export function PortTable({
                       </span>
                     ) : null}
                   </td>
-                  <td className="px-4 py-2">
+                  <td className="w-64 whitespace-nowrap px-4 py-2">
                     <PortActionButtons
                       item={item}
                       expanded={expanded}
                       canOperate={canOperate}
                       killBusyKey={killBusyKey}
+                      actionClassName="flex items-center gap-2 whitespace-nowrap"
                       onToggle={() => onToggle(item)}
                       onHistory={() => onHistory(item)}
                       onKillOwner={(owner) => onKillOwner(item, owner)}

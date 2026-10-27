@@ -20,31 +20,31 @@ interface NavGroup {
 
 const NAV_GROUPS: NavGroup[] = [
   {
-    title: "監視",
+    title: "ポート監視",
     key: "monitor",
     links: [
-      { href: "/", label: "Ports" },
-      { href: "/services", label: "Services" },
-      { href: "/logs", label: "Logs" },
-      { href: "/incidents", label: "Incidents" },
+      { href: "/", label: "ポート" },
+      { href: "/services", label: "サービス" },
+      { href: "/logs", label: "ログ" },
+      { href: "/incidents", label: "インシデント" },
     ],
   },
   {
     title: "運用",
     key: "operate",
     links: [
-      { href: "/reports", label: "Reports" },
-      { href: "/approvals", label: "Approvals" },
-      { href: "/hosts", label: "Hosts" },
+      { href: "/reports", label: "レポート" },
+      { href: "/approvals", label: "承認" },
+      { href: "/hosts", label: "ホスト" },
     ],
   },
   {
     title: "管理",
     key: "admin",
     links: [
-      { href: "/admin/users", label: "Users", adminOnly: true },
-      { href: "/audit", label: "Audit", adminOnly: true },
-      { href: "/settings", label: "Settings", adminOnly: true },
+      { href: "/admin/users", label: "ユーザー", adminOnly: true },
+      { href: "/audit", label: "監査ログ", adminOnly: true },
+      { href: "/settings", label: "設定", adminOnly: true },
     ],
   },
 ];
@@ -75,10 +75,10 @@ function NavLink({
       href={link.href}
       aria-current={active ? "page" : undefined}
       onClick={onNavigate}
-      className={`inline-flex min-h-11 items-center justify-between rounded-md border border-transparent px-3 text-sm transition ${
+      className={`inline-flex min-h-11 items-center justify-between rounded-md border px-3 text-sm transition ${
         active
-          ? "border-border bg-surface-muted text-fg"
-          : "text-fg-muted hover:bg-surface-muted/60 hover:text-fg"
+          ? "border-accent/30 bg-accent/10 text-accent"
+          : "border-border bg-surface text-fg hover:border-accent/30 hover:bg-accent/10 hover:text-accent"
       }`}
     >
       {link.label}
@@ -107,11 +107,15 @@ function SidebarNav({
           <section key={group.key} aria-labelledby={`nav-group-${group.key}`}>
             <h2
               id={`nav-group-${group.key}`}
-              className="px-3 text-xs font-medium text-fg-muted"
+              className="flex items-center gap-2 px-3 text-sm font-semibold text-fg"
             >
-              {group.title}
+              <span>{group.title}</span>
+              <span aria-hidden="true" className="h-px flex-1 bg-border" />
             </h2>
-            <nav aria-label={group.title} className="mt-2 flex flex-col gap-1">
+            <nav
+              aria-label={group.title}
+              className="mt-2 ml-3 flex flex-col gap-1"
+            >
               {links.map((link) => {
                 const active =
                   link.href === "/"

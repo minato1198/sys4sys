@@ -982,6 +982,7 @@ rg -n "text-white|bg-ink|border-ink|divide-ink|text-mist|signal-400|warn-400|dan
 - P3-03: README の画面一覧 / テーマ説明 / 開発コマンド / ドキュメントリンクを更新
 - P3-03: `tasks/PLAN.md` に Web UI/UX overhaul 進捗セクションを追加
 - P3-03: `tasks/UI_UX_PLAN.md` のフェーズ別ステータスと次の着手タスクを更新
+- UX 指摘対応: sidebar のグループ見出しとリンクを日本語化し、リンクは枠付きで押せる状態を明示。ポート台帳の操作列を拡大して `詳細 / 履歴 / 停止` を 1 行へ。Light mode の warning 文字コントラストを改善。
 
 ### 14.5 P3-02 検証結果
 

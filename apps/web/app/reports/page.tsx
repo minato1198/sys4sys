@@ -184,7 +184,7 @@ export default function ReportsPage() {
 
   return (
     <AppShell
-      title="Reports"
+      title="レポート"
       description="AI 分析から生成された Markdown レポートを確認・ダウンロードします。"
       user={user}
     >

@@ -383,7 +383,7 @@ export default function IncidentsPage() {
 
   return (
     <AppShell
-      title="Incidents"
+      title="インシデント"
       description="監視ルールが検知した異常、承認、再起動の履歴を確認します。"
       user={user}
     >

@@ -437,7 +437,7 @@ export default function SettingsPage() {
 
   return (
     <AppShell
-      title="Settings"
+      title="設定"
       description="SMTP / AI / 保持期間 / バックアップと監視ポリシーを管理します。"
       user={user}
     >

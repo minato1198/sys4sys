@@ -205,7 +205,7 @@ export default function ApprovalsPage() {
 
   return (
     <AppShell
-      title="Approvals"
+      title="承認"
       description="承認待ちの再起動を確認し、実行または却下します。"
       user={user}
     >

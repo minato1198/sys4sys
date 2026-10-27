@@ -15,6 +15,7 @@ export function PortActionButtons({
   onToggle,
   onHistory,
   onKillOwner,
+  actionClassName = "flex flex-wrap items-center gap-2",
 }: {
   item: PortItem;
   expanded: boolean;
@@ -23,6 +24,7 @@ export function PortActionButtons({
   onToggle: () => void;
   onHistory: () => void;
   onKillOwner: (owner: PortOwner) => void;
+  actionClassName?: string;
 }) {
   const killable = killablePortOwners(item);
   const primary = primaryPortOwner(item);
@@ -36,14 +38,14 @@ export function PortActionButtons({
     killable.length <= 1;
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className={actionClassName}>
       <button
         type="button"
         onClick={onToggle}
         aria-expanded={expanded}
         aria-controls={`port-detail-${item.id}`}
         aria-label={`${endpointLabel(item)} の詳細を開閉`}
-        className="min-h-11 rounded-md border border-border px-3 text-sm text-fg-muted transition hover:border-fg-muted/40 hover:text-fg"
+        className="min-h-11 whitespace-nowrap rounded-md border border-border px-3 text-sm text-fg-muted transition hover:border-fg-muted/40 hover:text-fg"
       >
         {expanded ? "閉じる" : "詳細"}
       </button>
@@ -51,7 +53,7 @@ export function PortActionButtons({
         type="button"
         onClick={onHistory}
         aria-label={`${endpointLabel(item)} の履歴を開く`}
-        className="min-h-11 rounded-md border border-border px-3 text-sm text-fg-muted transition hover:border-info/40 hover:text-info"
+        className="min-h-11 whitespace-nowrap rounded-md border border-border px-3 text-sm text-fg-muted transition hover:border-info/40 hover:text-info"
       >
         履歴
       </button>
@@ -100,7 +102,7 @@ export function KillOwnerButton({
       onClick={() => onKillOwner(owner)}
       disabled={!canOperate || killBusyKey !== null}
       aria-label={`PID ${owner.pid} (${owner.process ?? "unknown"}) を停止`}
-      className="min-h-11 rounded-md border border-border px-3 text-sm text-fg-muted transition hover:border-danger/50 hover:text-danger disabled:cursor-not-allowed disabled:opacity-40"
+      className="min-h-11 whitespace-nowrap rounded-md border border-border px-3 text-sm text-fg-muted transition hover:border-danger/50 hover:text-danger disabled:cursor-not-allowed disabled:opacity-40"
     >
       {ownerBusy ? "停止中…" : "停止"}
     </button>

@@ -137,7 +137,7 @@ export default function AuditPage() {
 
   return (
     <AppShell
-      title="Audit log"
+      title="監査ログ"
       description="設定変更、承認、再起動、バックアップなどの操作履歴を確認します。"
       user={user}
     >

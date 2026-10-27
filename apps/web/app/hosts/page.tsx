@@ -203,7 +203,7 @@ export default function HostsPage() {
 
   return (
     <AppShell
-      title="Hosts"
+      title="ホスト"
       description="Windows は自動登録、WSL は検出して明示登録します。"
       user={user}
     >

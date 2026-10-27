@@ -188,7 +188,7 @@ export default function UsersPage() {
 
   return (
     <AppShell
-      title="Users"
+      title="ユーザー"
       description="admin / operator / viewer のロールとセッションを管理します。"
       user={{ role: me?.role, email: me?.email }}
     >

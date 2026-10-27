@@ -884,7 +884,7 @@ export default function ServicesPage() {
 
   return (
     <AppShell
-      title="Services"
+      title="サービス"
       description="Windows / WSL の自作 API・ワーカーを登録して起動・停止します。"
       user={user}
     >
