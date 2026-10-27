@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, statSync } from "node:fs";
 import type { ChildProcess } from "node:child_process";
-import { createInterface, type Interface } from "node:readline";
 import { and, eq, inArray } from "drizzle-orm";
 import spawn from "cross-spawn";
 import { stopProcess, stripAnsi } from "@sys4sys/agent";
@@ -11,6 +10,10 @@ import { writeAudit } from "../audit.js";
 import { db } from "../db/index.js";
 import { actions, deployRequests, hosts, services } from "../db/schema.js";
 import { ingestLog } from "../logs/ingest.js";
+import {
+  attachProcessLineStream,
+  type ProcessLineStreamHandle,
+} from "../logs/process-lines.js";
 import { isCommandAllowed } from "./allowlist.js";
 import { decryptServiceEnv, SERVICE_ENV_DECRYPTION_ERROR } from "./secrets.js";
 import {
@@ -73,21 +76,22 @@ function attachDeployLogs(
   service: ServiceRow,
   name: "stdout" | "stderr",
   actionId: string,
-): Interface | undefined {
+): ProcessLineStreamHandle | undefined {
   if (!stream) return undefined;
-  const rl = createInterface({ input: stream });
-  rl.on("line", (line) => {
-    const message = stripAnsi(line).trimEnd();
-    if (!message.trim()) return;
-    void writeDeployLog(service, name, message, actionId).catch(
-      (error: unknown) => {
-        console.warn(
-          `[deploy] log ingest failed (${service.name}): ${errorMessage(error)}`,
-        );
-      },
-    );
-  });
-  return rl;
+  return attachProcessLineStream(
+    stream as unknown as NodeJS.EventEmitter,
+    (line) => {
+      const message = stripAnsi(line).trimEnd();
+      if (!message.trim()) return;
+      void writeDeployLog(service, name, message, actionId).catch(
+        (error: unknown) => {
+          console.warn(
+            `[deploy] log ingest failed (${service.name}): ${errorMessage(error)}`,
+          );
+        },
+      );
+    },
+  );
 }
 
 interface ExitResult {
@@ -375,8 +379,8 @@ export async function runDeploy(
 
     clearTimeout(timeoutTimer);
     if (hardTimer) clearTimeout(hardTimer);
-    stdout?.close();
-    stderr?.close();
+    stdout?.destroy();
+    stderr?.destroy();
 
     if (result.error) {
       throw new Error(

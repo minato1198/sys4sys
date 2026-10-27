@@ -1,6 +1,5 @@
 import { createConnection } from "node:net";
 import type { ChildProcess } from "node:child_process";
-import { createInterface, type Interface } from "node:readline";
 import { and, eq, inArray, ne } from "drizzle-orm";
 import spawn from "cross-spawn";
 import {
@@ -15,6 +14,10 @@ import { config } from "../config.js";
 import { db } from "../db/index.js";
 import { hosts, portReservations, services } from "../db/schema.js";
 import { ingestLog } from "../logs/ingest.js";
+import {
+  attachProcessLineStream,
+  type ProcessLineStreamHandle,
+} from "../logs/process-lines.js";
 import { isCommandAllowed } from "./allowlist.js";
 import { serviceEvents } from "./events.js";
 import { decryptServiceEnv, SERVICE_ENV_DECRYPTION_ERROR } from "./secrets.js";
@@ -49,8 +52,8 @@ interface Runtime {
   scope: "windows" | "wsl";
   stopping: boolean;
   startedAt: Date;
-  stdout?: Interface;
-  stderr?: Interface;
+  stdout?: ProcessLineStreamHandle;
+  stderr?: ProcessLineStreamHandle;
   healthTimer?: NodeJS.Timeout;
   health?: HealthResult;
 }
@@ -157,22 +160,23 @@ function attachLogs(
   const attach = (
     stream: NodeJS.ReadableStream | null,
     name: "stdout" | "stderr",
-  ): Interface | undefined => {
+  ): ProcessLineStreamHandle | undefined => {
     if (!stream) return undefined;
-    const rl = createInterface({ input: stream });
-    rl.on("line", (line) => {
-      const message = stripAnsi(line);
-      if (!message.trim()) return;
-      void ingestLog({
-        hostId,
-        serviceId,
-        stream: name,
-        message,
-      }).catch((error: unknown) => {
-        console.warn(`[logs] ingest ${name} failed: ${errorMessage(error)}`);
-      });
-    });
-    return rl;
+    return attachProcessLineStream(
+      stream as unknown as NodeJS.EventEmitter,
+      (line) => {
+        const message = stripAnsi(line);
+        if (!message.trim()) return;
+        void ingestLog({
+          hostId,
+          serviceId,
+          stream: name,
+          message,
+        }).catch((error: unknown) => {
+          console.warn(`[logs] ingest ${name} failed: ${errorMessage(error)}`);
+        });
+      },
+    );
   };
 
   runtime.stdout = attach(child.stdout, "stdout");
@@ -181,8 +185,8 @@ function attachLogs(
 
 function closeRuntime(runtime: Runtime): void {
   if (runtime.healthTimer) clearInterval(runtime.healthTimer);
-  runtime.stdout?.close();
-  runtime.stderr?.close();
+  runtime.stdout?.destroy();
+  runtime.stderr?.destroy();
   runtime.stdout = undefined;
   runtime.stderr = undefined;
 }

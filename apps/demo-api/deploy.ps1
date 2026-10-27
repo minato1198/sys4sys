@@ -18,6 +18,13 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+try {
+  [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+  $OutputEncoding = [System.Text.Encoding]::UTF8
+} catch {
+  # Some hosts do not allow changing console encoding. Deploy continues as-is.
+}
+
 function Write-Step([string]$Message) {
   Write-Host ""
   Write-Host "==> $Message" -ForegroundColor Cyan
