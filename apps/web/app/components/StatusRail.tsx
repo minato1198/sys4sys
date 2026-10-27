@@ -32,7 +32,7 @@ export function StatusRail({
       <div className="flex items-center gap-2 text-sm text-fg">
         <span
           aria-hidden="true"
-          className={`size-2 rounded-full ${error ? "bg-danger" : "bg-accent"}`}
+          className={`size-2 rounded-full ${error ? "bg-danger" : "bg-success"}`}
         />
         <span className="font-medium">
           {error ? "API 接続エラー" : `最終スキャン ${scannedAt}`}
@@ -84,7 +84,7 @@ function Metric({
 }) {
   const valueTone =
     tone === "good"
-      ? "text-accent"
+      ? "text-success"
       : tone === "warn"
         ? "text-warning"
         : tone === "danger"

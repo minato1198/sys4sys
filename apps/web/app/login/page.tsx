@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import { BrandMark } from "../components/BrandMark";
 import { ThemeToggle } from "../components/ThemeToggle";
 import { StatusBanner } from "../components/ui/StatusBanner";
 
@@ -64,19 +65,10 @@ export default function LoginPage() {
             }}
           />
 
-          <div className="relative flex items-center gap-3">
-            <div className="grid size-10 place-items-center rounded-lg border border-accent/30 bg-accent/10">
-              <span className="font-mono text-sm font-bold text-accent">
-                s4s
-              </span>
-            </div>
-            <div>
-              <div className="text-lg font-semibold tracking-tight text-fg">
-                sys4sys
-              </div>
-              <div className="text-sm text-fg-muted">
-                Windows / WSL operations
-              </div>
+          <div className="relative">
+            <BrandMark />
+            <div className="mt-2 text-sm text-fg-muted">
+              Windows / WSL 運用コンソール
             </div>
           </div>
 
@@ -113,13 +105,8 @@ export default function LoginPage() {
         </section>
 
         <section className="p-6 sm:p-8">
-          <div className="mb-6 flex items-center gap-3 lg:hidden">
-            <div className="grid size-9 place-items-center rounded-lg border border-accent/30 bg-accent/10">
-              <span className="font-mono text-xs font-bold text-accent">
-                s4s
-              </span>
-            </div>
-            <div className="text-base font-semibold text-fg">sys4sys</div>
+          <div className="mb-6 lg:hidden">
+            <BrandMark compact />
           </div>
 
           <h1 className="text-2xl font-semibold tracking-tight text-fg">

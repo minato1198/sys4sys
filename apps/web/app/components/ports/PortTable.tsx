@@ -85,7 +85,7 @@ export function PortTable({
                   >
                     <ScopeBadge item={item} />
                   </td>
-                  <td className="sticky left-32 z-10 bg-inherit px-4 py-2 font-mono text-sm tabular-nums text-fg">
+                  <td className="sticky left-32 z-10 bg-inherit px-4 py-2 font-mono text-base tabular-nums text-fg">
                     {item.port}
                     <span className="ml-1 text-xs text-fg-muted">
                       {item.protocol}
@@ -108,7 +108,7 @@ export function PortTable({
                     <ReservationBadge reservation={item.reservation} />
                     {item.conflict ? (
                       <span className="mt-1 block text-xs font-medium text-danger">
-                        実リスナーが予約外プロセスです
+                        接続不良
                       </span>
                     ) : null}
                   </td>

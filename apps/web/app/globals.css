@@ -94,18 +94,7 @@ body {
 }
 
 body {
-  background:
-    radial-gradient(
-      1200px 600px at 15% -10%,
-      var(--theme-glow-signal),
-      transparent 60%
-    ),
-    radial-gradient(
-      900px 500px at 100% 0%,
-      var(--theme-glow-sky),
-      transparent 55%
-    ),
-    var(--color-bg);
+  background: var(--color-bg);
   color: var(--color-fg);
 }
 

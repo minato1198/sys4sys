@@ -36,7 +36,7 @@ export function ReservationBadge({
   const tone =
     reservation.status === "conflict"
       ? "bg-danger/15 text-danger"
-      : "bg-accent/15 text-accent";
+      : "bg-success/15 text-success";
 
   return (
     <span className="inline-flex flex-col gap-1">

@@ -36,6 +36,9 @@ export function PortLedger({
   const [sort, setSort] = useState<PortSortValue>("port-asc");
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const conflictCount = items.filter((item) => item.conflict).length;
+  const windowsCount = items.filter((item) => item.scope === "windows").length;
+  const wslCount = items.filter((item) => item.scope === "wsl").length;
+  const relayCount = items.filter((item) => item.likelyWslForward).length;
 
   const visibleItems = useMemo(() => {
     const filtered = items.filter((item) => {
@@ -85,7 +88,7 @@ export function PortLedger({
   return (
     <section
       aria-busy={refreshing}
-      className="mt-6 overflow-hidden rounded-xl border border-border bg-surface"
+      className="mt-6 overflow-hidden rounded-lg border-2 border-border bg-surface"
     >
       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border px-4 py-3">
         <div>
@@ -95,9 +98,20 @@ export function PortLedger({
             間でネットワークを共有します。
           </p>
         </div>
-        <span className="font-mono text-sm tabular-nums text-fg-muted">
-          {visibleItems.length} / {items.length}
-        </span>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="rounded-md border border-info/30 bg-info/10 px-2 py-1 text-sm text-info">
+            Windows {windowsCount}
+          </span>
+          <span className="rounded-md border border-accent/30 bg-accent/10 px-2 py-1 text-sm text-accent">
+            WSL {wslCount}
+          </span>
+          <span className="rounded-md border border-warning/30 bg-warning/10 px-2 py-1 text-sm text-warning">
+            Relay {relayCount}
+          </span>
+          <span className="font-mono text-sm tabular-nums text-fg-muted">
+            {visibleItems.length} / {items.length}
+          </span>
+        </div>
       </div>
 
       <PortFilters

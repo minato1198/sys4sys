@@ -67,6 +67,12 @@ export function PortCardList({
                 <ReservationBadge reservation={item.reservation} />
               </div>
 
+              {item.conflict ? (
+                <div className="mt-3 rounded-md border border-danger/30 bg-danger/10 px-2 py-1 text-sm text-danger">
+                  接続不良: 予約と別のプロセスが同じポートを占有しています
+                </div>
+              ) : null}
+
               <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
                 <div>
                   <dt className="text-fg-muted">Bind</dt>

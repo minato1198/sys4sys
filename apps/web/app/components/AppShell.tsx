@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { BrandMark } from "./BrandMark";
 import { ThemeToggle } from "./ThemeToggle";
 
 interface NavItem {
@@ -48,16 +49,14 @@ const NAV_GROUPS: NavGroup[] = [
   },
 ];
 
-function BrandMark() {
+function AppBrandMark() {
   return (
     <Link
       href="/"
-      className="inline-flex min-h-11 items-center gap-2 rounded-lg px-1 text-fg transition hover:text-accent"
+      aria-label="sys4sys ホーム"
+      className="inline-flex min-h-11 items-center rounded-lg px-1 transition hover:opacity-80"
     >
-      <span className="grid size-9 place-items-center rounded-md border border-accent/30 bg-accent/10 font-mono text-sm font-bold text-accent">
-        s4s
-      </span>
-      <span className="text-base font-semibold tracking-tight">sys4sys</span>
+      <BrandMark compact />
     </Link>
   );
 }
@@ -183,7 +182,7 @@ export function AppShell({
         className="hidden w-60 shrink-0 flex-col border-r border-border bg-surface-muted/70 px-4 py-5 lg:flex"
         aria-label="メインナビゲーション"
       >
-        <BrandMark />
+        <AppBrandMark />
         <div className="mt-6 min-h-0 flex-1 overflow-y-auto">
           <SidebarNav role={role} onNavigate={closeMobileNav} />
         </div>
@@ -208,7 +207,7 @@ export function AppShell({
             className="relative h-dvh w-[min(88vw,18rem)] overflow-y-auto border-r border-border bg-surface px-4 py-5"
           >
             <div className="flex items-start justify-between gap-3">
-              <BrandMark />
+              <AppBrandMark />
               <button
                 type="button"
                 onClick={closeMobileNav}

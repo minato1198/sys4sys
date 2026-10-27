@@ -471,11 +471,11 @@ export default function DashboardPage() {
       />
 
       {conflictCount > 0 ? (
-        <section className="mt-6 rounded-xl border border-danger-400/30 bg-danger-400/10 px-4 py-3">
-          <div className="text-sm font-semibold text-danger-400">
-            ポート競合を検出しました
+        <section className="mt-6 rounded-lg border-2 border-danger/30 bg-danger/10 px-4 py-3">
+          <div className="text-sm font-semibold text-danger">
+            ポート接続不良を検出しました
           </div>
-          <ul className="mt-2 space-y-1 text-xs text-danger-400">
+          <ul className="mt-2 space-y-1 text-sm text-danger">
             {data?.conflicts.map((conflict) => (
               <li key={conflict.id}>
                 <span className="font-mono">
