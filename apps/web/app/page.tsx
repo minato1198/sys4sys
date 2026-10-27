@@ -1,66 +1,19 @@
 "use client";
 
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-  type FormEvent,
-} from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { AppShell } from "./components/AppShell";
 import { StatusRail } from "./components/StatusRail";
+import { PortLedger } from "./components/ports/PortLedger";
+import { formatDate, portOwnerKey } from "./components/ports/port-utils";
+import type {
+  PortItem,
+  PortOwner,
+  ReservationView,
+} from "./components/ports/types";
 import { ConfirmDialog } from "./components/ui/ConfirmDialog";
 import { EmptyState } from "./components/ui/EmptyState";
 import { StatusBanner } from "./components/ui/StatusBanner";
-
-interface ReservationView {
-  id: string;
-  scope: "windows" | "wsl";
-  protocol: "tcp" | "udp";
-  port: number;
-  serviceId: string;
-  note: string | null;
-  createdAt: string;
-  status: "reserved" | "conflict";
-  inUse: boolean;
-}
-
-interface PortOwner {
-  pid: number | null;
-  pidScope: string | null;
-  ppid: number | null;
-  process: string | null;
-  processPath: string | null;
-  commandLine: string | null;
-  startedAt: string | null;
-  likelyWslForward: boolean;
-}
-
-interface PortItem {
-  id: string;
-  scope: "windows" | "wsl";
-  pidScope: string | null;
-  seenIn: string[];
-  protocol: "tcp" | "udp";
-  address: string;
-  port: number;
-  pid: number | null;
-  ppid: number | null;
-  process: string | null;
-  processPath: string | null;
-  commandLine: string | null;
-  startedAt: string | null;
-  likelyWslForward: boolean;
-  owners?: PortOwner[];
-  ownerCount?: number;
-  serviceId: string | null;
-  firstSeen: string | null;
-  lastSeen: string | null;
-  reservation: ReservationView | null;
-  conflict: boolean;
-  status: "in_use" | "conflict";
-}
 
 interface PortsResponse {
   scannedAt: string;
@@ -133,102 +86,6 @@ const EMPTY_FORM = {
   note: "",
 };
 
-function formatDate(value: string | null | undefined): string {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
-  return date.toLocaleString("ja-JP", { hour12: false });
-}
-
-function ScopeBadge({ item }: { item: PortItem }) {
-  if (item.scope === "windows") {
-    return (
-      <span className="inline-flex items-center gap-1.5 rounded-md border border-sky-400/20 bg-sky-400/10 px-2 py-0.5 text-xs font-medium text-sky-300">
-        WIN
-        {item.likelyWslForward ? (
-          <span className="rounded bg-warn-400/15 px-1 text-xs text-warn-400">
-            WSL relay
-          </span>
-        ) : null}
-      </span>
-    );
-  }
-  return (
-    <span className="inline-flex items-center gap-1.5 rounded-md border border-signal-400/20 bg-signal-400/10 px-2 py-0.5 text-xs font-medium text-signal-400">
-      WSL
-      {item.pidScope ? (
-        <span className="text-xs text-mist-400">{item.pidScope}</span>
-      ) : null}
-    </span>
-  );
-}
-
-function ReservationBadge({
-  reservation,
-}: {
-  reservation: ReservationView | null;
-}) {
-  if (!reservation) {
-    return <span className="text-xs text-mist-400">—</span>;
-  }
-  return (
-    <span className="inline-flex flex-col gap-1">
-      <span className="font-mono text-xs text-mist-200">
-        {reservation.serviceId}
-      </span>
-      <span
-        className={`inline-flex w-fit rounded px-1.5 py-0.5 text-xs font-medium ${
-          reservation.status === "conflict"
-            ? "bg-danger-400/15 text-danger-400"
-            : "bg-signal-400/15 text-signal-400"
-        }`}
-      >
-        {reservation.status === "conflict" ? "競合" : "予約済み"}
-      </span>
-    </span>
-  );
-}
-
-function fallbackPortOwner(item: PortItem): PortOwner {
-  return {
-    pid: item.pid,
-    pidScope: item.pidScope,
-    ppid: item.ppid,
-    process: item.process,
-    processPath: item.processPath,
-    commandLine: item.commandLine,
-    startedAt: item.startedAt,
-    likelyWslForward: item.likelyWslForward,
-  };
-}
-
-function portOwnersForItem(item: PortItem): PortOwner[] {
-  if (item.owners?.length) return item.owners;
-  return [fallbackPortOwner(item)];
-}
-
-function primaryPortOwner(item: PortItem): PortOwner {
-  return portOwnersForItem(item)[0] ?? fallbackPortOwner(item);
-}
-
-function killablePortOwners(item: PortItem): PortOwner[] {
-  return portOwnersForItem(item).filter(
-    (owner) => owner.pid !== null && owner.pid > 4,
-  );
-}
-
-function portOwnerKey(item: PortItem, owner: PortOwner): string {
-  return [
-    item.id,
-    owner.pidScope ?? "-",
-    owner.pid ?? "-",
-    owner.process ?? "-",
-    owner.processPath ?? "-",
-    owner.commandLine ?? "-",
-    owner.startedAt ?? "-",
-  ].join("|");
-}
-
 export default function DashboardPage() {
   const [data, setData] = useState<PortsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -236,7 +93,6 @@ export default function DashboardPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [filter, setFilter] = useState("");
   const [user, setUser] = useState<AuthUser | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [reservationError, setReservationError] = useState<string | null>(null);
@@ -250,7 +106,6 @@ export default function DashboardPage() {
   );
   const [confirmBusy, setConfirmBusy] = useState(false);
   const [confirmError, setConfirmError] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [historyFor, setHistoryFor] = useState<PortItem | null>(null);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -538,40 +393,7 @@ export default function DashboardPage() {
     setConfirmAction(null);
   }
 
-  function toggleExpanded(id: string) {
-    setExpanded((current) => {
-      const next = new Set(current);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
-
   const canOperate = user?.role === "admin" || user?.role === "operator";
-
-  const items = useMemo(() => {
-    const needle = filter.trim().toLowerCase();
-    if (!data) return [];
-    if (!needle) return data.items;
-    return data.items.filter((item) => {
-      const values = [
-        item.process,
-        item.commandLine,
-        item.address,
-        String(item.port),
-        item.pidScope,
-        item.reservation?.serviceId,
-        ...portOwnersForItem(item).flatMap((owner) => [
-          owner.process,
-          owner.commandLine,
-          owner.pidScope,
-        ]),
-      ];
-      return values
-        .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(needle));
-    });
-  }, [data, filter]);
 
   const relayCount =
     data?.items.filter((item) => item.likelyWslForward).length ?? 0;
@@ -668,136 +490,21 @@ export default function DashboardPage() {
         </section>
       ) : null}
 
-      <section
-        className="mt-6 overflow-hidden rounded-xl border border-ink-700/70 bg-ink-900/50"
-        aria-busy={refreshing}
-      >
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-ink-700/70 px-4 py-3">
-          <div>
-            <h2 className="text-sm font-semibold text-white">待受ポート</h2>
-            <p className="text-xs text-mist-400">
-              Windows と WSL を 1 つのビューに統合。WSL は distro
-              間でネットワークを共有します。
-            </p>
-          </div>
-          <div className="w-full max-w-xs">
-            <label htmlFor="port-filter" className="sr-only">
-              待受ポートを絞り込む
-            </label>
-            <input
-              id="port-filter"
-              value={filter}
-              onChange={(event) => setFilter(event.target.value)}
-              placeholder="プロセス / ポート / コマンド / 予約で絞り込み"
-              className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-3 py-2 text-xs text-mist-200 placeholder:text-mist-400 focus:border-signal-400/40"
-            />
-          </div>
-        </div>
-
-        <div className="scrollbar-thin overflow-x-auto">
-          <table className="w-full min-w-[1050px] border-collapse text-left">
-            <thead>
-              <tr className="border-b border-ink-700/70 bg-ink-950/40 text-xs text-mist-400">
-                <th scope="col" className="px-4 py-2 font-medium">
-                  Scope
-                </th>
-                <th scope="col" className="px-4 py-2 font-medium">
-                  Port
-                </th>
-                <th scope="col" className="px-4 py-2 font-medium">
-                  Bind
-                </th>
-                <th scope="col" className="px-4 py-2 font-medium">
-                  Process
-                </th>
-                <th scope="col" className="px-4 py-2 font-medium">
-                  PID / PPID
-                </th>
-                <th scope="col" className="px-4 py-2 font-medium">
-                  Reservation
-                </th>
-                <th scope="col" className="px-4 py-2 font-medium">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-ink-700/40">
-              {loading && !data ? (
-                <tr>
-                  <td
-                    colSpan={7}
-                    className="px-4 py-10 text-center text-sm text-mist-400"
-                  >
-                    スキャン中…
-                  </td>
-                </tr>
-              ) : items.length === 0 ? (
-                <tr>
-                  <td colSpan={7}>
-                    <EmptyState
-                      compact
-                      title={
-                        filter
-                          ? "条件に一致するポートがありません"
-                          : "待受ポートが見つかりません"
-                      }
-                      description={
-                        filter
-                          ? "絞り込み条件を変えるか、解除して再表示してください。"
-                          : "再スキャンして最新の状態を確認してください。"
-                      }
-                      action={
-                        filter ? (
-                          <button
-                            type="button"
-                            onClick={() => setFilter("")}
-                            className="min-h-9 rounded-md border border-ink-700 px-3 text-xs font-medium text-mist-200 transition hover:border-signal-400/40 hover:text-white"
-                          >
-                            絞り込みを解除
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => void load(true)}
-                            disabled={refreshing}
-                            className="min-h-9 rounded-md border border-ink-700 px-3 text-xs font-medium text-mist-200 transition hover:border-signal-400/40 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            {refreshing ? "スキャン中…" : "再スキャン"}
-                          </button>
-                        )
-                      }
-                    />
-                  </td>
-                </tr>
-              ) : (
-                items.map((item) => (
-                  <FragmentRow
-                    key={item.id}
-                    item={item}
-                    expanded={expanded.has(item.id)}
-                    canOperate={canOperate}
-                    killBusyKey={killBusyKey}
-                    onToggle={() => toggleExpanded(item.id)}
-                    onHistory={() => void openHistory(item)}
-                    onKillOwner={(owner) => requestKillOwner(item, owner)}
-                  />
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-ink-700/70 px-4 py-2 text-xs text-mist-400">
-          <span>
-            {items.length} / {data?.items.length ?? 0} 行を表示
-          </span>
-          <span>
-            {data?.skipped.length
-              ? `スキップ: ${data.skipped.map((s) => s.distro).join(", ")}`
-              : "WSL 3.x の共有ネットワークを考慮してマージ済み"}
-          </span>
-        </div>
-      </section>
+      <PortLedger
+        items={data?.items ?? []}
+        loading={loading}
+        refreshing={refreshing}
+        canOperate={canOperate}
+        killBusyKey={killBusyKey}
+        onRescan={() => void load(true)}
+        onHistory={(item) => void openHistory(item)}
+        onKillOwner={requestKillOwner}
+      />
+      <p className="mt-2 text-sm text-fg-muted">
+        {data?.skipped.length
+          ? `スキップ: ${data.skipped.map((s) => s.distro).join(", ")}`
+          : "WSL 3.x の共有ネットワークを考慮してマージ済み"}
+      </p>
 
       {historyFor ? (
         <section className="mt-6 overflow-hidden rounded-xl border border-ink-700/70 bg-ink-900/50">
@@ -1280,219 +987,5 @@ export default function DashboardPage() {
         />
       ) : null}
     </AppShell>
-  );
-}
-
-function FragmentRow({
-  item,
-  expanded,
-  canOperate,
-  killBusyKey,
-  onToggle,
-  onHistory,
-  onKillOwner,
-}: {
-  item: PortItem;
-  expanded: boolean;
-  canOperate: boolean;
-  killBusyKey: string | null;
-  onToggle: () => void;
-  onHistory: () => void;
-  onKillOwner: (owner: PortOwner) => void;
-}) {
-  const owners = portOwnersForItem(item);
-  const primary = primaryPortOwner(item);
-  const killable = killablePortOwners(item);
-  const rowKillOwner =
-    killable.length === 1 ? (killable[0] ?? primary) : primary;
-  const rowKillKey = portOwnerKey(item, rowKillOwner);
-  const canRowKill =
-    canOperate &&
-    rowKillOwner.pid !== null &&
-    rowKillOwner.pid > 4 &&
-    killable.length <= 1;
-  const ownerExtraCount = owners.length > 1 ? owners.length - 1 : 0;
-
-  return (
-    <>
-      <tr
-        className={`group transition hover:bg-ink-800/40 ${
-          item.conflict ? "bg-danger-400/[0.04]" : ""
-        }`}
-      >
-        <td className="whitespace-nowrap px-4 py-2">
-          <ScopeBadge item={item} />
-        </td>
-        <td className="whitespace-nowrap px-4 py-2 font-mono text-sm tabular-nums text-white">
-          {item.port}
-          <span className="ml-2 text-xs text-mist-400">{item.protocol}</span>
-        </td>
-        <td className="whitespace-nowrap px-4 py-2 font-mono text-xs text-mist-400">
-          {item.address || "*"}
-        </td>
-        <td className="whitespace-nowrap px-4 py-2 text-sm text-mist-200">
-          {primary.process ?? <span className="text-mist-400">—</span>}
-          {ownerExtraCount > 0 ? (
-            <span
-              className="ml-1 rounded bg-warn-400/15 px-1 text-xs text-warn-400"
-              title="同じ endpoint に複数のオーナーがあります"
-            >
-              +{ownerExtraCount}
-            </span>
-          ) : null}
-        </td>
-        <td className="whitespace-nowrap px-4 py-2 font-mono text-xs tabular-nums text-mist-400">
-          {primary.pid ?? "—"} / {primary.ppid ?? "—"}
-          {ownerExtraCount > 0 ? (
-            <span className="text-warn-400"> (+{ownerExtraCount})</span>
-          ) : null}
-        </td>
-        <td className="whitespace-nowrap px-4 py-2">
-          <ReservationBadge reservation={item.reservation} />
-        </td>
-        <td className="whitespace-nowrap px-4 py-2">
-          <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={onToggle}
-              aria-expanded={expanded}
-              aria-controls={`port-detail-${item.id}`}
-              className="min-h-9 rounded border border-ink-700 px-2.5 py-1 text-xs text-mist-400 transition hover:border-mist-400/40 hover:text-white"
-            >
-              {expanded ? "閉じる" : "詳細"}
-            </button>
-            <button
-              type="button"
-              onClick={onHistory}
-              aria-label={`${item.port} 番ポートの履歴を開く`}
-              className="min-h-9 rounded border border-ink-700 px-2.5 py-1 text-xs text-mist-400 transition hover:border-sky-400/40 hover:text-sky-300"
-            >
-              履歴
-            </button>
-            {canRowKill ? (
-              <button
-                type="button"
-                onClick={() => onKillOwner(rowKillOwner)}
-                disabled={killBusyKey !== null}
-                aria-label={`PID ${rowKillOwner.pid} (${rowKillOwner.process ?? item.process ?? "unknown"}) を停止`}
-                className="min-h-9 rounded border border-ink-700 px-2.5 py-1 text-xs text-mist-400 transition hover:border-danger-400/40 hover:text-danger-400 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                {killBusyKey === rowKillKey ? "停止中…" : "停止"}
-              </button>
-            ) : killable.length > 1 ? (
-              <span
-                className="rounded border border-warn-400/20 bg-warn-400/10 px-2 py-1 text-xs text-warn-400"
-                title="複数プロセスがあります。詳細を開いて PID を選んで停止してください"
-              >
-                複数
-              </span>
-            ) : null}
-          </div>
-        </td>
-      </tr>
-      {expanded ? (
-        <tr id={`port-detail-${item.id}`} className="bg-ink-950/40">
-          <td colSpan={7} className="px-4 py-3">
-            <dl className="grid gap-x-6 gap-y-2 text-xs sm:grid-cols-2 lg:grid-cols-4">
-              <div>
-                <dt className="text-mist-400">Primary PID / PPID</dt>
-                <dd className="font-mono text-mist-200">
-                  {primary.pid ?? "—"} / {primary.ppid ?? "—"}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-mist-400">Process started</dt>
-                <dd className="font-mono text-mist-200">
-                  {formatDate(primary.startedAt ?? item.startedAt)}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-mist-400">First seen</dt>
-                <dd className="font-mono text-mist-200">
-                  {formatDate(item.firstSeen)}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-mist-400">Last seen</dt>
-                <dd className="font-mono text-mist-200">
-                  {formatDate(item.lastSeen)}
-                </dd>
-              </div>
-              <div className="sm:col-span-2">
-                <dt className="text-mist-400">Executable</dt>
-                <dd className="break-all font-mono text-mist-200">
-                  {primary.processPath ?? item.processPath ?? "—"}
-                </dd>
-              </div>
-              <div className="sm:col-span-2">
-                <dt className="text-mist-400">Seen in</dt>
-                <dd className="font-mono text-mist-200">
-                  {item.seenIn.length ? item.seenIn.join(", ") : "—"}
-                </dd>
-              </div>
-              <div className="sm:col-span-2 lg:col-span-4">
-                <dt className="text-mist-400">Primary command line</dt>
-                <dd className="break-all font-mono text-mist-200">
-                  {primary.commandLine ?? item.commandLine ?? "—"}
-                </dd>
-              </div>
-              {owners.length > 1 ? (
-                <div className="sm:col-span-2 lg:col-span-4">
-                  <dt className="text-mist-400">Owners ({owners.length})</dt>
-                  <dd className="space-y-2">
-                    {owners.map((owner) => {
-                      const ownerKey = portOwnerKey(item, owner);
-                      const ownerKillable = owner.pid !== null && owner.pid > 4;
-                      const ownerBusy = killBusyKey === ownerKey;
-                      return (
-                        <div
-                          key={ownerKey}
-                          className="flex flex-wrap items-start gap-2 rounded-md border border-ink-700/60 bg-ink-950/30 px-2 py-2"
-                        >
-                          <div className="min-w-[220px] flex-1">
-                            <div className="font-mono text-xs text-mist-200">
-                              PID {owner.pid ?? "—"} / PPID {owner.ppid ?? "—"}{" "}
-                              · {owner.process ?? "—"}
-                            </div>
-                            <div className="max-w-[520px] break-all font-mono text-xs text-mist-400">
-                              {owner.commandLine ?? "—"}
-                            </div>
-                            <div className="font-mono text-xs text-mist-400">
-                              {owner.pidScope ?? "—"} ·{" "}
-                              {formatDate(owner.startedAt ?? item.startedAt)}
-                              {owner.likelyWslForward ? " · WSL relay" : ""}
-                            </div>
-                          </div>
-                          {ownerKillable ? (
-                            <button
-                              type="button"
-                              onClick={() => onKillOwner(owner)}
-                              disabled={!canOperate || killBusyKey !== null}
-                              aria-label={`PID ${owner.pid} (${owner.process ?? "unknown"}) を停止`}
-                              className="min-h-9 rounded border border-ink-700 px-2.5 py-1 text-xs text-mist-400 transition hover:border-danger-400/40 hover:text-danger-400 disabled:cursor-not-allowed disabled:opacity-40"
-                            >
-                              {ownerBusy ? "停止中…" : "停止"}
-                            </button>
-                          ) : null}
-                        </div>
-                      );
-                    })}
-                  </dd>
-                </div>
-              ) : null}
-              {item.reservation ? (
-                <div className="sm:col-span-2 lg:col-span-4">
-                  <dt className="text-mist-400">Reservation</dt>
-                  <dd className="font-mono text-mist-200">
-                    {item.reservation.serviceId} · {item.reservation.status} ·{" "}
-                    {item.reservation.note ?? "no note"}
-                  </dd>
-                </div>
-              ) : null}
-            </dl>
-          </td>
-        </tr>
-      ) : null}
-    </>
   );
 }
