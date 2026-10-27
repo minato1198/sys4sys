@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { NavLinks } from "../components/NavLinks";
+import { useConfirmDialog } from "../components/ui/useConfirmDialog";
 
 interface AuthUser {
   id: string;
@@ -222,6 +223,7 @@ export default function IncidentsPage() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [note, setNote] = useState("");
+  const { requestConfirm, dialog: confirmDialog } = useConfirmDialog();
 
   const loadList = useCallback(async () => {
     const params = new URLSearchParams({ limit: "100" });
@@ -307,16 +309,11 @@ export default function IncidentsPage() {
     window.location.href = "/login";
   }
 
-  async function act(action: "ack" | "resolve") {
-    if (!selectedId) return;
-    if (
-      action === "resolve" &&
-      !window.confirm("このインシデントを解決済みにしますか？")
-    ) {
-      return;
-    }
+  async function act(action: "ack" | "resolve"): Promise<string | null> {
+    if (!selectedId) return null;
     setBusy(true);
     setMessage(null);
+    setError(null);
     try {
       const response = await fetch(
         `/api/incidents/${encodeURIComponent(selectedId)}/${action}`,
@@ -338,8 +335,11 @@ export default function IncidentsPage() {
       setNote("");
       setMessage(action === "ack" ? "確認済みにしました" : "解決しました");
       await loadList();
+      return null;
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      const text = cause instanceof Error ? cause.message : String(cause);
+      setError(text);
+      return text;
     } finally {
       setBusy(false);
     }
@@ -413,14 +413,14 @@ export default function IncidentsPage() {
               <div className="text-xs text-mist-200">
                 {user?.email ?? "認証確認中…"}
               </div>
-              <div className="text-[9px] font-medium uppercase tracking-[0.14em] text-mist-400">
+              <div className="text-xs font-medium text-mist-400">
                 {user?.role ?? ""}
               </div>
             </div>
             <button
               type="button"
               onClick={() => void logout()}
-              className="rounded border border-ink-700 px-2 py-1 text-[11px] text-mist-400 transition hover:border-danger-400/40 hover:text-danger-400"
+              className="rounded border border-ink-700 px-2 py-1 text-xs text-mist-400 transition hover:border-danger-400/40 hover:text-danger-400"
             >
               ログアウト
             </button>
@@ -454,7 +454,7 @@ export default function IncidentsPage() {
             key={card.label}
             className="rounded-xl border border-ink-700/70 bg-ink-900/60 p-4"
           >
-            <div className="text-[10px] font-medium uppercase tracking-[0.14em] text-mist-400">
+            <div className="text-xs font-medium text-mist-400">
               {card.label}
             </div>
             <div
@@ -472,7 +472,7 @@ export default function IncidentsPage() {
             <h2 className="text-sm font-semibold text-white">
               インシデント一覧
             </h2>
-            <p className="text-[11px] text-mist-400">
+            <p className="text-xs text-mist-400">
               10
               秒ごとに自動更新します。行を選択するとタイムラインを表示します。
             </p>
@@ -483,7 +483,7 @@ export default function IncidentsPage() {
               onChange={(event) =>
                 setStatusFilter(event.target.value as "" | IncidentStatus)
               }
-              className="rounded-md border border-ink-700 bg-ink-800 px-2.5 py-1.5 text-xs text-mist-200 outline-none focus:border-signal-400/50"
+              className="rounded-md border border-ink-700 bg-ink-800 px-2.5 py-1.5 text-xs text-mist-200 focus:border-signal-400/50"
             >
               {STATUSES.map((item) => (
                 <option key={item.value || "all"} value={item.value}>
@@ -496,7 +496,7 @@ export default function IncidentsPage() {
               onChange={(event) =>
                 setSeverityFilter(event.target.value as "" | IncidentSeverity)
               }
-              className="rounded-md border border-ink-700 bg-ink-800 px-2.5 py-1.5 text-xs text-mist-200 outline-none focus:border-signal-400/50"
+              className="rounded-md border border-ink-700 bg-ink-800 px-2.5 py-1.5 text-xs text-mist-200 focus:border-signal-400/50"
             >
               {SEVERITIES.map((item) => (
                 <option key={item.value || "all"} value={item.value}>
@@ -516,13 +516,25 @@ export default function IncidentsPage() {
         <div className="scrollbar-thin overflow-x-auto">
           <table className="w-full min-w-[960px] border-collapse text-left">
             <thead>
-              <tr className="border-b border-ink-700/70 bg-ink-950/40 text-[10px] uppercase tracking-[0.12em] text-mist-400">
-                <th className="px-4 py-2 font-medium">Severity</th>
-                <th className="px-4 py-2 font-medium">Incident</th>
-                <th className="px-4 py-2 font-medium">Service</th>
-                <th className="px-4 py-2 font-medium">Status</th>
-                <th className="px-4 py-2 font-medium">Started</th>
-                <th className="px-4 py-2 font-medium">Approval</th>
+              <tr className="border-b border-ink-700/70 bg-ink-950/40 text-xs text-mist-400">
+                <th scope="col" className="px-4 py-2 font-medium">
+                  Severity
+                </th>
+                <th scope="col" className="px-4 py-2 font-medium">
+                  Incident
+                </th>
+                <th scope="col" className="px-4 py-2 font-medium">
+                  Service
+                </th>
+                <th scope="col" className="px-4 py-2 font-medium">
+                  Status
+                </th>
+                <th scope="col" className="px-4 py-2 font-medium">
+                  Started
+                </th>
+                <th scope="col" className="px-4 py-2 font-medium">
+                  Approval
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-ink-700/40">
@@ -557,7 +569,7 @@ export default function IncidentsPage() {
                   >
                     <td className="px-4 py-3">
                       <span
-                        className={`inline-flex rounded border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide ${severityBadge(
+                        className={`inline-flex rounded border px-1.5 py-0.5 text-xs font-medium ${severityBadge(
                           incident.severity,
                         )}`}
                       >
@@ -568,7 +580,7 @@ export default function IncidentsPage() {
                       <div className="max-w-80 text-sm font-medium text-white">
                         {incident.title}
                       </div>
-                      <div className="mt-0.5 max-w-80 truncate text-[10px] text-mist-400">
+                      <div className="mt-0.5 max-w-80 truncate text-xs text-mist-400">
                         {incident.summary ?? incident.fingerprint}
                       </div>
                     </td>
@@ -576,21 +588,21 @@ export default function IncidentsPage() {
                       <div className="text-xs text-mist-200">
                         {incident.service?.name ?? incident.serviceId}
                       </div>
-                      <div className="mt-0.5 text-[10px] text-mist-400">
+                      <div className="mt-0.5 text-xs text-mist-400">
                         {incident.host?.kind?.toUpperCase() ?? "?"}{" "}
                         {incident.host?.distro ?? incident.host?.name ?? ""}
                       </div>
                     </td>
                     <td className="px-4 py-3">
                       <span
-                        className={`inline-flex rounded border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide ${statusBadge(
+                        className={`inline-flex rounded border px-1.5 py-0.5 text-xs font-medium ${statusBadge(
                           incident.status,
                         )}`}
                       >
                         {incident.status}
                       </span>
                       {incident.restartAttempts > 0 ? (
-                        <div className="mt-1 text-[10px] text-mist-400">
+                        <div className="mt-1 text-xs text-mist-400">
                           restart attempts: {incident.restartAttempts}
                         </div>
                       ) : null}
@@ -625,7 +637,7 @@ export default function IncidentsPage() {
               <h2 className="text-sm font-semibold text-white">
                 {detail?.title ?? "インシデント詳細"}
               </h2>
-              <p className="mt-0.5 text-[11px] text-mist-400">
+              <p className="mt-0.5 text-xs text-mist-400">
                 {detail
                   ? `${detail.fingerprint} / detected by ${detail.detectedBy}`
                   : "読み込み中…"}
@@ -646,36 +658,32 @@ export default function IncidentsPage() {
                 <div className="rounded-lg border border-ink-700/70 bg-ink-950/40 p-3">
                   <div className="flex flex-wrap items-center gap-2">
                     <span
-                      className={`rounded border px-1.5 py-0.5 text-[10px] font-medium uppercase ${severityBadge(
+                      className={`rounded border px-1.5 py-0.5 text-xs font-medium ${severityBadge(
                         detail.severity,
                       )}`}
                     >
                       {detail.severity}
                     </span>
                     <span
-                      className={`rounded border px-1.5 py-0.5 text-[10px] font-medium uppercase ${statusBadge(
+                      className={`rounded border px-1.5 py-0.5 text-xs font-medium ${statusBadge(
                         detail.status,
                       )}`}
                     >
                       {detail.status}
                     </span>
-                    <span className="text-[11px] text-mist-400">
+                    <span className="text-xs text-mist-400">
                       {formatDate(detail.startedAt)}
                     </span>
                   </div>
                   <dl className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
                     <div>
-                      <dt className="text-[10px] uppercase tracking-wide text-mist-400">
-                        Service
-                      </dt>
+                      <dt className="text-xs text-mist-400">Service</dt>
                       <dd className="text-mist-200">
                         {detail.service?.name ?? detail.serviceId}
                       </dd>
                     </div>
                     <div>
-                      <dt className="text-[10px] uppercase tracking-wide text-mist-400">
-                        Host
-                      </dt>
+                      <dt className="text-xs text-mist-400">Host</dt>
                       <dd className="text-mist-200">
                         {detail.host
                           ? `${detail.host.kind.toUpperCase()} ${
@@ -685,17 +693,13 @@ export default function IncidentsPage() {
                       </dd>
                     </div>
                     <div>
-                      <dt className="text-[10px] uppercase tracking-wide text-mist-400">
-                        Auto restart
-                      </dt>
+                      <dt className="text-xs text-mist-400">Auto restart</dt>
                       <dd className="text-mist-200">
                         {detail.service?.autoRestartPhase ?? "—"}
                       </dd>
                     </div>
                     <div>
-                      <dt className="text-[10px] uppercase tracking-wide text-mist-400">
-                        Resolved
-                      </dt>
+                      <dt className="text-xs text-mist-400">Resolved</dt>
                       <dd className="text-mist-200">
                         {formatDate(detail.resolvedAt)}
                       </dd>
@@ -707,14 +711,14 @@ export default function IncidentsPage() {
                     </p>
                   ) : null}
                   {detail.service?.lastError ? (
-                    <p className="mt-2 whitespace-pre-wrap rounded border border-danger-400/20 bg-danger-400/5 px-2 py-1.5 font-mono text-[10px] text-danger-400">
+                    <p className="mt-2 whitespace-pre-wrap rounded border border-danger-400/20 bg-danger-400/5 px-2 py-1.5 font-mono text-xs text-danger-400">
                       {detail.service.lastError}
                     </p>
                   ) : null}
                 </div>
 
                 <div>
-                  <h3 className="text-xs font-semibold uppercase tracking-[0.12em] text-mist-400">
+                  <h3 className="text-xs font-semibold text-mist-400">
                     Timeline
                   </h3>
                   <ol className="mt-2 space-y-2">
@@ -727,12 +731,12 @@ export default function IncidentsPage() {
                           <span className="text-xs font-medium text-mist-200">
                             {EVENT_LABELS[event.type] ?? event.type}
                           </span>
-                          <span className="text-[10px] text-mist-400">
+                          <span className="text-xs text-mist-400">
                             {formatDate(event.ts)}
                           </span>
                         </div>
                         {formatPayload(event.payload) ? (
-                          <pre className="scrollbar-thin mt-1 overflow-x-auto whitespace-pre-wrap break-all font-mono text-[10px] text-mist-400">
+                          <pre className="scrollbar-thin mt-1 overflow-x-auto whitespace-pre-wrap break-all font-mono text-xs text-mist-400">
                             {formatPayload(event.payload)}
                           </pre>
                         ) : null}
@@ -745,7 +749,7 @@ export default function IncidentsPage() {
               <div className="space-y-4">
                 <div className="rounded-lg border border-ink-700/70 bg-ink-950/40 p-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <h3 className="text-xs font-semibold uppercase tracking-[0.12em] text-mist-400">
+                    <h3 className="text-xs font-semibold text-mist-400">
                       AI analysis
                     </h3>
                     <div className="flex items-center gap-2">
@@ -754,7 +758,7 @@ export default function IncidentsPage() {
                           href={`/reports?focus=${encodeURIComponent(
                             detail.report.id,
                           )}`}
-                          className="rounded border border-signal-400/30 bg-signal-400/10 px-2 py-1 text-[10px] font-medium text-signal-400 transition hover:bg-signal-400/20"
+                          className="rounded border border-signal-400/30 bg-signal-400/10 px-2 py-1 text-xs font-medium text-signal-400 transition hover:bg-signal-400/20"
                         >
                           レポートを開く
                         </Link>
@@ -764,7 +768,7 @@ export default function IncidentsPage() {
                           type="button"
                           disabled={analyzing}
                           onClick={() => void analyze()}
-                          className="rounded border border-ink-700 bg-ink-800/80 px-2 py-1 text-[10px] font-medium text-mist-200 transition hover:border-signal-400/40 hover:text-white disabled:opacity-50"
+                          className="rounded border border-ink-700 bg-ink-800/80 px-2 py-1 text-xs font-medium text-mist-200 transition hover:border-signal-400/40 hover:text-white disabled:opacity-50"
                         >
                           {analyzing ? "投入中…" : "AI 分析を実行"}
                         </button>
@@ -773,9 +777,9 @@ export default function IncidentsPage() {
                   </div>
                   {detail.analysis ? (
                     <div className="mt-2 space-y-2">
-                      <div className="flex flex-wrap items-center gap-2 text-[10px] text-mist-400">
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-mist-400">
                         <span
-                          className={`rounded border px-1.5 py-0.5 font-medium uppercase ${
+                          className={`rounded border px-1.5 py-0.5 font-medium ${
                             detail.analysis.provider === "template"
                               ? "border-warn-400/30 bg-warn-400/10 text-warn-400"
                               : "border-signal-400/30 bg-signal-400/10 text-signal-400"
@@ -797,19 +801,15 @@ export default function IncidentsPage() {
                       <p className="text-xs leading-relaxed text-mist-200">
                         {detail.analysis.result.summary}
                       </p>
-                      <dl className="grid gap-1 text-[10px] sm:grid-cols-2">
+                      <dl className="grid gap-1 text-xs sm:grid-cols-2">
                         <div>
-                          <dt className="uppercase tracking-wide text-mist-400">
-                            Category
-                          </dt>
+                          <dt className="text-mist-400">Category</dt>
                           <dd className="font-mono text-mist-200">
                             {detail.analysis.result.category}
                           </dd>
                         </div>
                         <div>
-                          <dt className="uppercase tracking-wide text-mist-400">
-                            Generated
-                          </dt>
+                          <dt className="text-mist-400">Generated</dt>
                           <dd className="text-mist-200">
                             {formatDate(detail.analysis.createdAt)}
                           </dd>
@@ -817,25 +817,21 @@ export default function IncidentsPage() {
                       </dl>
                       {detail.analysis.result.rootCauseHypothesis ? (
                         <div>
-                          <div className="text-[10px] uppercase tracking-wide text-mist-400">
-                            推定原因
-                          </div>
-                          <p className="mt-1 whitespace-pre-wrap text-[11px] text-mist-200">
+                          <div className="text-xs text-mist-400">推定原因</div>
+                          <p className="mt-1 whitespace-pre-wrap text-xs text-mist-200">
                             {detail.analysis.result.rootCauseHypothesis}
                           </p>
                         </div>
                       ) : null}
                       {detail.analysis.result.evidence.length > 0 ? (
                         <div>
-                          <div className="text-[10px] uppercase tracking-wide text-mist-400">
-                            根拠ログ
-                          </div>
+                          <div className="text-xs text-mist-400">根拠ログ</div>
                           <ul className="mt-1 space-y-1">
                             {detail.analysis.result.evidence.map(
                               (item, index) => (
                                 <li
                                   key={`${item.logId ?? "log"}-${index}`}
-                                  className="rounded border border-ink-700/60 bg-ink-900/60 px-2 py-1 font-mono text-[10px] text-mist-400"
+                                  className="rounded border border-ink-700/60 bg-ink-900/60 px-2 py-1 font-mono text-xs text-mist-400"
                                 >
                                   {item.logId ? (
                                     <span className="mr-1 text-signal-400">
@@ -851,15 +847,13 @@ export default function IncidentsPage() {
                       ) : null}
                       {detail.analysis.result.recommendedActions.length > 0 ? (
                         <div>
-                          <div className="text-[10px] uppercase tracking-wide text-mist-400">
-                            推奨対応
-                          </div>
+                          <div className="text-xs text-mist-400">推奨対応</div>
                           <ul className="mt-1 space-y-1">
                             {detail.analysis.result.recommendedActions.map(
                               (action, index) => (
                                 <li
                                   key={`${action.type}-${index}`}
-                                  className="flex items-start justify-between gap-2 rounded border border-ink-700/60 bg-ink-900/60 px-2 py-1 text-[10px]"
+                                  className="flex items-start justify-between gap-2 rounded border border-ink-700/60 bg-ink-900/60 px-2 py-1 text-xs"
                                 >
                                   <span className="text-mist-200">
                                     <span className="font-mono text-signal-400">
@@ -887,7 +881,7 @@ export default function IncidentsPage() {
                 </div>
 
                 <div className="rounded-lg border border-ink-700/70 bg-ink-950/40 p-3">
-                  <h3 className="text-xs font-semibold uppercase tracking-[0.12em] text-mist-400">
+                  <h3 className="text-xs font-semibold text-mist-400">
                     Response
                   </h3>
                   {canOperate && detail.status !== "resolved" ? (
@@ -897,22 +891,50 @@ export default function IncidentsPage() {
                         onChange={(event) => setNote(event.target.value)}
                         rows={2}
                         placeholder="対応メモ（任意）"
-                        className="w-full rounded-md border border-ink-700 bg-ink-800/80 px-2.5 py-2 text-xs text-mist-200 outline-none focus:border-signal-400/50"
+                        className="w-full rounded-md border border-ink-700 bg-ink-800/80 px-2.5 py-2 text-xs text-mist-200 focus:border-signal-400/50"
                       />
                       <div className="flex flex-wrap gap-2">
                         <button
                           type="button"
                           disabled={busy}
                           onClick={() => void act("ack")}
-                          className="rounded-md border border-sky-400/40 bg-sky-400/10 px-3 py-1.5 text-xs font-medium text-sky-300 transition hover:bg-sky-400/20 disabled:opacity-50"
+                          className="min-h-11 rounded-md border border-sky-400/40 bg-sky-400/10 px-3 py-1.5 text-xs font-medium text-sky-300 transition hover:bg-sky-400/20 disabled:opacity-50 sm:min-h-10"
                         >
                           Acknowledge
                         </button>
                         <button
                           type="button"
                           disabled={busy}
-                          onClick={() => void act("resolve")}
-                          className="rounded-md border border-signal-400/40 bg-signal-400/10 px-3 py-1.5 text-xs font-medium text-signal-400 transition hover:bg-signal-400/20 disabled:opacity-50"
+                          onClick={() =>
+                            requestConfirm(
+                              {
+                                title: "インシデントを解決済みにしますか？",
+                                description:
+                                  "このインシデントを closed にし、監視対象から外します。",
+                                target: (
+                                  <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5">
+                                    <dt className="text-fg-muted">Incident</dt>
+                                    <dd>{detail.title}</dd>
+                                    <dt className="text-fg-muted">Severity</dt>
+                                    <dd>{detail.severity}</dd>
+                                    <dt className="text-fg-muted">Service</dt>
+                                    <dd>
+                                      {detail.service?.name ??
+                                        detail.serviceId ??
+                                        "—"}
+                                    </dd>
+                                    <dt className="text-fg-muted">Status</dt>
+                                    <dd>{detail.status}</dd>
+                                  </dl>
+                                ),
+                                impact:
+                                  "解決後に同じ条件が発生すれば、新しいインシデントとして記録されます。",
+                                confirmLabel: "解決する",
+                              },
+                              () => act("resolve"),
+                            )
+                          }
+                          className="min-h-11 rounded-md border border-signal-400/40 bg-signal-400/10 px-3 py-1.5 text-xs font-medium text-signal-400 transition hover:bg-signal-400/20 disabled:opacity-50 sm:min-h-10"
                         >
                           Resolve
                         </button>
@@ -936,7 +958,7 @@ export default function IncidentsPage() {
                 </div>
 
                 <div className="rounded-lg border border-ink-700/70 bg-ink-950/40 p-3">
-                  <h3 className="text-xs font-semibold uppercase tracking-[0.12em] text-mist-400">
+                  <h3 className="text-xs font-semibold text-mist-400">
                     Approvals
                   </h3>
                   {detail.approvals.length === 0 ? (
@@ -951,20 +973,20 @@ export default function IncidentsPage() {
                           className="rounded border border-ink-700/60 bg-ink-900/60 px-2.5 py-2 text-xs"
                         >
                           <div className="flex items-center justify-between gap-2">
-                            <span className="font-medium uppercase text-mist-200">
+                            <span className="font-medium text-mist-200">
                               {approval.status}
                             </span>
-                            <span className="text-[10px] text-mist-400">
+                            <span className="text-xs text-mist-400">
                               {formatDate(approval.requestedAt)}
                             </span>
                           </div>
                           {approval.decidedBy ? (
-                            <div className="mt-1 text-[10px] text-mist-400">
+                            <div className="mt-1 text-xs text-mist-400">
                               by {approval.decidedBy}
                             </div>
                           ) : null}
                           {approval.note ? (
-                            <div className="mt-1 text-[10px] text-mist-400">
+                            <div className="mt-1 text-xs text-mist-400">
                               {approval.note}
                             </div>
                           ) : null}
@@ -975,7 +997,7 @@ export default function IncidentsPage() {
                 </div>
 
                 <div className="rounded-lg border border-ink-700/70 bg-ink-950/40 p-3">
-                  <h3 className="text-xs font-semibold uppercase tracking-[0.12em] text-mist-400">
+                  <h3 className="text-xs font-semibold text-mist-400">
                     Actions
                   </h3>
                   {detail.actions.length === 0 ? (
@@ -994,19 +1016,19 @@ export default function IncidentsPage() {
                               {action.type}
                             </span>
                             <span
-                              className={`text-[10px] uppercase ${actionStatusTone(
+                              className={`text-xs ${actionStatusTone(
                                 action.status,
                               )}`}
                             >
                               {action.status}
                             </span>
                           </div>
-                          <div className="mt-1 text-[10px] text-mist-400">
+                          <div className="mt-1 text-xs text-mist-400">
                             {formatDate(action.startedAt)} →{" "}
                             {formatDate(action.finishedAt)}
                           </div>
                           {action.error ? (
-                            <div className="mt-1 break-words text-[10px] text-danger-400">
+                            <div className="mt-1 break-words text-xs text-danger-400">
                               {action.error}
                             </div>
                           ) : null}
@@ -1024,6 +1046,8 @@ export default function IncidentsPage() {
           )}
         </section>
       ) : null}
+
+      {confirmDialog}
     </main>
   );
 }

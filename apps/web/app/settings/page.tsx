@@ -465,14 +465,14 @@ export default function SettingsPage() {
               <div className="text-xs text-mist-200">
                 {user?.email ?? "認証確認中…"}
               </div>
-              <div className="text-[9px] font-medium uppercase tracking-[0.14em] text-mist-400">
+              <div className="text-xs font-medium text-mist-400">
                 {user?.role ?? ""}
               </div>
             </div>
             <button
               type="button"
               onClick={() => void logout()}
-              className="rounded border border-ink-700 px-2 py-1 text-[11px] text-mist-400 transition hover:border-danger-400/40 hover:text-danger-400"
+              className="rounded border border-ink-700 px-2 py-1 text-xs text-mist-400 transition hover:border-danger-400/40 hover:text-danger-400"
             >
               ログアウト
             </button>
@@ -503,14 +503,14 @@ export default function SettingsPage() {
                 <h2 className="text-sm font-semibold text-white">
                   SMTP / Email
                 </h2>
-                <p className="text-[11px] text-mist-400">
+                <p className="text-xs text-mist-400">
                   保存した設定は env より優先されます。パスワードは AES-256-GCM
                   で暗号化して保存します。
                 </p>
               </div>
               {view ? (
                 <span
-                  className={`rounded border px-2 py-0.5 text-[10px] font-medium uppercase ${
+                  className={`rounded border px-2 py-0.5 text-xs font-medium ${
                     view.configured
                       ? "border-signal-400/40 bg-signal-400/10 text-signal-400"
                       : "border-warn-400/40 bg-warn-400/10 text-warn-400"
@@ -525,7 +525,7 @@ export default function SettingsPage() {
             <div className="space-y-3 p-4">
               <div className="grid gap-3 sm:grid-cols-[1fr_120px]">
                 <label className="block">
-                  <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-mist-400">
+                  <span className="text-xs font-medium text-mist-400">
                     SMTP host
                   </span>
                   <input
@@ -534,11 +534,11 @@ export default function SettingsPage() {
                       setForm({ ...form, host: event.target.value })
                     }
                     placeholder="smtp.example.com"
-                    className="mt-1 w-full rounded-md border border-ink-700 bg-ink-800/80 px-2.5 py-2 text-xs text-mist-200 outline-none focus:border-signal-400/50"
+                    className="mt-1 w-full rounded-md border border-ink-700 bg-ink-800/80 px-2.5 py-2 text-xs text-mist-200 focus:border-signal-400/50"
                   />
                 </label>
                 <label className="block">
-                  <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-mist-400">
+                  <span className="text-xs font-medium text-mist-400">
                     Port
                   </span>
                   <input
@@ -547,14 +547,14 @@ export default function SettingsPage() {
                       setForm({ ...form, port: event.target.value })
                     }
                     inputMode="numeric"
-                    className="mt-1 w-full rounded-md border border-ink-700 bg-ink-800/80 px-2.5 py-2 font-mono text-xs text-mist-200 outline-none focus:border-signal-400/50"
+                    className="mt-1 w-full rounded-md border border-ink-700 bg-ink-800/80 px-2.5 py-2 font-mono text-xs text-mist-200 focus:border-signal-400/50"
                   />
                 </label>
               </div>
 
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="block">
-                  <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-mist-400">
+                  <span className="text-xs font-medium text-mist-400">
                     Username
                   </span>
                   <input
@@ -563,11 +563,11 @@ export default function SettingsPage() {
                       setForm({ ...form, username: event.target.value })
                     }
                     autoComplete="off"
-                    className="mt-1 w-full rounded-md border border-ink-700 bg-ink-800/80 px-2.5 py-2 text-xs text-mist-200 outline-none focus:border-signal-400/50"
+                    className="mt-1 w-full rounded-md border border-ink-700 bg-ink-800/80 px-2.5 py-2 text-xs text-mist-200 focus:border-signal-400/50"
                   />
                 </label>
                 <label className="block">
-                  <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-mist-400">
+                  <span className="text-xs font-medium text-mist-400">
                     Password{" "}
                     {view?.passwordSet ? (
                       <span className="text-signal-400">(保存済み)</span>
@@ -589,7 +589,7 @@ export default function SettingsPage() {
                         : "SMTP password"
                     }
                     autoComplete="new-password"
-                    className="mt-1 w-full rounded-md border border-ink-700 bg-ink-800/80 px-2.5 py-2 text-xs text-mist-200 outline-none focus:border-signal-400/50"
+                    className="mt-1 w-full rounded-md border border-ink-700 bg-ink-800/80 px-2.5 py-2 text-xs text-mist-200 focus:border-signal-400/50"
                   />
                 </label>
               </div>
@@ -626,21 +626,19 @@ export default function SettingsPage() {
               </div>
 
               <label className="block">
-                <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-mist-400">
-                  From
-                </span>
+                <span className="text-xs font-medium text-mist-400">From</span>
                 <input
                   value={form.from}
                   onChange={(event) =>
                     setForm({ ...form, from: event.target.value })
                   }
                   placeholder="sys4sys@example.com"
-                  className="mt-1 w-full rounded-md border border-ink-700 bg-ink-800/80 px-2.5 py-2 text-xs text-mist-200 outline-none focus:border-signal-400/50"
+                  className="mt-1 w-full rounded-md border border-ink-700 bg-ink-800/80 px-2.5 py-2 text-xs text-mist-200 focus:border-signal-400/50"
                 />
               </label>
 
               <label className="block">
-                <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-mist-400">
+                <span className="text-xs font-medium text-mist-400">
                   Recipients
                 </span>
                 <textarea
@@ -650,15 +648,15 @@ export default function SettingsPage() {
                   }
                   rows={2}
                   placeholder="ops@example.com, oncall@example.com"
-                  className="mt-1 w-full rounded-md border border-ink-700 bg-ink-800/80 px-2.5 py-2 text-xs text-mist-200 outline-none focus:border-signal-400/50"
+                  className="mt-1 w-full rounded-md border border-ink-700 bg-ink-800/80 px-2.5 py-2 text-xs text-mist-200 focus:border-signal-400/50"
                 />
-                <span className="mt-1 block text-[10px] text-mist-400">
+                <span className="mt-1 block text-xs text-mist-400">
                   カンマ / 空白 / 改行区切り。空にすると保存できません。
                 </span>
               </label>
 
               <label className="block">
-                <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-mist-400">
+                <span className="text-xs font-medium text-mist-400">
                   Delivery mode
                 </span>
                 <select
@@ -669,7 +667,7 @@ export default function SettingsPage() {
                       mode: event.target.value as "immediate" | "digest5m",
                     })
                   }
-                  className="mt-1 w-full rounded-md border border-ink-700 bg-ink-800/80 px-2.5 py-2 text-xs text-mist-200 outline-none focus:border-signal-400/50"
+                  className="mt-1 w-full rounded-md border border-ink-700 bg-ink-800/80 px-2.5 py-2 text-xs text-mist-200 focus:border-signal-400/50"
                 >
                   <option value="immediate">immediate</option>
                   <option value="digest5m">digest5m（現状は即時送信）</option>
@@ -701,7 +699,7 @@ export default function SettingsPage() {
                   再読み込み
                 </button>
               </div>
-              <p className="text-[10px] text-mist-400">
+              <p className="text-xs text-mist-400">
                 テスト送信は保存済みの設定を使用します。変更後は先に保存してください。
               </p>
             </div>
@@ -747,7 +745,7 @@ export default function SettingsPage() {
                   <dd className="text-mist-200">安全装置内で自動再起動</dd>
                 </div>
               </dl>
-              <p className="mt-3 text-[11px] text-mist-400">
+              <p className="mt-3 text-xs text-mist-400">
                 クールダウン、最大試行回数、クラッシュループ、復旧確認失敗の安全装置は
                 <span className="font-mono text-mist-200">
                   {" "}
@@ -763,7 +761,7 @@ export default function SettingsPage() {
               {loading ? (
                 <p className="mt-2 text-xs text-mist-400">読み込み中…</p>
               ) : view ? (
-                <dl className="mt-2 space-y-1.5 text-[11px]">
+                <dl className="mt-2 space-y-1.5 text-xs">
                   <div className="flex items-center justify-between gap-3">
                     <dt className="text-mist-400">source</dt>
                     <dd className="text-mist-200">{view.source}</dd>
@@ -811,15 +809,15 @@ export default function SettingsPage() {
                 <h2 className="text-sm font-semibold text-white">
                   AI / OpenAI compatible
                 </h2>
-                <p className="text-[11px] text-mist-400">
+                <p className="text-xs text-mist-400">
                   ローカル LLM / LM Studio / Ollama / vLLM / BYOK
                   に対応します。保存した設定は env より優先されます。
                 </p>
               </div>
               {aiView ? (
-                <div className="flex flex-wrap items-center gap-2 text-[10px]">
+                <div className="flex flex-wrap items-center gap-2 text-xs">
                   <span
-                    className={`rounded border px-2 py-0.5 font-medium uppercase ${
+                    className={`rounded border px-2 py-0.5 font-medium ${
                       aiView.configured
                         ? "border-signal-400/40 bg-signal-400/10 text-signal-400"
                         : "border-warn-400/40 bg-warn-400/10 text-warn-400"
@@ -841,7 +839,7 @@ export default function SettingsPage() {
             <div className="space-y-3 p-4">
               <div className="grid gap-3 lg:grid-cols-[1.2fr_0.8fr]">
                 <label className="block">
-                  <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-mist-400">
+                  <span className="text-xs font-medium text-mist-400">
                     Base URL
                   </span>
                   <input
@@ -850,11 +848,11 @@ export default function SettingsPage() {
                       setAiForm({ ...aiForm, baseUrl: event.target.value })
                     }
                     placeholder="http://localhost:8081/v1"
-                    className="mt-1 w-full rounded-md border border-ink-700 bg-ink-800/80 px-2.5 py-2 font-mono text-xs text-mist-200 outline-none focus:border-signal-400/50"
+                    className="mt-1 w-full rounded-md border border-ink-700 bg-ink-800/80 px-2.5 py-2 font-mono text-xs text-mist-200 focus:border-signal-400/50"
                   />
                 </label>
                 <label className="block">
-                  <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-mist-400">
+                  <span className="text-xs font-medium text-mist-400">
                     Model
                   </span>
                   <input
@@ -863,14 +861,14 @@ export default function SettingsPage() {
                       setAiForm({ ...aiForm, model: event.target.value })
                     }
                     placeholder="Qwen3.8-27B..."
-                    className="mt-1 w-full rounded-md border border-ink-700 bg-ink-800/80 px-2.5 py-2 font-mono text-xs text-mist-200 outline-none focus:border-signal-400/50"
+                    className="mt-1 w-full rounded-md border border-ink-700 bg-ink-800/80 px-2.5 py-2 font-mono text-xs text-mist-200 focus:border-signal-400/50"
                   />
                 </label>
               </div>
 
               <div className="grid gap-3 lg:grid-cols-2">
                 <label className="block">
-                  <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-mist-400">
+                  <span className="text-xs font-medium text-mist-400">
                     API key{" "}
                     {aiView?.apiKeySet ? (
                       <span className="text-signal-400">(保存済み)</span>
@@ -892,7 +890,7 @@ export default function SettingsPage() {
                         : "ローカル LLM では空でも可"
                     }
                     autoComplete="new-password"
-                    className="mt-1 w-full rounded-md border border-ink-700 bg-ink-800/80 px-2.5 py-2 text-xs text-mist-200 outline-none focus:border-signal-400/50"
+                    className="mt-1 w-full rounded-md border border-ink-700 bg-ink-800/80 px-2.5 py-2 text-xs text-mist-200 focus:border-signal-400/50"
                   />
                 </label>
                 <div className="flex flex-col justify-end gap-2 text-xs text-mist-200">
@@ -932,7 +930,7 @@ export default function SettingsPage() {
 
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 <label className="block">
-                  <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-mist-400">
+                  <span className="text-xs font-medium text-mist-400">
                     Max input tokens
                   </span>
                   <input
@@ -944,11 +942,11 @@ export default function SettingsPage() {
                       })
                     }
                     inputMode="numeric"
-                    className="mt-1 w-full rounded-md border border-ink-700 bg-ink-800/80 px-2.5 py-2 font-mono text-xs text-mist-200 outline-none focus:border-signal-400/50"
+                    className="mt-1 w-full rounded-md border border-ink-700 bg-ink-800/80 px-2.5 py-2 font-mono text-xs text-mist-200 focus:border-signal-400/50"
                   />
                 </label>
                 <label className="block">
-                  <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-mist-400">
+                  <span className="text-xs font-medium text-mist-400">
                     Temperature
                   </span>
                   <input
@@ -957,11 +955,11 @@ export default function SettingsPage() {
                       setAiForm({ ...aiForm, temperature: event.target.value })
                     }
                     inputMode="decimal"
-                    className="mt-1 w-full rounded-md border border-ink-700 bg-ink-800/80 px-2.5 py-2 font-mono text-xs text-mist-200 outline-none focus:border-signal-400/50"
+                    className="mt-1 w-full rounded-md border border-ink-700 bg-ink-800/80 px-2.5 py-2 font-mono text-xs text-mist-200 focus:border-signal-400/50"
                   />
                 </label>
                 <label className="block">
-                  <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-mist-400">
+                  <span className="text-xs font-medium text-mist-400">
                     Timeout (sec)
                   </span>
                   <input
@@ -970,11 +968,11 @@ export default function SettingsPage() {
                       setAiForm({ ...aiForm, timeoutSec: event.target.value })
                     }
                     inputMode="numeric"
-                    className="mt-1 w-full rounded-md border border-ink-700 bg-ink-800/80 px-2.5 py-2 font-mono text-xs text-mist-200 outline-none focus:border-signal-400/50"
+                    className="mt-1 w-full rounded-md border border-ink-700 bg-ink-800/80 px-2.5 py-2 font-mono text-xs text-mist-200 focus:border-signal-400/50"
                   />
                 </label>
                 <label className="block">
-                  <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-mist-400">
+                  <span className="text-xs font-medium text-mist-400">
                     Daily limit
                   </span>
                   <input
@@ -986,7 +984,7 @@ export default function SettingsPage() {
                       })
                     }
                     inputMode="numeric"
-                    className="mt-1 w-full rounded-md border border-ink-700 bg-ink-800/80 px-2.5 py-2 font-mono text-xs text-mist-200 outline-none focus:border-signal-400/50"
+                    className="mt-1 w-full rounded-md border border-ink-700 bg-ink-800/80 px-2.5 py-2 font-mono text-xs text-mist-200 focus:border-signal-400/50"
                   />
                 </label>
               </div>
@@ -1016,7 +1014,7 @@ export default function SettingsPage() {
                   再読み込み
                 </button>
               </div>
-              <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] text-mist-400">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-mist-400">
                 <p>
                   外部 URL かつ「ログ送信を許可」がオフの場合、AI
                   分析はスキップされルールベースのレポートになります。 送信前に
@@ -1037,24 +1035,24 @@ export default function SettingsPage() {
                 <h2 className="text-sm font-semibold text-white">
                   ログ保持期間
                 </h2>
-                <span className="rounded border border-ink-700 bg-ink-800/60 px-2 py-0.5 text-[10px] uppercase text-mist-400">
+                <span className="rounded border border-ink-700 bg-ink-800/60 px-2 py-0.5 text-xs text-mist-400">
                   {retention?.source ?? "env"}
                 </span>
               </div>
-              <p className="mt-1 text-[11px] text-mist-400">
+              <p className="mt-1 text-xs text-mist-400">
                 1 時間ごとのクリーンアップで、指定日数より古いログを削除します。
                 インシデントとレポートは削除しません。
               </p>
               <div className="mt-3 flex flex-wrap items-end gap-2">
                 <label className="block">
-                  <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-mist-400">
+                  <span className="text-xs font-medium text-mist-400">
                     Retention days
                   </span>
                   <input
                     value={logDays}
                     onChange={(event) => setLogDays(event.target.value)}
                     inputMode="numeric"
-                    className="mt-1 w-32 rounded-md border border-ink-700 bg-ink-800/80 px-2.5 py-2 font-mono text-xs text-mist-200 outline-none focus:border-signal-400/50"
+                    className="mt-1 w-32 rounded-md border border-ink-700 bg-ink-800/80 px-2.5 py-2 font-mono text-xs text-mist-200 focus:border-signal-400/50"
                   />
                 </label>
                 <button
@@ -1074,7 +1072,7 @@ export default function SettingsPage() {
                 </button>
               </div>
               {retention?.updatedAt ? (
-                <p className="mt-2 font-mono text-[10px] text-mist-400">
+                <p className="mt-2 font-mono text-xs text-mist-400">
                   updated{" "}
                   {new Date(retention.updatedAt).toLocaleString("ja-JP")}
                 </p>
@@ -1085,7 +1083,7 @@ export default function SettingsPage() {
               <h2 className="text-sm font-semibold text-white">
                 データベースバックアップ
               </h2>
-              <p className="mt-1 text-[11px] text-mist-400">
+              <p className="mt-1 text-xs text-mist-400">
                 SQLite のオンラインバックアップを DB と同じディレクトリの
                 <span className="font-mono text-mist-200"> backups/ </span>
                 に作成します。WAL 中でも整合性を保ちます。
@@ -1099,12 +1097,12 @@ export default function SettingsPage() {
                 >
                   {backupBusy ? "作成中…" : "バックアップを作成"}
                 </button>
-                <span className="rounded-md border border-ink-700 px-3 py-1.5 font-mono text-[10px] text-mist-400">
+                <span className="rounded-md border border-ink-700 px-3 py-1.5 font-mono text-xs text-mist-400">
                   pnpm db:backup
                 </span>
               </div>
               {backupResult ? (
-                <dl className="mt-3 space-y-1 rounded-lg border border-ink-700/60 bg-ink-950/40 p-2 text-[10px]">
+                <dl className="mt-3 space-y-1 rounded-lg border border-ink-700/60 bg-ink-950/40 p-2 text-xs">
                   <div className="flex justify-between gap-2">
                     <dt className="text-mist-400">path</dt>
                     <dd className="break-all text-right font-mono text-mist-200">
@@ -1126,7 +1124,7 @@ export default function SettingsPage() {
             <h2 className="text-sm font-semibold text-white">
               Phase 3（自動復旧）昇格チェックリスト
             </h2>
-            <div className="mt-2 grid gap-2 text-[11px] text-mist-400 sm:grid-cols-2">
+            <div className="mt-2 grid gap-2 text-xs text-mist-400 sm:grid-cols-2">
               <p>
                 1. 対象サービスを{" "}
                 <span className="font-mono text-mist-200">approve</span> で 1
@@ -1146,7 +1144,7 @@ export default function SettingsPage() {
                 に変更する。
               </p>
             </div>
-            <p className="mt-3 text-[10px] text-mist-400">
+            <p className="mt-3 text-xs text-mist-400">
               phase の変更は{" "}
               <a href="/services" className="text-signal-400 hover:underline">
                 Services

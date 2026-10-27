@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { ThemeToggle } from "../components/ThemeToggle";
+import { StatusBanner } from "../components/ui/StatusBanner";
 
 interface Problem {
   detail?: string;
@@ -46,80 +47,92 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="grid min-h-dvh place-items-center px-4 py-10">
+    <main className="relative grid min-h-dvh place-items-center px-4 py-10">
       <div className="fixed right-4 top-4 z-20">
         <ThemeToggle />
       </div>
-      <div className="grid w-full max-w-4xl overflow-hidden rounded-2xl border border-ink-700/70 bg-ink-900/60 shadow-2xl shadow-black/30 lg:grid-cols-[1.05fr_1fr]">
-        <section className="hidden flex-col justify-between border-r border-ink-700/70 bg-ink-950/50 p-8 lg:flex">
-          <div className="flex items-center gap-3">
-            <div className="grid size-10 place-items-center rounded-lg border border-signal-400/30 bg-signal-400/10">
-              <span className="font-mono text-sm font-bold text-signal-400">
+
+      <div className="grid w-full max-w-5xl overflow-hidden rounded-2xl border border-border bg-surface shadow-xl lg:grid-cols-[1.05fr_1fr]">
+        <section className="relative hidden flex-col justify-between overflow-hidden border-r border-border bg-surface-muted p-8 lg:flex">
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 opacity-40"
+            style={{
+              backgroundImage:
+                "linear-gradient(to right, var(--color-border) 1px, transparent 1px), linear-gradient(to bottom, var(--color-border) 1px, transparent 1px)",
+              backgroundSize: "28px 28px",
+            }}
+          />
+
+          <div className="relative flex items-center gap-3">
+            <div className="grid size-10 place-items-center rounded-lg border border-accent/30 bg-accent/10">
+              <span className="font-mono text-sm font-bold text-accent">
                 s4s
               </span>
             </div>
             <div>
-              <div className="text-lg font-semibold tracking-tight text-white">
+              <div className="text-lg font-semibold tracking-tight text-fg">
                 sys4sys
               </div>
-              <div className="text-[11px] text-mist-400">
-                backend operations console
+              <div className="text-sm text-fg-muted">
+                Windows / WSL operations
               </div>
             </div>
           </div>
 
-          <div>
-            <h1 className="text-3xl font-semibold leading-tight tracking-tight text-white">
-              ポート・ログ・監視を
+          <div className="relative">
+            <p className="max-w-md text-3xl font-semibold leading-tight tracking-tight text-fg">
+              待受ポートと予約を、
               <br />
-              ひとつの場所で。
-            </h1>
-            <p className="mt-4 max-w-sm text-sm leading-relaxed text-mist-400">
-              Windows と WSL
-              の待受ポートを横断表示。サービス監視、承認付き自動復旧、AI
-              レポートまでを段階的に追加します。
+              ひとつの画面で。
             </p>
-            <div className="mt-6 flex flex-wrap gap-2 text-[11px] text-mist-400">
-              <span className="rounded-md border border-ink-700 bg-ink-800/60 px-2 py-1">
-                Windows + WSL
-              </span>
-              <span className="rounded-md border border-ink-700 bg-ink-800/60 px-2 py-1">
-                observe → approve → auto
-              </span>
-              <span className="rounded-md border border-ink-700 bg-ink-800/60 px-2 py-1">
-                local-first AI
-              </span>
+            <p className="mt-4 max-w-sm text-sm leading-relaxed text-fg-muted">
+              Windows と WSL
+              のポート所有者、予約、競合を同じ台帳で確認できます。
+            </p>
+
+            <div className="mt-8 max-w-sm space-y-2 border-l-2 border-accent/40 pl-4 text-sm">
+              <div className="flex items-center justify-between gap-4">
+                <span className="text-fg-muted">Windows</span>
+                <span className="font-mono text-fg">TCP / UDP</span>
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <span className="text-fg-muted">WSL</span>
+                <span className="font-mono text-fg">shared network</span>
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <span className="text-fg-muted">Reservations</span>
+                <span className="font-mono text-fg">conflict check</span>
+              </div>
             </div>
           </div>
 
-          <p className="font-mono text-[10px] text-mist-400/70">
-            M1 / authentication + port view
+          <p className="relative text-xs text-fg-muted">
+            ローカル環境の運用コンソール
           </p>
         </section>
 
         <section className="p-6 sm:p-8">
-          <div className="mb-6 lg:hidden">
-            <div className="flex items-center gap-3">
-              <div className="grid size-9 place-items-center rounded-lg border border-signal-400/30 bg-signal-400/10">
-                <span className="font-mono text-xs font-bold text-signal-400">
-                  s4s
-                </span>
-              </div>
-              <div className="text-base font-semibold text-white">sys4sys</div>
+          <div className="mb-6 flex items-center gap-3 lg:hidden">
+            <div className="grid size-9 place-items-center rounded-lg border border-accent/30 bg-accent/10">
+              <span className="font-mono text-xs font-bold text-accent">
+                s4s
+              </span>
             </div>
+            <div className="text-base font-semibold text-fg">sys4sys</div>
           </div>
 
-          <h2 className="text-xl font-semibold tracking-tight text-white">
+          <h1 className="text-2xl font-semibold tracking-tight text-fg">
             サインイン
-          </h2>
-          <p className="mt-1 text-xs text-mist-400">
-            チームアカウントでダッシュボードにアクセスします。
+          </h1>
+          <p className="mt-1 text-sm text-fg-muted">
+            チームアカウントで続行します。
           </p>
 
           <form onSubmit={onSubmit} className="mt-6 space-y-4">
             <label className="block">
-              <span className="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.12em] text-mist-400">
-                Email
+              <span className="mb-1.5 block text-sm font-medium text-fg">
+                メールアドレス
               </span>
               <input
                 type="email"
@@ -129,13 +142,13 @@ export default function LoginPage() {
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
                 placeholder="admin@sys4sys.local"
-                className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-3 py-2 text-sm text-white placeholder:text-mist-400/50 focus:border-signal-400/50 focus:outline-none focus:ring-2 focus:ring-signal-400/10"
+                className="w-full rounded-md border border-border bg-bg/70 px-3 py-2.5 text-sm text-fg placeholder:text-fg-muted transition focus:border-accent/60"
               />
             </label>
 
             <label className="block">
-              <span className="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.12em] text-mist-400">
-                Password
+              <span className="mb-1.5 block text-sm font-medium text-fg">
+                パスワード
               </span>
               <input
                 type="password"
@@ -144,38 +157,23 @@ export default function LoginPage() {
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 placeholder="••••••••••••"
-                className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-3 py-2 text-sm text-white placeholder:text-mist-400/50 focus:border-signal-400/50 focus:outline-none focus:ring-2 focus:ring-signal-400/10"
+                className="w-full rounded-md border border-border bg-bg/70 px-3 py-2.5 text-sm text-fg placeholder:text-fg-muted transition focus:border-accent/60"
               />
             </label>
 
-            {error ? (
-              <div
-                role="alert"
-                className="rounded-md border border-danger-400/30 bg-danger-400/10 px-3 py-2 text-xs text-danger-400"
-              >
-                {error}
-              </div>
-            ) : null}
+            {error ? <StatusBanner tone="error">{error}</StatusBanner> : null}
 
             <button
               type="submit"
               disabled={submitting}
-              className="w-full rounded-md bg-signal-400 px-3 py-2.5 text-sm font-semibold text-ink-950 transition hover:bg-signal-400/90 disabled:cursor-not-allowed disabled:opacity-60"
+              className="min-h-11 w-full rounded-md bg-accent px-3 text-sm font-semibold text-accent-fg transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {submitting ? "サインイン中…" : "サインイン"}
             </button>
           </form>
 
-          <p className="mt-6 border-t border-ink-700/70 pt-4 text-[11px] leading-relaxed text-mist-400">
-            初回起動時に管理者ユーザーが作成されます。認証情報は{" "}
-            <code className="rounded bg-ink-800 px-1 py-0.5 font-mono text-[10px] text-mist-200">
-              ADMIN_EMAIL
-            </code>{" "}
-            /{" "}
-            <code className="rounded bg-ink-800 px-1 py-0.5 font-mono text-[10px] text-mist-200">
-              ADMIN_PASSWORD
-            </code>{" "}
-            で指定するか、未指定の場合は起動ログに表示される一時パスワードを使用してください。
+          <p className="mt-6 border-t border-border pt-4 text-xs leading-relaxed text-fg-muted">
+            管理者から受け取ったアカウントでサインインしてください。
           </p>
         </section>
       </div>

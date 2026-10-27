@@ -165,14 +165,14 @@ export default function AuditPage() {
               <div className="text-xs text-mist-200">
                 {user?.email ?? "認証確認中…"}
               </div>
-              <div className="text-[9px] font-medium uppercase tracking-[0.14em] text-mist-400">
+              <div className="text-xs font-medium text-mist-400">
                 {user?.role ?? ""}
               </div>
             </div>
             <button
               type="button"
               onClick={() => void logout()}
-              className="rounded border border-ink-700 px-2 py-1 text-[11px] text-mist-400 transition hover:border-danger-400/40 hover:text-danger-400"
+              className="rounded border border-ink-700 px-2 py-1 text-xs text-mist-400 transition hover:border-danger-400/40 hover:text-danger-400"
             >
               ログアウト
             </button>
@@ -204,7 +204,7 @@ export default function AuditPage() {
             key={card.label}
             className="rounded-xl border border-ink-700/70 bg-ink-900/60 p-4"
           >
-            <div className="text-[10px] font-medium uppercase tracking-[0.14em] text-mist-400">
+            <div className="text-xs font-medium text-mist-400">
               {card.label}
             </div>
             <div
@@ -220,64 +220,54 @@ export default function AuditPage() {
         <div className="flex flex-wrap items-end justify-between gap-3 border-b border-ink-700/70 px-4 py-3">
           <div>
             <h2 className="text-sm font-semibold text-white">操作履歴</h2>
-            <p className="text-[11px] text-mist-400">
+            <p className="text-xs text-mist-400">
               最新 200 件を表示します。20 秒ごとに自動更新します。
             </p>
           </div>
           <div className="flex flex-wrap items-end gap-2">
             <label className="block">
-              <span className="block text-[9px] uppercase tracking-[0.12em] text-mist-400">
-                Action
-              </span>
+              <span className="block text-xs text-mist-400">Action</span>
               <input
                 value={action}
                 onChange={(event) => setAction(event.target.value)}
                 placeholder="settings.ai.update"
-                className="mt-1 w-44 rounded-md border border-ink-700 bg-ink-800/80 px-2 py-1.5 text-[11px] text-mist-200 outline-none focus:border-signal-400/50"
+                className="mt-1 w-44 rounded-md border border-ink-700 bg-ink-800/80 px-2 py-1.5 text-xs text-mist-200 focus:border-signal-400/50"
               />
             </label>
             <label className="block">
-              <span className="block text-[9px] uppercase tracking-[0.12em] text-mist-400">
-                Target
-              </span>
+              <span className="block text-xs text-mist-400">Target</span>
               <input
                 value={target}
                 onChange={(event) => setTarget(event.target.value)}
                 placeholder="incident:..."
-                className="mt-1 w-40 rounded-md border border-ink-700 bg-ink-800/80 px-2 py-1.5 text-[11px] text-mist-200 outline-none focus:border-signal-400/50"
+                className="mt-1 w-40 rounded-md border border-ink-700 bg-ink-800/80 px-2 py-1.5 text-xs text-mist-200 focus:border-signal-400/50"
               />
             </label>
             <label className="block">
-              <span className="block text-[9px] uppercase tracking-[0.12em] text-mist-400">
-                Actor
-              </span>
+              <span className="block text-xs text-mist-400">Actor</span>
               <input
                 value={actor}
                 onChange={(event) => setActor(event.target.value)}
                 placeholder="admin@..."
-                className="mt-1 w-40 rounded-md border border-ink-700 bg-ink-800/80 px-2 py-1.5 text-[11px] text-mist-200 outline-none focus:border-signal-400/50"
+                className="mt-1 w-40 rounded-md border border-ink-700 bg-ink-800/80 px-2 py-1.5 text-xs text-mist-200 focus:border-signal-400/50"
               />
             </label>
             <label className="block">
-              <span className="block text-[9px] uppercase tracking-[0.12em] text-mist-400">
-                From
-              </span>
+              <span className="block text-xs text-mist-400">From</span>
               <input
                 type="datetime-local"
                 value={from}
                 onChange={(event) => setFrom(event.target.value)}
-                className="mt-1 rounded-md border border-ink-700 bg-ink-800/80 px-2 py-1.5 text-[11px] text-mist-200 outline-none focus:border-signal-400/50"
+                className="mt-1 rounded-md border border-ink-700 bg-ink-800/80 px-2 py-1.5 text-xs text-mist-200 focus:border-signal-400/50"
               />
             </label>
             <label className="block">
-              <span className="block text-[9px] uppercase tracking-[0.12em] text-mist-400">
-                To
-              </span>
+              <span className="block text-xs text-mist-400">To</span>
               <input
                 type="datetime-local"
                 value={to}
                 onChange={(event) => setTo(event.target.value)}
-                className="mt-1 rounded-md border border-ink-700 bg-ink-800/80 px-2 py-1.5 text-[11px] text-mist-200 outline-none focus:border-signal-400/50"
+                className="mt-1 rounded-md border border-ink-700 bg-ink-800/80 px-2 py-1.5 text-xs text-mist-200 focus:border-signal-400/50"
               />
             </label>
             <button
@@ -306,13 +296,25 @@ export default function AuditPage() {
         <div className="scrollbar-thin overflow-x-auto">
           <table className="w-full min-w-[1050px] border-collapse text-left">
             <thead>
-              <tr className="border-b border-ink-700/70 bg-ink-950/40 text-[10px] uppercase tracking-[0.12em] text-mist-400">
-                <th className="px-4 py-2 font-medium">Time</th>
-                <th className="px-4 py-2 font-medium">Actor</th>
-                <th className="px-4 py-2 font-medium">Action</th>
-                <th className="px-4 py-2 font-medium">Target</th>
-                <th className="px-4 py-2 font-medium">Reason</th>
-                <th className="px-4 py-2 font-medium">IP</th>
+              <tr className="border-b border-ink-700/70 bg-ink-950/40 text-xs text-mist-400">
+                <th scope="col" className="px-4 py-2 font-medium">
+                  Time
+                </th>
+                <th scope="col" className="px-4 py-2 font-medium">
+                  Actor
+                </th>
+                <th scope="col" className="px-4 py-2 font-medium">
+                  Action
+                </th>
+                <th scope="col" className="px-4 py-2 font-medium">
+                  Target
+                </th>
+                <th scope="col" className="px-4 py-2 font-medium">
+                  Reason
+                </th>
+                <th scope="col" className="px-4 py-2 font-medium">
+                  IP
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-ink-700/40">
@@ -337,31 +339,31 @@ export default function AuditPage() {
               ) : (
                 items.map((entry) => (
                   <tr key={entry.id} className="align-top">
-                    <td className="whitespace-nowrap px-4 py-2 text-[11px] text-mist-200">
+                    <td className="whitespace-nowrap px-4 py-2 text-xs text-mist-200">
                       {formatDate(entry.ts)}
                     </td>
-                    <td className="px-4 py-2 text-[11px] text-mist-200">
+                    <td className="px-4 py-2 text-xs text-mist-200">
                       {entry.actorLabel}
                       {entry.actorUserId ? (
-                        <div className="font-mono text-[9px] text-mist-400">
+                        <div className="font-mono text-xs text-mist-400">
                           {entry.actorUserId}
                         </div>
                       ) : null}
                     </td>
                     <td className="px-4 py-2">
                       <span
-                        className={`font-mono text-[11px] ${actionTone(entry.action)}`}
+                        className={`font-mono text-xs ${actionTone(entry.action)}`}
                       >
                         {entry.action}
                       </span>
                     </td>
-                    <td className="max-w-64 break-all px-4 py-2 font-mono text-[10px] text-mist-200">
+                    <td className="max-w-64 break-all px-4 py-2 font-mono text-xs text-mist-200">
                       {entry.target}
                     </td>
-                    <td className="max-w-56 break-words px-4 py-2 text-[10px] text-mist-400">
+                    <td className="max-w-56 break-words px-4 py-2 text-xs text-mist-400">
                       {entry.reason ?? "—"}
                     </td>
-                    <td className="px-4 py-2 font-mono text-[10px] text-mist-400">
+                    <td className="px-4 py-2 font-mono text-xs text-mist-400">
                       {entry.ip ?? "—"}
                     </td>
                   </tr>
@@ -382,23 +384,19 @@ export default function AuditPage() {
                   key={entry.id}
                   className="rounded-lg border border-ink-700/60 bg-ink-950/40 p-2"
                 >
-                  <div className="font-mono text-[10px] text-mist-400">
+                  <div className="font-mono text-xs text-mist-400">
                     {entry.action} · {formatDate(entry.ts)}
                   </div>
                   <div className="mt-2 grid gap-2">
                     <div>
-                      <div className="text-[9px] uppercase text-mist-400">
-                        before
-                      </div>
-                      <pre className="scrollbar-thin mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-all font-mono text-[9px] text-mist-400">
+                      <div className="text-xs text-mist-400">before</div>
+                      <pre className="scrollbar-thin mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-all font-mono text-xs text-mist-400">
                         {formatJson(entry.before)}
                       </pre>
                     </div>
                     <div>
-                      <div className="text-[9px] uppercase text-mist-400">
-                        after
-                      </div>
-                      <pre className="scrollbar-thin mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-all font-mono text-[9px] text-mist-400">
+                      <div className="text-xs text-mist-400">after</div>
+                      <pre className="scrollbar-thin mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-all font-mono text-xs text-mist-400">
                         {formatJson(entry.after)}
                       </pre>
                     </div>

@@ -214,14 +214,14 @@ export default function ReportsPage() {
               <div className="text-xs text-mist-200">
                 {user?.email ?? "認証確認中…"}
               </div>
-              <div className="text-[9px] font-medium uppercase tracking-[0.14em] text-mist-400">
+              <div className="text-xs font-medium text-mist-400">
                 {user?.role ?? ""}
               </div>
             </div>
             <button
               type="button"
               onClick={() => void logout()}
-              className="rounded border border-ink-700 px-2 py-1 text-[11px] text-mist-400 transition hover:border-danger-400/40 hover:text-danger-400"
+              className="rounded border border-ink-700 px-2 py-1 text-xs text-mist-400 transition hover:border-danger-400/40 hover:text-danger-400"
             >
               ログアウト
             </button>
@@ -249,7 +249,7 @@ export default function ReportsPage() {
             key={card.label}
             className="rounded-xl border border-ink-700/70 bg-ink-900/60 p-4"
           >
-            <div className="text-[10px] font-medium uppercase tracking-[0.14em] text-mist-400">
+            <div className="text-xs font-medium text-mist-400">
               {card.label}
             </div>
             <div
@@ -266,7 +266,7 @@ export default function ReportsPage() {
           <div className="flex items-center justify-between border-b border-ink-700/70 px-4 py-3">
             <div>
               <h2 className="text-sm font-semibold text-white">レポート一覧</h2>
-              <p className="text-[11px] text-mist-400">
+              <p className="text-xs text-mist-400">
                 15 秒ごとに自動更新します。
               </p>
             </div>
@@ -305,14 +305,14 @@ export default function ReportsPage() {
                           <div className="truncate text-xs font-medium text-mist-200">
                             {item.incident?.title ?? item.incidentId}
                           </div>
-                          <div className="mt-0.5 truncate text-[10px] text-mist-400">
+                          <div className="mt-0.5 truncate text-xs text-mist-400">
                             {item.incident?.serviceName ?? "unknown service"} ·{" "}
                             {formatDate(item.createdAt)}
                           </div>
                         </div>
                         {item.incident ? (
                           <span
-                            className={`shrink-0 rounded border px-1.5 py-0.5 text-[9px] font-medium uppercase ${severityBadge(
+                            className={`shrink-0 rounded border px-1.5 py-0.5 text-xs font-medium ${severityBadge(
                               item.incident.severity,
                             )}`}
                           >
@@ -320,7 +320,7 @@ export default function ReportsPage() {
                           </span>
                         ) : null}
                       </div>
-                      <div className="mt-1 truncate font-mono text-[9px] text-mist-400">
+                      <div className="mt-1 truncate font-mono text-xs text-mist-400">
                         {item.id}
                       </div>
                     </button>
@@ -339,7 +339,7 @@ export default function ReportsPage() {
                   <h2 className="text-sm font-semibold text-white">
                     {detail.incident?.title ?? "レポート"}
                   </h2>
-                  <p className="mt-0.5 font-mono text-[10px] text-mist-400">
+                  <p className="mt-0.5 font-mono text-xs text-mist-400">
                     {detail.id} · {formatDate(detail.createdAt)}
                   </p>
                 </div>
@@ -349,7 +349,7 @@ export default function ReportsPage() {
                       href={`/incidents?focus=${encodeURIComponent(
                         detail.incident.id,
                       )}`}
-                      className="rounded border border-ink-700 px-2 py-1 text-[10px] text-mist-400 transition hover:border-signal-400/40 hover:text-white"
+                      className="rounded border border-ink-700 px-2 py-1 text-xs text-mist-400 transition hover:border-signal-400/40 hover:text-white"
                     >
                       インシデント
                     </Link>
@@ -359,7 +359,7 @@ export default function ReportsPage() {
                       detail.id,
                     )}/export?format=md`}
                     download
-                    className="rounded border border-signal-400/30 bg-signal-400/10 px-2 py-1 text-[10px] font-medium text-signal-400 transition hover:bg-signal-400/20"
+                    className="rounded border border-signal-400/30 bg-signal-400/10 px-2 py-1 text-xs font-medium text-signal-400 transition hover:bg-signal-400/20"
                   >
                     Markdown
                   </a>
@@ -368,7 +368,7 @@ export default function ReportsPage() {
                       detail.id,
                     )}/export?format=json`}
                     download
-                    className="rounded border border-ink-700 px-2 py-1 text-[10px] text-mist-400 transition hover:border-signal-400/40 hover:text-white"
+                    className="rounded border border-ink-700 px-2 py-1 text-xs text-mist-400 transition hover:border-signal-400/40 hover:text-white"
                   >
                     JSON
                   </a>
@@ -377,15 +377,15 @@ export default function ReportsPage() {
 
               <div className="space-y-4 p-4">
                 {detail.incident ? (
-                  <div className="flex flex-wrap items-center gap-2 text-[10px] text-mist-400">
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-mist-400">
                     <span
-                      className={`rounded border px-1.5 py-0.5 font-medium uppercase ${severityBadge(
+                      className={`rounded border px-1.5 py-0.5 font-medium ${severityBadge(
                         detail.incident.severity,
                       )}`}
                     >
                       {detail.incident.severity}
                     </span>
-                    <span className="rounded border border-ink-700 bg-ink-800/60 px-1.5 py-0.5 uppercase">
+                    <span className="rounded border border-ink-700 bg-ink-800/60 px-1.5 py-0.5">
                       {detail.incident.status}
                     </span>
                     <span>
@@ -398,10 +398,10 @@ export default function ReportsPage() {
                 {detail.analysis ? (
                   <div className="rounded-lg border border-ink-700/70 bg-ink-950/40 p-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="text-[10px] font-medium uppercase tracking-[0.12em] text-mist-400">
+                      <div className="text-xs font-medium text-mist-400">
                         AI summary
                       </div>
-                      <div className="flex flex-wrap items-center gap-2 text-[10px] text-mist-400">
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-mist-400">
                         <span className="font-mono">
                           {detail.analysis.provider}
                         </span>
@@ -415,7 +415,7 @@ export default function ReportsPage() {
                     <p className="mt-2 text-xs leading-relaxed text-mist-200">
                       {detail.analysis.result.summary}
                     </p>
-                    <p className="mt-2 text-[11px] leading-relaxed text-mist-400">
+                    <p className="mt-2 text-xs leading-relaxed text-mist-400">
                       {detail.analysis.result.rootCauseHypothesis}
                     </p>
                   </div>

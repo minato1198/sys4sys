@@ -60,7 +60,7 @@ export function MarkdownPreview({ markdown }: { markdown: string }) {
       blocks.push(
         <pre
           key={`code-${key++}`}
-          className="scrollbar-thin overflow-x-auto rounded-lg border border-ink-700/70 bg-ink-950/70 p-3 font-mono text-[11px] leading-relaxed text-mist-400"
+          className="scrollbar-thin overflow-x-auto rounded-lg border border-ink-700/70 bg-ink-950/70 p-3 font-mono text-xs leading-relaxed text-mist-400"
         >
           <code>{code.join("\n")}</code>
         </pre>,
@@ -77,7 +77,7 @@ export function MarkdownPreview({ markdown }: { markdown: string }) {
           ? "text-lg font-semibold tracking-tight text-white"
           : level === 2
             ? "mt-5 border-b border-ink-700/60 pb-1 text-sm font-semibold text-white"
-            : "mt-4 text-xs font-semibold uppercase tracking-[0.12em] text-mist-400";
+            : "mt-4 text-xs font-semibold text-mist-400";
       blocks.push(
         <div key={`heading-${key++}`} className={className}>
           {inline(text, `h-${key}`)}
@@ -132,11 +132,12 @@ export function MarkdownPreview({ markdown }: { markdown: string }) {
             className="scrollbar-thin overflow-x-auto rounded-lg border border-ink-700/70"
           >
             <table className="w-full border-collapse text-left text-xs">
-              <thead className="bg-ink-950/60 text-[10px] uppercase tracking-wide text-mist-400">
+              <thead className="bg-ink-950/60 text-xs text-mist-400">
                 <tr>
                   {cells(header).map((cell, cellIndex) => (
                     <th
                       key={`th-${key}-${cellIndex}`}
+                      scope="col"
                       className="border-b border-ink-700/70 px-3 py-2 font-medium"
                     >
                       {inline(cell, `th-${key}-${cellIndex}`)}

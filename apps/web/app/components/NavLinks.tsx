@@ -21,7 +21,7 @@ export function NavLinks({ role }: { role?: string | null }) {
   const pathname = usePathname();
 
   return (
-    <nav className="flex flex-wrap items-center gap-1 rounded-lg border border-ink-700 bg-ink-900/60 p-1 text-xs">
+    <nav className="flex flex-wrap items-center gap-1 rounded-lg border border-border bg-surface/60 p-1 text-xs">
       {LINKS.filter((link) => !link.adminOnly || role === "admin").map(
         (link) => {
           const active =
@@ -33,10 +33,10 @@ export function NavLinks({ role }: { role?: string | null }) {
               key={link.href}
               href={link.href}
               aria-current={active ? "page" : undefined}
-              className={`rounded-md px-2.5 py-1 transition ${
+              className={`inline-flex min-h-11 items-center rounded-md px-2.5 py-1.5 transition sm:min-h-9 ${
                 active
-                  ? "bg-ink-800 text-white"
-                  : "text-mist-400 hover:text-white"
+                  ? "bg-surface-muted text-fg"
+                  : "text-fg-muted hover:text-fg"
               }`}
             >
               {link.label}
@@ -44,7 +44,7 @@ export function NavLinks({ role }: { role?: string | null }) {
           );
         },
       )}
-      <span className="mx-0.5 h-4 w-px bg-ink-700" aria-hidden="true" />
+      <span className="mx-0.5 h-4 w-px bg-border" aria-hidden="true" />
       <ThemeToggle />
     </nav>
   );

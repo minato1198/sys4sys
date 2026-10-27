@@ -231,14 +231,14 @@ export default function HostsPage() {
               <div className="text-xs text-mist-200">
                 {user?.email ?? "認証確認中…"}
               </div>
-              <div className="text-[9px] font-medium uppercase tracking-[0.14em] text-mist-400">
+              <div className="text-xs font-medium text-mist-400">
                 {user?.role ?? ""}
               </div>
             </div>
             <button
               type="button"
               onClick={() => void logout()}
-              className="rounded border border-ink-700 px-2 py-1 text-[11px] text-mist-400 transition hover:border-danger-400/40 hover:text-danger-400"
+              className="rounded border border-ink-700 px-2 py-1 text-xs text-mist-400 transition hover:border-danger-400/40 hover:text-danger-400"
             >
               ログアウト
             </button>
@@ -262,7 +262,7 @@ export default function HostsPage() {
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-ink-700/70 px-4 py-3">
           <div>
             <h2 className="text-sm font-semibold text-white">登録ホスト</h2>
-            <p className="text-[11px] text-mist-400">
+            <p className="text-xs text-mist-400">
               enabled のホストがスキャン・サービス実行の対象になります。
             </p>
           </div>
@@ -280,14 +280,28 @@ export default function HostsPage() {
         <div className="scrollbar-thin overflow-x-auto">
           <table className="w-full min-w-[720px] border-collapse text-left">
             <thead>
-              <tr className="border-b border-ink-700/70 bg-ink-950/40 text-[10px] uppercase tracking-[0.12em] text-mist-400">
-                <th className="px-4 py-2 font-medium">Kind</th>
-                <th className="px-4 py-2 font-medium">Name</th>
-                <th className="px-4 py-2 font-medium">Distro</th>
-                <th className="px-4 py-2 font-medium">Default user</th>
-                <th className="px-4 py-2 font-medium">State</th>
-                <th className="px-4 py-2 font-medium">Enabled</th>
-                <th className="px-4 py-2 font-medium">Action</th>
+              <tr className="border-b border-ink-700/70 bg-ink-950/40 text-xs text-mist-400">
+                <th scope="col" className="px-4 py-2 font-medium">
+                  Kind
+                </th>
+                <th scope="col" className="px-4 py-2 font-medium">
+                  Name
+                </th>
+                <th scope="col" className="px-4 py-2 font-medium">
+                  Distro
+                </th>
+                <th scope="col" className="px-4 py-2 font-medium">
+                  Default user
+                </th>
+                <th scope="col" className="px-4 py-2 font-medium">
+                  State
+                </th>
+                <th scope="col" className="px-4 py-2 font-medium">
+                  Enabled
+                </th>
+                <th scope="col" className="px-4 py-2 font-medium">
+                  Action
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-ink-700/40">
@@ -314,7 +328,7 @@ export default function HostsPage() {
                   <tr key={host.id} className="hover:bg-ink-800/40">
                     <td className="px-4 py-2">
                       <span
-                        className={`inline-flex rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                        className={`inline-flex rounded px-1.5 py-0.5 text-xs font-medium ${
                           host.kind === "windows"
                             ? "bg-sky-400/15 text-sky-300"
                             : "bg-signal-400/15 text-signal-400"
@@ -353,7 +367,7 @@ export default function HostsPage() {
                         />
                         {host.state}
                         {host.distroState && host.distroState !== host.state ? (
-                          <span className="text-[10px] text-mist-400">
+                          <span className="text-xs text-mist-400">
                             ({host.distroState})
                           </span>
                         ) : null}
@@ -368,7 +382,7 @@ export default function HostsPage() {
                           type="button"
                           onClick={() => void toggleEnabled(host)}
                           disabled={busyId === host.id}
-                          className="rounded border border-ink-700 px-2 py-1 text-[10px] text-mist-400 transition hover:border-signal-400/40 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                          className="rounded border border-ink-700 px-2 py-1 text-xs text-mist-400 transition hover:border-signal-400/40 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
                         >
                           {busyId === host.id
                             ? "更新中…"
@@ -377,7 +391,7 @@ export default function HostsPage() {
                               : "有効化"}
                         </button>
                       ) : (
-                        <span className="text-[10px] text-mist-400">—</span>
+                        <span className="text-xs text-mist-400">—</span>
                       )}
                     </td>
                   </tr>
@@ -392,7 +406,7 @@ export default function HostsPage() {
         <section className="mt-6 grid gap-4 lg:grid-cols-2">
           <div className="rounded-xl border border-ink-700/70 bg-ink-900/50 p-4">
             <h2 className="text-sm font-semibold text-white">検出された WSL</h2>
-            <p className="mt-1 text-[11px] text-mist-400">
+            <p className="mt-1 text-xs text-mist-400">
               「WSL を検出」を押すと一覧が更新されます。登録済みの distro
               は再登録できません。
             </p>
@@ -411,12 +425,12 @@ export default function HostsPage() {
                       <div className="truncate text-xs text-white">
                         {distro.name}
                         {distro.isDefault ? (
-                          <span className="ml-2 rounded bg-ink-800 px-1 text-[9px] text-mist-400">
+                          <span className="ml-2 rounded bg-ink-800 px-1 text-xs text-mist-400">
                             default
                           </span>
                         ) : null}
                       </div>
-                      <div className="font-mono text-[10px] text-mist-400">
+                      <div className="font-mono text-xs text-mist-400">
                         {distro.state} / v{distro.version}
                       </div>
                     </div>
@@ -424,7 +438,7 @@ export default function HostsPage() {
                       type="button"
                       onClick={() => void registerDistro(distro)}
                       disabled={distro.registered || busyId === distro.name}
-                      className="shrink-0 rounded border border-ink-700 px-2 py-1 text-[10px] text-mist-200 transition hover:border-signal-400/40 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                      className="shrink-0 rounded border border-ink-700 px-2 py-1 text-xs text-mist-200 transition hover:border-signal-400/40 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       {distro.registered
                         ? "登録済み"
@@ -443,12 +457,12 @@ export default function HostsPage() {
             className="rounded-xl border border-ink-700/70 bg-ink-900/50 p-4"
           >
             <h2 className="text-sm font-semibold text-white">WSL を手動登録</h2>
-            <p className="mt-1 text-[11px] text-mist-400">
+            <p className="mt-1 text-xs text-mist-400">
               detect で見つからない場合のフォールバック。distro 名は `wsl -l -v`
               の NAME と一致させてください。
             </p>
             <label className="mt-3 block">
-              <span className="mb-1 block text-[10px] uppercase tracking-[0.12em] text-mist-400">
+              <span className="mb-1 block text-xs text-mist-400">
                 Display name
               </span>
               <input
@@ -458,13 +472,11 @@ export default function HostsPage() {
                   setForm({ ...form, name: event.target.value })
                 }
                 placeholder="Ubuntu 24.04"
-                className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 text-xs text-mist-200 placeholder:text-mist-400/50 focus:border-signal-400/40 focus:outline-none"
+                className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 text-xs text-mist-200 placeholder:text-mist-400 focus:border-signal-400/40"
               />
             </label>
             <label className="mt-3 block">
-              <span className="mb-1 block text-[10px] uppercase tracking-[0.12em] text-mist-400">
-                Distro
-              </span>
+              <span className="mb-1 block text-xs text-mist-400">Distro</span>
               <input
                 required
                 value={form.distro}
@@ -472,11 +484,11 @@ export default function HostsPage() {
                   setForm({ ...form, distro: event.target.value })
                 }
                 placeholder="Ubuntu-24.04"
-                className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 font-mono text-xs text-mist-200 placeholder:text-mist-400/50 focus:border-signal-400/40 focus:outline-none"
+                className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 font-mono text-xs text-mist-200 placeholder:text-mist-400 focus:border-signal-400/40"
               />
             </label>
             <label className="mt-3 block">
-              <span className="mb-1 block text-[10px] uppercase tracking-[0.12em] text-mist-400">
+              <span className="mb-1 block text-xs text-mist-400">
                 Default user (optional)
               </span>
               <input
@@ -485,7 +497,7 @@ export default function HostsPage() {
                   setForm({ ...form, defaultUser: event.target.value })
                 }
                 placeholder="dev"
-                className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 text-xs text-mist-200 placeholder:text-mist-400/50 focus:border-signal-400/40 focus:outline-none"
+                className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 text-xs text-mist-200 placeholder:text-mist-400 focus:border-signal-400/40"
               />
             </label>
             <button

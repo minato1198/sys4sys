@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { NavLinks } from "../components/NavLinks";
+import { useConfirmDialog } from "../components/ui/useConfirmDialog";
 
 interface AuthUser {
   id: string;
@@ -103,6 +104,7 @@ export default function ApprovalsPage() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const { requestConfirm, dialog: confirmDialog } = useConfirmDialog();
 
   const load = useCallback(async () => {
     const response = await fetch(
@@ -165,17 +167,10 @@ export default function ApprovalsPage() {
   async function decide(
     approval: ApprovalView,
     decision: "approve" | "reject",
-  ) {
-    if (
-      decision === "reject" &&
-      !window.confirm(
-        `${approval.service?.name ?? approval.incident?.title ?? "この承認"} の再起動を却下しますか？`,
-      )
-    ) {
-      return;
-    }
+  ): Promise<string | null> {
     setBusyId(approval.id);
     setMessage(null);
+    setError(null);
     try {
       const response = await fetch(
         `/api/approvals/${encodeURIComponent(approval.id)}/${decision}`,
@@ -201,8 +196,11 @@ export default function ApprovalsPage() {
           : "却下しました。",
       );
       await load();
+      return null;
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      const text = cause instanceof Error ? cause.message : String(cause);
+      setError(text);
+      return text;
     } finally {
       setBusyId(null);
     }
@@ -236,14 +234,14 @@ export default function ApprovalsPage() {
               <div className="text-xs text-mist-200">
                 {user?.email ?? "認証確認中…"}
               </div>
-              <div className="text-[9px] font-medium uppercase tracking-[0.14em] text-mist-400">
+              <div className="text-xs font-medium text-mist-400">
                 {user?.role ?? ""}
               </div>
             </div>
             <button
               type="button"
               onClick={() => void logout()}
-              className="rounded border border-ink-700 px-2 py-1 text-[11px] text-mist-400 transition hover:border-danger-400/40 hover:text-danger-400"
+              className="rounded border border-ink-700 px-2 py-1 text-xs text-mist-400 transition hover:border-danger-400/40 hover:text-danger-400"
             >
               ログアウト
             </button>
@@ -274,9 +272,7 @@ export default function ApprovalsPage() {
                 : "border-ink-700/70 bg-ink-900/60 hover:border-signal-400/30"
             }`}
           >
-            <div className="text-[10px] font-medium uppercase tracking-[0.14em] text-mist-400">
-              {tab.label}
-            </div>
+            <div className="text-xs font-medium text-mist-400">{tab.label}</div>
             <div
               className={`mt-2 font-mono text-2xl tabular-nums ${
                 tab.value === "pending"
@@ -298,7 +294,7 @@ export default function ApprovalsPage() {
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-ink-700/70 px-4 py-3">
           <div>
             <h2 className="text-sm font-semibold text-white">承認キュー</h2>
-            <p className="text-[11px] text-mist-400">
+            <p className="text-xs text-mist-400">
               5
               秒ごとに自動更新します。承認後は再起動と復旧確認が非同期で実行されます。
             </p>
@@ -313,7 +309,7 @@ export default function ApprovalsPage() {
         </div>
 
         <div className="border-b border-ink-700/70 px-4 py-3">
-          <label className="text-[10px] font-medium uppercase tracking-[0.12em] text-mist-400">
+          <label className="text-xs font-medium text-mist-400">
             判断メモ（任意）
           </label>
           <textarea
@@ -321,20 +317,32 @@ export default function ApprovalsPage() {
             onChange={(event) => setNote(event.target.value)}
             rows={2}
             placeholder="承認・却下の理由など"
-            className="mt-1 w-full rounded-md border border-ink-700 bg-ink-800/80 px-2.5 py-2 text-xs text-mist-200 outline-none focus:border-signal-400/50"
+            className="mt-1 w-full rounded-md border border-ink-700 bg-ink-800/80 px-2.5 py-2 text-xs text-mist-200 focus:border-signal-400/50"
           />
         </div>
 
         <div className="scrollbar-thin overflow-x-auto">
           <table className="w-full min-w-[1020px] border-collapse text-left">
             <thead>
-              <tr className="border-b border-ink-700/70 bg-ink-950/40 text-[10px] uppercase tracking-[0.12em] text-mist-400">
-                <th className="px-4 py-2 font-medium">Status</th>
-                <th className="px-4 py-2 font-medium">Service</th>
-                <th className="px-4 py-2 font-medium">Incident</th>
-                <th className="px-4 py-2 font-medium">Severity</th>
-                <th className="px-4 py-2 font-medium">Requested</th>
-                <th className="px-4 py-2 font-medium">Decision</th>
+              <tr className="border-b border-ink-700/70 bg-ink-950/40 text-xs text-mist-400">
+                <th scope="col" className="px-4 py-2 font-medium">
+                  Status
+                </th>
+                <th scope="col" className="px-4 py-2 font-medium">
+                  Service
+                </th>
+                <th scope="col" className="px-4 py-2 font-medium">
+                  Incident
+                </th>
+                <th scope="col" className="px-4 py-2 font-medium">
+                  Severity
+                </th>
+                <th scope="col" className="px-4 py-2 font-medium">
+                  Requested
+                </th>
+                <th scope="col" className="px-4 py-2 font-medium">
+                  Decision
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-ink-700/40">
@@ -371,7 +379,7 @@ export default function ApprovalsPage() {
                     >
                       <td className="px-4 py-3">
                         <span
-                          className={`inline-flex rounded border px-1.5 py-0.5 text-[10px] font-medium uppercase ${approvalBadge(
+                          className={`inline-flex rounded border px-1.5 py-0.5 text-xs font-medium ${approvalBadge(
                             approval.status,
                           )}`}
                         >
@@ -382,7 +390,7 @@ export default function ApprovalsPage() {
                         <div className="text-sm font-medium text-white">
                           {approval.service?.name ?? "—"}
                         </div>
-                        <div className="mt-0.5 text-[10px] text-mist-400">
+                        <div className="mt-0.5 text-xs text-mist-400">
                           {approval.host?.kind?.toUpperCase() ?? "?"}{" "}
                           {approval.host?.distro ?? approval.host?.name ?? ""}
                           {approval.service
@@ -400,7 +408,7 @@ export default function ApprovalsPage() {
                         >
                           {approval.incident?.title ?? approval.incidentId}
                         </Link>
-                        <div className="mt-0.5 max-w-96 truncate text-[10px] text-mist-400">
+                        <div className="mt-0.5 max-w-96 truncate text-xs text-mist-400">
                           {requestedReason(approval.requestedAction) ||
                             approval.incident?.summary ||
                             "—"}
@@ -408,7 +416,7 @@ export default function ApprovalsPage() {
                       </td>
                       <td className="px-4 py-3">
                         <span
-                          className={`inline-flex rounded border px-1.5 py-0.5 text-[10px] font-medium uppercase ${severityBadge(
+                          className={`inline-flex rounded border px-1.5 py-0.5 text-xs font-medium ${severityBadge(
                             approval.incident?.severity ?? "info",
                           )}`}
                         >
@@ -428,7 +436,7 @@ export default function ApprovalsPage() {
                                 event.stopPropagation();
                                 void decide(approval, "approve");
                               }}
-                              className="rounded border border-signal-400/40 bg-signal-400/10 px-2.5 py-1 text-[11px] font-medium text-signal-400 transition hover:bg-signal-400/20 disabled:opacity-50"
+                              className="min-h-9 rounded border border-signal-400/40 bg-signal-400/10 px-2.5 py-1 text-xs font-medium text-signal-400 transition hover:bg-signal-400/20 disabled:opacity-50"
                             >
                               承認
                             </button>
@@ -437,15 +445,45 @@ export default function ApprovalsPage() {
                               disabled={busy}
                               onClick={(event) => {
                                 event.stopPropagation();
-                                void decide(approval, "reject");
+                                requestConfirm(
+                                  {
+                                    title: "再起動リクエストを却下しますか？",
+                                    description:
+                                      "この承認要求を却下すると、自動復旧は実行されません。",
+                                    target: (
+                                      <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5">
+                                        <dt className="text-fg-muted">
+                                          Service
+                                        </dt>
+                                        <dd>
+                                          {approval.service?.name ??
+                                            approval.incident?.title ??
+                                            "—"}
+                                        </dd>
+                                        <dt className="text-fg-muted">Host</dt>
+                                        <dd>{approval.host?.name ?? "—"}</dd>
+                                        <dt className="text-fg-muted">
+                                          Incident
+                                        </dt>
+                                        <dd>
+                                          {approval.incident?.title ?? "—"}
+                                        </dd>
+                                      </dl>
+                                    ),
+                                    impact:
+                                      "インシデントは open のまま残り、必要に応じて再申請できます。",
+                                    confirmLabel: "却下",
+                                  },
+                                  () => decide(approval, "reject"),
+                                );
                               }}
-                              className="rounded border border-danger-400/40 bg-danger-400/10 px-2.5 py-1 text-[11px] font-medium text-danger-400 transition hover:bg-danger-400/20 disabled:opacity-50"
+                              className="min-h-9 rounded border border-danger-400/40 bg-danger-400/10 px-2.5 py-1 text-xs font-medium text-danger-400 transition hover:bg-danger-400/20 disabled:opacity-50"
                             >
                               却下
                             </button>
                           </div>
                         ) : (
-                          <span className="text-[11px] text-mist-400">
+                          <span className="text-xs text-mist-400">
                             {approval.decidedBy
                               ? `${approval.decidedBy} / ${formatDate(
                                   approval.decidedAt,
@@ -480,33 +518,23 @@ export default function ApprovalsPage() {
           </div>
           <dl className="mt-3 grid gap-3 text-xs sm:grid-cols-2 lg:grid-cols-4">
             <div>
-              <dt className="text-[10px] uppercase tracking-wide text-mist-400">
-                Approval
-              </dt>
-              <dd className="font-mono text-[10px] text-mist-200">
-                {selected.id}
-              </dd>
+              <dt className="text-xs text-mist-400">Approval</dt>
+              <dd className="font-mono text-xs text-mist-200">{selected.id}</dd>
             </div>
             <div>
-              <dt className="text-[10px] uppercase tracking-wide text-mist-400">
-                Incident
-              </dt>
+              <dt className="text-xs text-mist-400">Incident</dt>
               <dd className="text-mist-200">
                 {selected.incident?.title ?? selected.incidentId}
               </dd>
             </div>
             <div>
-              <dt className="text-[10px] uppercase tracking-wide text-mist-400">
-                Requested action
-              </dt>
-              <dd className="break-words font-mono text-[10px] text-mist-200">
+              <dt className="text-xs text-mist-400">Requested action</dt>
+              <dd className="break-words font-mono text-xs text-mist-200">
                 {JSON.stringify(selected.requestedAction)}
               </dd>
             </div>
             <div>
-              <dt className="text-[10px] uppercase tracking-wide text-mist-400">
-                Decision
-              </dt>
+              <dt className="text-xs text-mist-400">Decision</dt>
               <dd className="text-mist-200">
                 {selected.status}
                 {selected.decidedBy ? ` / ${selected.decidedBy}` : ""}
@@ -520,6 +548,8 @@ export default function ApprovalsPage() {
           ) : null}
         </section>
       ) : null}
+
+      {confirmDialog}
     </main>
   );
 }

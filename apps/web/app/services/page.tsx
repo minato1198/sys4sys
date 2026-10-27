@@ -9,6 +9,7 @@ import {
 } from "react";
 import Link from "next/link";
 import { NavLinks } from "../components/NavLinks";
+import { useConfirmDialog } from "../components/ui/useConfirmDialog";
 
 interface AuthUser {
   id: string;
@@ -247,7 +248,7 @@ function deployTone(status: Service["lastDeployStatus"]): string {
 
 function HealthBadge({ health }: { health: HealthResult | null }) {
   if (!health) {
-    return <span className="text-[11px] text-mist-400">未計測</span>;
+    return <span className="text-xs text-mist-400">未計測</span>;
   }
   const tone =
     health.status === "healthy"
@@ -260,13 +261,13 @@ function HealthBadge({ health }: { health: HealthResult | null }) {
   return (
     <span className="inline-flex flex-col gap-0.5">
       <span
-        className={`inline-flex w-fit rounded px-1.5 py-0.5 text-[10px] font-medium ${tone}`}
+        className={`inline-flex w-fit rounded px-1.5 py-0.5 text-xs font-medium ${tone}`}
       >
         {health.status}
       </span>
       {health.detail ? (
         <span
-          className="max-w-44 truncate text-[10px] text-mist-400"
+          className="max-w-44 truncate text-xs text-mist-400"
           title={health.detail}
         >
           {health.detail}
@@ -296,6 +297,7 @@ export default function ServicesPage() {
   const [healthById, setHealthById] = useState<Record<string, HealthResult>>(
     {},
   );
+  const { requestConfirm, dialog: confirmDialog } = useConfirmDialog();
 
   const load = useCallback(async () => {
     try {
@@ -374,13 +376,7 @@ export default function ServicesPage() {
   async function runAction(
     service: Service,
     type: "start" | "stop" | "restart",
-  ) {
-    if (
-      type === "stop" &&
-      !window.confirm(`${service.name} を停止しますか？`)
-    ) {
-      return;
-    }
+  ): Promise<string | null> {
     setBusyId(service.id);
     setMessage(null);
     try {
@@ -399,8 +395,11 @@ export default function ServicesPage() {
       setMessage(`${service.name} の ${type} を実行しました`);
       await refreshServices();
       if (selected?.id === service.id) await openDetail(service.id);
+      return null;
     } catch (cause) {
-      setMessage(cause instanceof Error ? cause.message : String(cause));
+      const text = cause instanceof Error ? cause.message : String(cause);
+      setMessage(text);
+      return text;
     } finally {
       setBusyId(null);
     }
@@ -436,17 +435,10 @@ export default function ServicesPage() {
     );
   }
 
-  async function runDeploy(service: Service) {
+  async function runDeploy(service: Service): Promise<string | null> {
     if (!service.deploy) {
       setMessage("デプロイ設定がありません。Edit から登録してください。");
-      return;
-    }
-    if (
-      !window.confirm(
-        `${service.name} をデプロイしますか？\n${service.deploy.command.join(" ")}`,
-      )
-    ) {
-      return;
+      return null;
     }
 
     setBusyId(service.id);
@@ -471,7 +463,7 @@ export default function ServicesPage() {
                 : ""
             }。`,
           );
-          return;
+          return null;
         }
         throw new Error(
           problem?.detail ?? `デプロイに失敗しました (${response.status})`,
@@ -483,8 +475,11 @@ export default function ServicesPage() {
       await refreshServices();
       if (selected?.id === service.id) await openDetail(service.id);
       void pollDeploy(service.id);
+      return null;
     } catch (cause) {
-      setMessage(cause instanceof Error ? cause.message : String(cause));
+      const text = cause instanceof Error ? cause.message : String(cause);
+      setMessage(text);
+      return text;
     } finally {
       setBusyId(null);
     }
@@ -862,8 +857,7 @@ export default function ServicesPage() {
     }
   }
 
-  async function deleteService(service: Service) {
-    if (!window.confirm(`${service.name} を削除しますか？`)) return;
+  async function deleteService(service: Service): Promise<string | null> {
     setBusyId(service.id);
     setMessage(null);
     try {
@@ -883,8 +877,11 @@ export default function ServicesPage() {
       if (selected?.id === service.id) setSelected(null);
       if (editingId === service.id) resetForm();
       await refreshServices();
+      return null;
     } catch (cause) {
-      setMessage(cause instanceof Error ? cause.message : String(cause));
+      const text = cause instanceof Error ? cause.message : String(cause);
+      setMessage(text);
+      return text;
     } finally {
       setBusyId(null);
     }
@@ -915,14 +912,14 @@ export default function ServicesPage() {
               <div className="text-xs text-mist-200">
                 {user?.email ?? "認証確認中…"}
               </div>
-              <div className="text-[9px] font-medium uppercase tracking-[0.14em] text-mist-400">
+              <div className="text-xs font-medium text-mist-400">
                 {user?.role ?? ""}
               </div>
             </div>
             <button
               type="button"
               onClick={() => void logout()}
-              className="rounded border border-ink-700 px-2 py-1 text-[11px] text-mist-400 transition hover:border-danger-400/40 hover:text-danger-400"
+              className="rounded border border-ink-700 px-2 py-1 text-xs text-mist-400 transition hover:border-danger-400/40 hover:text-danger-400"
             >
               ログアウト
             </button>
@@ -952,7 +949,7 @@ export default function ServicesPage() {
             key={card.label}
             className="rounded-xl border border-ink-700/70 bg-ink-900/60 p-4"
           >
-            <div className="text-[10px] font-medium uppercase tracking-[0.14em] text-mist-400">
+            <div className="text-xs font-medium text-mist-400">
               {card.label}
             </div>
             <div
@@ -968,7 +965,7 @@ export default function ServicesPage() {
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-ink-700/70 px-4 py-3">
           <div>
             <h2 className="text-sm font-semibold text-white">登録サービス</h2>
-            <p className="text-[11px] text-mist-400">
+            <p className="text-xs text-mist-400">
               10 秒ごとの自動更新はありません。操作後に再読み込みしてください。
             </p>
           </div>
@@ -983,14 +980,28 @@ export default function ServicesPage() {
         <div className="scrollbar-thin overflow-x-auto">
           <table className="w-full min-w-[980px] border-collapse text-left">
             <thead>
-              <tr className="border-b border-ink-700/70 bg-ink-950/40 text-[10px] uppercase tracking-[0.12em] text-mist-400">
-                <th className="px-4 py-2 font-medium">Service</th>
-                <th className="px-4 py-2 font-medium">Host</th>
-                <th className="px-4 py-2 font-medium">Status</th>
-                <th className="px-4 py-2 font-medium">PID</th>
-                <th className="px-4 py-2 font-medium">Ports</th>
-                <th className="px-4 py-2 font-medium">Health</th>
-                <th className="px-4 py-2 font-medium">Actions</th>
+              <tr className="border-b border-ink-700/70 bg-ink-950/40 text-xs text-mist-400">
+                <th scope="col" className="px-4 py-2 font-medium">
+                  Service
+                </th>
+                <th scope="col" className="px-4 py-2 font-medium">
+                  Host
+                </th>
+                <th scope="col" className="px-4 py-2 font-medium">
+                  Status
+                </th>
+                <th scope="col" className="px-4 py-2 font-medium">
+                  PID
+                </th>
+                <th scope="col" className="px-4 py-2 font-medium">
+                  Ports
+                </th>
+                <th scope="col" className="px-4 py-2 font-medium">
+                  Health
+                </th>
+                <th scope="col" className="px-4 py-2 font-medium">
+                  Actions
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-ink-700/40">
@@ -1030,13 +1041,13 @@ export default function ServicesPage() {
                           {service.name}
                         </button>
                         <div
-                          className="mt-0.5 max-w-72 truncate font-mono text-[10px] text-mist-400"
+                          className="mt-0.5 max-w-72 truncate font-mono text-xs text-mist-400"
                           title={service.command.join(" ")}
                         >
                           {service.command.join(" ")}
                         </div>
                         {service.deploy ? (
-                          <div className="mt-1 max-w-72 text-[10px] text-mist-400">
+                          <div className="mt-1 max-w-72 text-xs text-mist-400">
                             deploy:{" "}
                             <span
                               className={deployTone(service.lastDeployStatus)}
@@ -1060,7 +1071,7 @@ export default function ServicesPage() {
                       <td className="px-4 py-3">
                         <span className="inline-flex items-center gap-1.5">
                           <span
-                            className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                            className={`rounded px-1.5 py-0.5 text-xs font-medium ${
                               service.host?.kind === "windows"
                                 ? "bg-sky-400/15 text-sky-300"
                                 : "bg-signal-400/15 text-signal-400"
@@ -1084,7 +1095,7 @@ export default function ServicesPage() {
                         </span>
                         {service.lastError ? (
                           <div
-                            className="mt-1 max-w-52 truncate text-[10px] text-danger-400"
+                            className="mt-1 max-w-52 truncate text-xs text-danger-400"
                             title={service.lastError}
                           >
                             {service.lastError}
@@ -1094,7 +1105,7 @@ export default function ServicesPage() {
                       <td className="px-4 py-3 font-mono text-xs text-mist-400">
                         {service.pid ?? "—"}
                         {service.pidScope ? (
-                          <span className="ml-1 text-[10px] text-mist-400">
+                          <span className="ml-1 text-xs text-mist-400">
                             @{service.pidScope}
                           </span>
                         ) : null}
@@ -1115,15 +1126,48 @@ export default function ServicesPage() {
                                 type="button"
                                 disabled={busy || service.status === "running"}
                                 onClick={() => void runAction(service, "start")}
-                                className="rounded border border-signal-400/30 bg-signal-400/10 px-2 py-1 text-[10px] text-signal-400 transition hover:bg-signal-400/20 disabled:cursor-not-allowed disabled:opacity-40"
+                                className="rounded border border-signal-400/30 bg-signal-400/10 px-2 py-1 text-xs text-signal-400 transition hover:bg-signal-400/20 disabled:cursor-not-allowed disabled:opacity-40"
                               >
                                 Start
                               </button>
                               <button
                                 type="button"
                                 disabled={busy || service.status === "stopped"}
-                                onClick={() => void runAction(service, "stop")}
-                                className="rounded border border-danger-400/30 bg-danger-400/10 px-2 py-1 text-[10px] text-danger-400 transition hover:bg-danger-400/20 disabled:cursor-not-allowed disabled:opacity-40"
+                                onClick={() =>
+                                  requestConfirm(
+                                    {
+                                      title: "サービスを停止しますか？",
+                                      description:
+                                        "稼働中のサービスを停止し、依存する接続を切ります。",
+                                      target: (
+                                        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5">
+                                          <dt className="text-fg-muted">
+                                            Service
+                                          </dt>
+                                          <dd>{service.name}</dd>
+                                          <dt className="text-fg-muted">
+                                            Host
+                                          </dt>
+                                          <dd>
+                                            {service.host?.name ?? "—"}
+                                            {service.pidScope
+                                              ? ` @${service.pidScope}`
+                                              : ""}
+                                          </dd>
+                                          <dt className="text-fg-muted">PID</dt>
+                                          <dd className="font-mono">
+                                            {service.pid ?? "—"}
+                                          </dd>
+                                        </dl>
+                                      ),
+                                      impact:
+                                        "停止後もプロセスが残る場合は、Ports から PID を確認してください。",
+                                      confirmLabel: "停止",
+                                    },
+                                    () => runAction(service, "stop"),
+                                  )
+                                }
+                                className="min-h-9 rounded border border-danger-400/30 bg-danger-400/10 px-2.5 py-1 text-xs text-danger-400 transition hover:bg-danger-400/20 disabled:cursor-not-allowed disabled:opacity-40"
                               >
                                 Stop
                               </button>
@@ -1133,7 +1177,7 @@ export default function ServicesPage() {
                                 onClick={() =>
                                   void runAction(service, "restart")
                                 }
-                                className="rounded border border-ink-700 px-2 py-1 text-[10px] text-mist-200 transition hover:border-signal-400/40 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                                className="rounded border border-ink-700 px-2 py-1 text-xs text-mist-200 transition hover:border-signal-400/40 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
                               >
                                 Restart
                               </button>
@@ -1144,8 +1188,46 @@ export default function ServicesPage() {
                                     busy ||
                                     service.lastDeployStatus === "running"
                                   }
-                                  onClick={() => void runDeploy(service)}
-                                  className="rounded border border-sky-400/30 bg-sky-400/10 px-2 py-1 text-[10px] text-sky-300 transition hover:bg-sky-400/20 disabled:cursor-not-allowed disabled:opacity-40"
+                                  onClick={() =>
+                                    requestConfirm(
+                                      {
+                                        title: "デプロイしますか？",
+                                        description:
+                                          "登録されたデプロイコマンドを実行します。サービスが再起動する場合があります。",
+                                        target: (
+                                          <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5">
+                                            <dt className="text-fg-muted">
+                                              Service
+                                            </dt>
+                                            <dd>{service.name}</dd>
+                                            <dt className="text-fg-muted">
+                                              Command
+                                            </dt>
+                                            <dd className="break-all font-mono">
+                                              {service.deploy?.command.join(
+                                                " ",
+                                              ) ?? "—"}
+                                            </dd>
+                                            {service.deploy?.cwd ? (
+                                              <>
+                                                <dt className="text-fg-muted">
+                                                  cwd
+                                                </dt>
+                                                <dd className="font-mono">
+                                                  {service.deploy.cwd}
+                                                </dd>
+                                              </>
+                                            ) : null}
+                                          </dl>
+                                        ),
+                                        impact:
+                                          "実行結果は Logs の [deploy] ログに記録されます。",
+                                        confirmLabel: "デプロイ",
+                                      },
+                                      () => runDeploy(service),
+                                    )
+                                  }
+                                  className="min-h-9 rounded border border-sky-400/30 bg-sky-400/10 px-2.5 py-1 text-xs text-sky-300 transition hover:bg-sky-400/20 disabled:cursor-not-allowed disabled:opacity-40"
                                 >
                                   {service.lastDeployStatus === "running"
                                     ? "Deploying…"
@@ -1158,13 +1240,13 @@ export default function ServicesPage() {
                             type="button"
                             disabled={busy}
                             onClick={() => void checkHealth(service)}
-                            className="rounded border border-ink-700 px-2 py-1 text-[10px] text-mist-200 transition hover:border-signal-400/40 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                            className="rounded border border-ink-700 px-2 py-1 text-xs text-mist-200 transition hover:border-signal-400/40 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
                           >
                             Health
                           </button>
                           <Link
                             href={`/logs?serviceId=${encodeURIComponent(service.id)}`}
-                            className="rounded border border-ink-700 px-2 py-1 text-[10px] text-mist-200 transition hover:border-signal-400/40 hover:text-white"
+                            className="rounded border border-ink-700 px-2 py-1 text-xs text-mist-200 transition hover:border-signal-400/40 hover:text-white"
                           >
                             Logs
                           </Link>
@@ -1174,15 +1256,43 @@ export default function ServicesPage() {
                                 type="button"
                                 disabled={busy || service.runtime.running}
                                 onClick={() => void editService(service)}
-                                className="rounded border border-ink-700 px-2 py-1 text-[10px] text-mist-200 transition hover:border-signal-400/40 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                                className="rounded border border-ink-700 px-2 py-1 text-xs text-mist-200 transition hover:border-signal-400/40 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
                               >
                                 Edit
                               </button>
                               <button
                                 type="button"
                                 disabled={busy || service.runtime.running}
-                                onClick={() => void deleteService(service)}
-                                className="rounded border border-danger-400/20 px-2 py-1 text-[10px] text-danger-400/80 transition hover:border-danger-400/50 hover:text-danger-400 disabled:cursor-not-allowed disabled:opacity-40"
+                                onClick={() =>
+                                  requestConfirm(
+                                    {
+                                      title: "サービスを削除しますか？",
+                                      description:
+                                        "サービス定義と監視設定を削除します。",
+                                      target: (
+                                        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5">
+                                          <dt className="text-fg-muted">
+                                            Service
+                                          </dt>
+                                          <dd>{service.name}</dd>
+                                          <dt className="text-fg-muted">
+                                            Host
+                                          </dt>
+                                          <dd>{service.host?.name ?? "—"}</dd>
+                                          <dt className="text-fg-muted">
+                                            Status
+                                          </dt>
+                                          <dd>{service.status}</dd>
+                                        </dl>
+                                      ),
+                                      impact:
+                                        "削除しても、実際に稼働しているプロセスは停止されません。停止が必要な場合は先に Stop を実行してください。",
+                                      confirmLabel: "削除",
+                                    },
+                                    () => deleteService(service),
+                                  )
+                                }
+                                className="min-h-9 rounded border border-danger-400/20 px-2.5 py-1 text-xs text-danger-400 transition hover:border-danger-400/50 hover:text-danger-400 disabled:cursor-not-allowed disabled:opacity-40"
                               >
                                 Delete
                               </button>
@@ -1206,11 +1316,11 @@ export default function ServicesPage() {
               <h2 className="text-sm font-semibold text-white">
                 {selected.name} の詳細
               </h2>
-              <p className="mt-1 text-[11px] text-mist-400">
+              <p className="mt-1 text-xs text-mist-400">
                 last started {formatDate(selected.lastStartedAt)} / last exited{" "}
                 {formatDate(selected.lastExitedAt)}
               </p>
-              <p className="mt-1 text-[11px] text-mist-400">
+              <p className="mt-1 text-xs text-mist-400">
                 last deploy {formatDate(selected.lastDeployAt)} /{" "}
                 <span className={deployTone(selected.lastDeployStatus)}>
                   {selected.lastDeployStatus ?? "not run"}
@@ -1226,17 +1336,15 @@ export default function ServicesPage() {
             <button
               type="button"
               onClick={() => setSelected(null)}
-              className="rounded border border-ink-700 px-2 py-1 text-[10px] text-mist-400 hover:text-white"
+              className="rounded border border-ink-700 px-2 py-1 text-xs text-mist-400 hover:text-white"
             >
               閉じる
             </button>
           </div>
           <div className="mt-3 grid gap-3 lg:grid-cols-2">
             <div className="rounded-lg border border-ink-700 bg-ink-950/40 p-3">
-              <div className="text-[10px] uppercase tracking-[0.12em] text-mist-400">
-                Configuration
-              </div>
-              <pre className="mt-2 overflow-x-auto font-mono text-[11px] text-mist-200">
+              <div className="text-xs text-mist-400">Configuration</div>
+              <pre className="mt-2 overflow-x-auto font-mono text-xs text-mist-200">
                 {JSON.stringify(
                   {
                     command: selected.command,
@@ -1255,24 +1363,20 @@ export default function ServicesPage() {
               </pre>
             </div>
             <div className="rounded-lg border border-ink-700 bg-ink-950/40 p-3">
-              <div className="text-[10px] uppercase tracking-[0.12em] text-mist-400">
-                Recent actions
-              </div>
+              <div className="text-xs text-mist-400">Recent actions</div>
               <div className="mt-2 space-y-1.5">
                 {selected.recentActions.length === 0 ? (
-                  <p className="text-[11px] text-mist-400">
-                    操作履歴はありません
-                  </p>
+                  <p className="text-xs text-mist-400">操作履歴はありません</p>
                 ) : (
                   selected.recentActions.map((action) => (
                     <div
                       key={action.id}
-                      className="flex items-center justify-between gap-3 rounded border border-ink-700 bg-ink-900/60 px-2 py-1.5 text-[11px]"
+                      className="flex items-center justify-between gap-3 rounded border border-ink-700 bg-ink-900/60 px-2 py-1.5 text-xs"
                     >
                       <span className="text-mist-200">
                         {action.type} / {action.status}
                       </span>
-                      <span className="font-mono text-[10px] text-mist-400">
+                      <span className="font-mono text-xs text-mist-400">
                         {formatDate(action.startedAt)}
                       </span>
                     </div>
@@ -1294,7 +1398,7 @@ export default function ServicesPage() {
               <h2 className="text-sm font-semibold text-white">
                 {editingId ? "サービスを編集" : "サービスを登録"}
               </h2>
-              <p className="mt-1 text-[11px] text-mist-400">
+              <p className="mt-1 text-xs text-mist-400">
                 command は配列で指定します（シェル文字列は実行しません）。
                 許可コマンドは SERVICE_COMMAND_ALLOWLIST で管理します。
               </p>
@@ -1303,7 +1407,7 @@ export default function ServicesPage() {
               <button
                 type="button"
                 onClick={resetForm}
-                className="rounded border border-ink-700 px-2 py-1 text-[10px] text-mist-400 hover:text-white"
+                className="rounded border border-ink-700 px-2 py-1 text-xs text-mist-400 hover:text-white"
               >
                 新規に切り替え
               </button>
@@ -1312,16 +1416,14 @@ export default function ServicesPage() {
 
           <div className="mt-4 grid gap-3 md:grid-cols-2">
             <label className="block">
-              <span className="mb-1 block text-[10px] uppercase tracking-[0.12em] text-mist-400">
-                Host
-              </span>
+              <span className="mb-1 block text-xs text-mist-400">Host</span>
               <select
                 required
                 value={form.hostId}
                 onChange={(event) =>
                   setForm({ ...form, hostId: event.target.value })
                 }
-                className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 text-xs text-mist-200 focus:border-signal-400/40 focus:outline-none"
+                className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 text-xs text-mist-200 focus:border-signal-400/40"
               >
                 <option value="">選択してください</option>
                 {hosts.map((host) => (
@@ -1334,9 +1436,7 @@ export default function ServicesPage() {
               </select>
             </label>
             <label className="block">
-              <span className="mb-1 block text-[10px] uppercase tracking-[0.12em] text-mist-400">
-                Name
-              </span>
+              <span className="mb-1 block text-xs text-mist-400">Name</span>
               <input
                 required
                 value={form.name}
@@ -1344,11 +1444,11 @@ export default function ServicesPage() {
                   setForm({ ...form, name: event.target.value })
                 }
                 placeholder="api"
-                className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 text-xs text-mist-200 placeholder:text-mist-400/50 focus:border-signal-400/40 focus:outline-none"
+                className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 text-xs text-mist-200 placeholder:text-mist-400 focus:border-signal-400/40"
               />
             </label>
             <label className="block md:col-span-2">
-              <span className="mb-1 block text-[10px] uppercase tracking-[0.12em] text-mist-400">
+              <span className="mb-1 block text-xs text-mist-400">
                 Command (JSON array)
               </span>
               <textarea
@@ -1358,11 +1458,11 @@ export default function ServicesPage() {
                 onChange={(event) =>
                   setForm({ ...form, command: event.target.value })
                 }
-                className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 font-mono text-xs text-mist-200 focus:border-signal-400/40 focus:outline-none"
+                className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 font-mono text-xs text-mist-200 focus:border-signal-400/40"
               />
             </label>
             <label className="block">
-              <span className="mb-1 block text-[10px] uppercase tracking-[0.12em] text-mist-400">
+              <span className="mb-1 block text-xs text-mist-400">
                 Working directory
               </span>
               <input
@@ -1371,11 +1471,11 @@ export default function ServicesPage() {
                   setForm({ ...form, cwd: event.target.value })
                 }
                 placeholder="C:\\dev\\my-api または /home/me/app"
-                className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 font-mono text-xs text-mist-200 placeholder:text-mist-400/50 focus:border-signal-400/40 focus:outline-none"
+                className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 font-mono text-xs text-mist-200 placeholder:text-mist-400 focus:border-signal-400/40"
               />
             </label>
             <label className="block">
-              <span className="mb-1 block text-[10px] uppercase tracking-[0.12em] text-mist-400">
+              <span className="mb-1 block text-xs text-mist-400">
                 Expected ports (comma separated)
               </span>
               <input
@@ -1384,11 +1484,11 @@ export default function ServicesPage() {
                   setForm({ ...form, expectedPorts: event.target.value })
                 }
                 placeholder="3001, 3002"
-                className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 font-mono text-xs text-mist-200 placeholder:text-mist-400/50 focus:border-signal-400/40 focus:outline-none"
+                className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 font-mono text-xs text-mist-200 placeholder:text-mist-400 focus:border-signal-400/40"
               />
             </label>
             <label className="block md:col-span-2">
-              <span className="mb-1 block text-[10px] uppercase tracking-[0.12em] text-mist-400">
+              <span className="mb-1 block text-xs text-mist-400">
                 Environment (JSON object)
               </span>
               <textarea
@@ -1397,7 +1497,7 @@ export default function ServicesPage() {
                 onChange={(event) =>
                   setForm({ ...form, env: event.target.value })
                 }
-                className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 font-mono text-xs text-mist-200 focus:border-signal-400/40 focus:outline-none"
+                className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 font-mono text-xs text-mist-200 focus:border-signal-400/40"
               />
               {editingId ? (
                 <div className="mt-1 flex flex-wrap items-center gap-2">
@@ -1405,11 +1505,11 @@ export default function ServicesPage() {
                     type="button"
                     disabled={revealing}
                     onClick={() => void revealServiceEnv()}
-                    className="rounded border border-signal-400/30 bg-signal-400/10 px-2 py-1 text-[10px] text-signal-400 transition hover:bg-signal-400/20 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="rounded border border-signal-400/30 bg-signal-400/10 px-2 py-1 text-xs text-signal-400 transition hover:bg-signal-400/20 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     {revealing ? "表示中…" : "Reveal env"}
                   </button>
-                  <span className="text-[10px] text-mist-400">
+                  <span className="text-xs text-mist-400">
                     env は通常 *** で表示します。保存時に値を変えなければ PATCH
                     には送信しません。
                   </span>
@@ -1431,7 +1531,7 @@ export default function ServicesPage() {
               autoStart
             </label>
             <label className="block">
-              <span className="mb-1 block text-[10px] uppercase tracking-[0.12em] text-mist-400">
+              <span className="mb-1 block text-xs text-mist-400">
                 Auto restart phase
               </span>
               <select
@@ -1443,7 +1543,7 @@ export default function ServicesPage() {
                       .value as typeof form.autoRestartPhase,
                   })
                 }
-                className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 text-xs text-mist-200 focus:border-signal-400/40 focus:outline-none"
+                className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 text-xs text-mist-200 focus:border-signal-400/40"
               >
                 <option value="observe">observe</option>
                 <option value="approve">approve</option>
@@ -1451,7 +1551,7 @@ export default function ServicesPage() {
               </select>
             </label>
             <label className="block">
-              <span className="mb-1 block text-[10px] uppercase tracking-[0.12em] text-mist-400">
+              <span className="mb-1 block text-xs text-mist-400">
                 Health check
               </span>
               <select
@@ -1462,7 +1562,7 @@ export default function ServicesPage() {
                     healthType: event.target.value as typeof form.healthType,
                   })
                 }
-                className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 text-xs text-mist-200 focus:border-signal-400/40 focus:outline-none"
+                className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 text-xs text-mist-200 focus:border-signal-400/40"
               >
                 <option value="">none</option>
                 <option value="http">http</option>
@@ -1473,7 +1573,7 @@ export default function ServicesPage() {
             </label>
             <div className="grid grid-cols-3 gap-2">
               <label className="block">
-                <span className="mb-1 block text-[10px] uppercase tracking-[0.12em] text-mist-400">
+                <span className="mb-1 block text-xs text-mist-400">
                   Interval
                 </span>
                 <input
@@ -1481,11 +1581,11 @@ export default function ServicesPage() {
                   onChange={(event) =>
                     setForm({ ...form, healthInterval: event.target.value })
                   }
-                  className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 font-mono text-xs text-mist-200 focus:border-signal-400/40 focus:outline-none"
+                  className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 font-mono text-xs text-mist-200 focus:border-signal-400/40"
                 />
               </label>
               <label className="block">
-                <span className="mb-1 block text-[10px] uppercase tracking-[0.12em] text-mist-400">
+                <span className="mb-1 block text-xs text-mist-400">
                   Timeout
                 </span>
                 <input
@@ -1493,11 +1593,11 @@ export default function ServicesPage() {
                   onChange={(event) =>
                     setForm({ ...form, healthTimeout: event.target.value })
                   }
-                  className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 font-mono text-xs text-mist-200 focus:border-signal-400/40 focus:outline-none"
+                  className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 font-mono text-xs text-mist-200 focus:border-signal-400/40"
                 />
               </label>
               <label className="block">
-                <span className="mb-1 block text-[10px] uppercase tracking-[0.12em] text-mist-400">
+                <span className="mb-1 block text-xs text-mist-400">
                   Failures
                 </span>
                 <input
@@ -1505,7 +1605,7 @@ export default function ServicesPage() {
                   onChange={(event) =>
                     setForm({ ...form, healthFailures: event.target.value })
                   }
-                  className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 font-mono text-xs text-mist-200 focus:border-signal-400/40 focus:outline-none"
+                  className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 font-mono text-xs text-mist-200 focus:border-signal-400/40"
                 />
               </label>
             </div>
@@ -1515,7 +1615,7 @@ export default function ServicesPage() {
             <div className="mt-3 grid gap-3 md:grid-cols-2">
               {form.healthType === "http" ? (
                 <label className="block md:col-span-2">
-                  <span className="mb-1 block text-[10px] uppercase tracking-[0.12em] text-mist-400">
+                  <span className="mb-1 block text-xs text-mist-400">
                     Health URL
                   </span>
                   <input
@@ -1524,12 +1624,12 @@ export default function ServicesPage() {
                       setForm({ ...form, healthUrl: event.target.value })
                     }
                     placeholder="http://127.0.0.1:3001/health"
-                    className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 font-mono text-xs text-mist-200 placeholder:text-mist-400/50 focus:border-signal-400/40 focus:outline-none"
+                    className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 font-mono text-xs text-mist-200 placeholder:text-mist-400 focus:border-signal-400/40"
                   />
                 </label>
               ) : (
                 <label className="block">
-                  <span className="mb-1 block text-[10px] uppercase tracking-[0.12em] text-mist-400">
+                  <span className="mb-1 block text-xs text-mist-400">
                     Health port
                   </span>
                   <input
@@ -1538,7 +1638,7 @@ export default function ServicesPage() {
                       setForm({ ...form, healthPort: event.target.value })
                     }
                     placeholder="3001"
-                    className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 font-mono text-xs text-mist-200 placeholder:text-mist-400/50 focus:border-signal-400/40 focus:outline-none"
+                    className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 font-mono text-xs text-mist-200 placeholder:text-mist-400 focus:border-signal-400/40"
                   />
                 </label>
               )}
@@ -1547,7 +1647,7 @@ export default function ServicesPage() {
 
           {form.healthType === "command" ? (
             <label className="mt-3 block">
-              <span className="mb-1 block text-[10px] uppercase tracking-[0.12em] text-mist-400">
+              <span className="mb-1 block text-xs text-mist-400">
                 Health command (JSON array)
               </span>
               <input
@@ -1556,7 +1656,7 @@ export default function ServicesPage() {
                   setForm({ ...form, healthCommand: event.target.value })
                 }
                 placeholder='["node.exe","-e","process.exit(0)"]'
-                className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 font-mono text-xs text-mist-200 placeholder:text-mist-400/50 focus:border-signal-400/40 focus:outline-none"
+                className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 font-mono text-xs text-mist-200 placeholder:text-mist-400 focus:border-signal-400/40"
               />
             </label>
           ) : null}
@@ -1564,10 +1664,8 @@ export default function ServicesPage() {
           <div className="mt-5 rounded-lg border border-ink-700 bg-ink-950/40 p-3">
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
-                <div className="text-[10px] uppercase tracking-[0.12em] text-mist-400">
-                  Deploy
-                </div>
-                <p className="mt-1 text-[10px] text-mist-400">
+                <div className="text-xs text-mist-400">Deploy</div>
+                <p className="mt-1 text-xs text-mist-400">
                   deploy.ps1 などの実行コマンドを登録します。成功後に sys4sys
                   がサービスを再起動し、ヘルス確認します。
                 </p>
@@ -1575,14 +1673,14 @@ export default function ServicesPage() {
               <button
                 type="button"
                 onClick={fillDeployExample}
-                className="rounded border border-ink-700 px-2 py-1 text-[10px] text-mist-200 transition hover:border-signal-400/40 hover:text-white"
+                className="rounded border border-ink-700 px-2 py-1 text-xs text-mist-200 transition hover:border-signal-400/40 hover:text-white"
               >
                 deploy.ps1 の例を入力
               </button>
             </div>
             <div className="mt-3 grid gap-3 md:grid-cols-2">
               <label className="block md:col-span-2">
-                <span className="mb-1 block text-[10px] uppercase tracking-[0.12em] text-mist-400">
+                <span className="mb-1 block text-xs text-mist-400">
                   Deploy command (JSON array)
                 </span>
                 <textarea
@@ -1592,15 +1690,15 @@ export default function ServicesPage() {
                     setForm({ ...form, deployCommand: event.target.value })
                   }
                   placeholder='["pwsh.exe","-NoProfile","-ExecutionPolicy","Bypass","-File","deploy.ps1","-NoRestart"]'
-                  className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 font-mono text-xs text-mist-200 placeholder:text-mist-400/50 focus:border-signal-400/40 focus:outline-none"
+                  className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 font-mono text-xs text-mist-200 placeholder:text-mist-400 focus:border-signal-400/40"
                 />
-                <span className="mt-1 block text-[10px] text-mist-400">
+                <span className="mt-1 block text-xs text-mist-400">
                   空欄でデプロイ設定なし。deploy.ps1 側で再起動する場合は
                   restartAfter を OFF にしてください。
                 </span>
               </label>
               <label className="block">
-                <span className="mb-1 block text-[10px] uppercase tracking-[0.12em] text-mist-400">
+                <span className="mb-1 block text-xs text-mist-400">
                   Deploy working directory
                 </span>
                 <input
@@ -1609,12 +1707,12 @@ export default function ServicesPage() {
                     setForm({ ...form, deployCwd: event.target.value })
                   }
                   placeholder="(service cwd)"
-                  className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 font-mono text-xs text-mist-200 placeholder:text-mist-400/50 focus:border-signal-400/40 focus:outline-none"
+                  className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 font-mono text-xs text-mist-200 placeholder:text-mist-400 focus:border-signal-400/40"
                 />
               </label>
               <div className="grid grid-cols-2 gap-2">
                 <label className="block">
-                  <span className="mb-1 block text-[10px] uppercase tracking-[0.12em] text-mist-400">
+                  <span className="mb-1 block text-xs text-mist-400">
                     Timeout (sec)
                   </span>
                   <input
@@ -1622,11 +1720,11 @@ export default function ServicesPage() {
                     onChange={(event) =>
                       setForm({ ...form, deployTimeout: event.target.value })
                     }
-                    className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 font-mono text-xs text-mist-200 focus:border-signal-400/40 focus:outline-none"
+                    className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 font-mono text-xs text-mist-200 focus:border-signal-400/40"
                   />
                 </label>
                 <label className="block">
-                  <span className="mb-1 block text-[10px] uppercase tracking-[0.12em] text-mist-400">
+                  <span className="mb-1 block text-xs text-mist-400">
                     Health timeout (sec)
                   </span>
                   <input
@@ -1637,12 +1735,12 @@ export default function ServicesPage() {
                         deployHealthTimeout: event.target.value,
                       })
                     }
-                    className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 font-mono text-xs text-mist-200 focus:border-signal-400/40 focus:outline-none"
+                    className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 font-mono text-xs text-mist-200 focus:border-signal-400/40"
                   />
                 </label>
               </div>
               <label className="block md:col-span-2">
-                <span className="mb-1 block text-[10px] uppercase tracking-[0.12em] text-mist-400">
+                <span className="mb-1 block text-xs text-mist-400">
                   Deploy env (JSON object, optional)
                 </span>
                 <textarea
@@ -1652,7 +1750,7 @@ export default function ServicesPage() {
                     setForm({ ...form, deployEnv: event.target.value })
                   }
                   placeholder='{"NODE_ENV":"production"}'
-                  className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 font-mono text-xs text-mist-200 placeholder:text-mist-400/50 focus:border-signal-400/40 focus:outline-none"
+                  className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 font-mono text-xs text-mist-200 placeholder:text-mist-400 focus:border-signal-400/40"
                 />
               </label>
               <label className="flex items-center gap-2 rounded-md border border-ink-700 bg-ink-950/40 px-3 py-2 text-xs text-mist-200 md:col-span-2">
@@ -1686,6 +1784,8 @@ export default function ServicesPage() {
           operator 以上で実行できます。
         </p>
       )}
+
+      {confirmDialog}
     </main>
   );
 }

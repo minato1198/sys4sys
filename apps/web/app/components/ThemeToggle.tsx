@@ -91,10 +91,9 @@ export function ThemeToggle({ className = "" }: { className?: string }) {
     <button
       type="button"
       onClick={toggleTheme}
-      aria-label="ライトモード"
-      aria-pressed={isLight}
+      aria-label={actionLabel}
       title={actionLabel}
-      className={`inline-flex items-center gap-1.5 rounded-md border border-ink-700 bg-ink-800/70 px-2 py-1 text-[10px] font-medium text-mist-400 transition hover:border-signal-400/40 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal-400/30 ${className}`}
+      className={`inline-flex min-h-11 items-center gap-1.5 rounded-md border border-border bg-surface-muted/70 px-2.5 py-1.5 text-xs font-medium text-fg-muted transition hover:border-accent/40 hover:text-fg sm:min-h-9 ${className}`}
     >
       {isLight ? <SunIcon /> : <MoonIcon />}
       <span>{isLight ? "Light" : "Dark"}</span>

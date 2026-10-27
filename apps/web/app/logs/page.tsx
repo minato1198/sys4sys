@@ -9,6 +9,7 @@ import {
   type FormEvent,
 } from "react";
 import { NavLinks } from "../components/NavLinks";
+import { useConfirmDialog } from "../components/ui/useConfirmDialog";
 
 interface AuthUser {
   id: string;
@@ -144,6 +145,7 @@ export default function LogsPage() {
   const [sourceBusy, setSourceBusy] = useState(false);
   const seenIds = useRef<Set<string>>(new Set());
   const initialUrlApplied = useRef(false);
+  const { requestConfirm, dialog: confirmDialog } = useConfirmDialog();
 
   const isAdmin = user?.role === "admin";
 
@@ -430,8 +432,7 @@ export default function LogsPage() {
     }
   }
 
-  async function deleteSource(source: LogSource) {
-    if (!window.confirm("このログソースを削除しますか？")) return;
+  async function deleteSource(source: LogSource): Promise<string | null> {
     setSourceBusy(true);
     setMessage(null);
     try {
@@ -448,8 +449,11 @@ export default function LogsPage() {
         );
       }
       await loadSources();
+      return null;
     } catch (cause) {
-      setMessage(cause instanceof Error ? cause.message : String(cause));
+      const text = cause instanceof Error ? cause.message : String(cause);
+      setMessage(text);
+      return text;
     } finally {
       setSourceBusy(false);
     }
@@ -490,14 +494,14 @@ export default function LogsPage() {
               <div className="text-xs text-mist-200">
                 {user?.email ?? "認証確認中…"}
               </div>
-              <div className="text-[9px] font-medium uppercase tracking-[0.14em] text-mist-400">
+              <div className="text-xs font-medium text-mist-400">
                 {user?.role ?? ""}
               </div>
             </div>
             <button
               type="button"
               onClick={() => void logout()}
-              className="rounded border border-ink-700 px-2 py-1 text-[11px] text-mist-400 transition hover:border-danger-400/40 hover:text-danger-400"
+              className="rounded border border-ink-700 px-2 py-1 text-xs text-mist-400 transition hover:border-danger-400/40 hover:text-danger-400"
             >
               ログアウト
             </button>
@@ -522,15 +526,13 @@ export default function LogsPage() {
       >
         <div className="grid gap-3 md:grid-cols-5">
           <label className="block">
-            <span className="mb-1 block text-[10px] uppercase tracking-[0.12em] text-mist-400">
-              Host
-            </span>
+            <span className="mb-1 block text-xs text-mist-400">Host</span>
             <select
               value={draft.hostId}
               onChange={(event) =>
                 setDraft({ ...draft, hostId: event.target.value })
               }
-              className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 text-xs text-mist-200 focus:border-signal-400/40 focus:outline-none"
+              className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 text-xs text-mist-200 focus:border-signal-400/40"
             >
               <option value="">すべて</option>
               {hosts.map((host) => (
@@ -542,15 +544,13 @@ export default function LogsPage() {
             </select>
           </label>
           <label className="block">
-            <span className="mb-1 block text-[10px] uppercase tracking-[0.12em] text-mist-400">
-              Service
-            </span>
+            <span className="mb-1 block text-xs text-mist-400">Service</span>
             <select
               value={draft.serviceId}
               onChange={(event) =>
                 setDraft({ ...draft, serviceId: event.target.value })
               }
-              className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 text-xs text-mist-200 focus:border-signal-400/40 focus:outline-none"
+              className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 text-xs text-mist-200 focus:border-signal-400/40"
             >
               <option value="">すべて</option>
               {services.map((service) => (
@@ -561,15 +561,13 @@ export default function LogsPage() {
             </select>
           </label>
           <label className="block">
-            <span className="mb-1 block text-[10px] uppercase tracking-[0.12em] text-mist-400">
-              Level
-            </span>
+            <span className="mb-1 block text-xs text-mist-400">Level</span>
             <select
               value={draft.level}
               onChange={(event) =>
                 setDraft({ ...draft, level: event.target.value })
               }
-              className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 text-xs text-mist-200 focus:border-signal-400/40 focus:outline-none"
+              className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 text-xs text-mist-200 focus:border-signal-400/40"
             >
               <option value="">すべて</option>
               {LEVELS.map((level) => (
@@ -580,16 +578,14 @@ export default function LogsPage() {
             </select>
           </label>
           <label className="block md:col-span-2">
-            <span className="mb-1 block text-[10px] uppercase tracking-[0.12em] text-mist-400">
-              Search
-            </span>
+            <span className="mb-1 block text-xs text-mist-400">Search</span>
             <input
               value={draft.q}
               onChange={(event) =>
                 setDraft({ ...draft, q: event.target.value })
               }
               placeholder="message を部分一致で検索"
-              className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 text-xs text-mist-200 placeholder:text-mist-400/50 focus:border-signal-400/40 focus:outline-none"
+              className="w-full rounded-md border border-ink-700 bg-ink-950/70 px-2 py-1.5 text-xs text-mist-200 placeholder:text-mist-400 focus:border-signal-400/40"
             />
           </label>
         </div>
@@ -618,7 +614,7 @@ export default function LogsPage() {
             Live tail (SSE)
           </label>
           <span
-            className={`ml-auto inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] ${
+            className={`ml-auto inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs ${
               connected === "on"
                 ? "border-signal-400/30 bg-signal-400/10 text-signal-400"
                 : connected === "connecting"
@@ -647,16 +643,14 @@ export default function LogsPage() {
       <section className="mt-4 overflow-hidden rounded-xl border border-ink-700/70 bg-ink-950/80">
         <div className="flex items-center justify-between gap-3 border-b border-ink-700/70 px-4 py-2.5">
           <div className="flex items-center gap-2">
-            <h2 className="text-xs font-semibold uppercase tracking-[0.14em] text-mist-200">
-              Stream
-            </h2>
-            <span className="rounded bg-ink-800 px-1.5 py-0.5 font-mono text-[10px] text-mist-400">
+            <h2 className="text-xs font-semibold text-mist-200">Stream</h2>
+            <span className="rounded bg-ink-800 px-1.5 py-0.5 font-mono text-xs text-mist-400">
               {logs.length}
             </span>
           </div>
           <div className="flex items-center gap-2">
             {loading ? (
-              <span className="text-[10px] text-mist-400">読み込み中…</span>
+              <span className="text-xs text-mist-400">読み込み中…</span>
             ) : null}
             <button
               type="button"
@@ -664,7 +658,7 @@ export default function LogsPage() {
                 seenIds.current = new Set();
                 setLogs([]);
               }}
-              className="rounded border border-ink-700 px-2 py-1 text-[10px] text-mist-400 hover:text-white"
+              className="rounded border border-ink-700 px-2 py-1 text-xs text-mist-400 hover:text-white"
             >
               表示をクリア
             </button>
@@ -682,23 +676,23 @@ export default function LogsPage() {
             logs.map((log) => (
               <div
                 key={log.id}
-                className="flex items-start gap-3 border-b border-ink-800/70 px-3 py-1.5 font-mono text-[11px] last:border-b-0 hover:bg-ink-900/50"
+                className="flex items-start gap-3 border-b border-ink-800/70 px-3 py-1.5 font-mono text-xs last:border-b-0 hover:bg-ink-900/50"
               >
                 <span
-                  className="w-14 shrink-0 pt-0.5 text-[10px] text-mist-400"
+                  className="w-14 shrink-0 pt-0.5 text-xs text-mist-400"
                   title={formatFullTime(log.ts)}
                 >
                   {formatTime(log.ts)}
                 </span>
                 <span
-                  className={`w-11 shrink-0 pt-0.5 text-[10px] font-semibold uppercase ${levelTone(log.level)}`}
+                  className={`w-11 shrink-0 pt-0.5 text-xs font-semibold ${levelTone(log.level)}`}
                 >
                   {log.level}
                 </span>
-                <span className="hidden w-24 shrink-0 truncate pt-0.5 text-[10px] text-mist-300 sm:block">
+                <span className="hidden w-24 shrink-0 truncate pt-0.5 text-xs text-mist-300 sm:block">
                   {serviceLabel(log.serviceId)}
                 </span>
-                <span className="hidden w-12 shrink-0 pt-0.5 text-[10px] text-mist-400 md:block">
+                <span className="hidden w-12 shrink-0 pt-0.5 text-xs text-mist-400 md:block">
                   {log.stream}
                 </span>
                 <pre className="min-w-0 flex-1 whitespace-pre-wrap break-words pt-0.5 text-mist-200">
@@ -715,7 +709,7 @@ export default function LogsPage() {
               type="button"
               disabled={loadingMore}
               onClick={() => void loadMore()}
-              className="rounded border border-ink-700 px-3 py-1 text-[11px] text-mist-200 transition hover:border-signal-400/40 hover:text-white disabled:opacity-50"
+              className="rounded border border-ink-700 px-3 py-1 text-xs text-mist-200 transition hover:border-signal-400/40 hover:text-white disabled:opacity-50"
             >
               {loadingMore ? "読み込み中…" : "さらに古いログを読み込む"}
             </button>
@@ -727,12 +721,12 @@ export default function LogsPage() {
         <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3">
           <div>
             <h2 className="text-sm font-semibold text-white">ログソース</h2>
-            <p className="mt-0.5 text-[11px] text-mist-400">
+            <p className="mt-0.5 text-xs text-mist-400">
               ファイル / WSL ファイルを tail して取り込みます。stdout / stderr
               はサービス起動時に自動収集されます。
             </p>
           </div>
-          <span className="rounded bg-ink-800 px-2 py-0.5 font-mono text-[10px] text-mist-400">
+          <span className="rounded bg-ink-800 px-2 py-0.5 font-mono text-xs text-mist-400">
             {sources.length}
           </span>
         </summary>
@@ -740,16 +734,16 @@ export default function LogsPage() {
         <div className="border-t border-ink-700/70 p-4">
           <div className="space-y-1.5">
             {sources.length === 0 ? (
-              <p className="text-[11px] text-mist-400">
+              <p className="text-xs text-mist-400">
                 登録されたファイルログソースはありません。
               </p>
             ) : (
               sources.map((source) => (
                 <div
                   key={source.id}
-                  className="flex flex-wrap items-center gap-2 rounded border border-ink-700 bg-ink-950/50 px-2.5 py-2 text-[11px]"
+                  className="flex flex-wrap items-center gap-2 rounded border border-ink-700 bg-ink-950/50 px-2.5 py-2 text-xs"
                 >
-                  <span className="rounded bg-ink-800 px-1.5 py-0.5 text-[10px] uppercase text-mist-300">
+                  <span className="rounded bg-ink-800 px-1.5 py-0.5 text-xs text-mist-300">
                     {source.type}
                   </span>
                   <span className="text-mist-200">
@@ -762,7 +756,7 @@ export default function LogsPage() {
                     {String(source.config.path ?? "")}
                   </code>
                   <span
-                    className={`text-[10px] ${
+                    className={`text-xs ${
                       source.enabled ? "text-signal-400" : "text-mist-400"
                     }`}
                   >
@@ -774,15 +768,41 @@ export default function LogsPage() {
                         type="button"
                         disabled={sourceBusy}
                         onClick={() => void toggleSource(source)}
-                        className="rounded border border-ink-700 px-2 py-0.5 text-[10px] text-mist-200 hover:border-signal-400/40 hover:text-white disabled:opacity-50"
+                        className="rounded border border-ink-700 px-2 py-0.5 text-xs text-mist-200 hover:border-signal-400/40 hover:text-white disabled:opacity-50"
                       >
                         {source.enabled ? "停止" : "有効化"}
                       </button>
                       <button
                         type="button"
                         disabled={sourceBusy}
-                        onClick={() => void deleteSource(source)}
-                        className="rounded border border-danger-400/20 px-2 py-0.5 text-[10px] text-danger-400/80 hover:border-danger-400/50 hover:text-danger-400 disabled:opacity-50"
+                        onClick={() =>
+                          requestConfirm(
+                            {
+                              title: "ログソースを削除しますか？",
+                              description:
+                                "監視対象からログソースを外します。設定は失われます。",
+                              target: (
+                                <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5">
+                                  <dt className="text-fg-muted">Host</dt>
+                                  <dd>{source.hostName ?? "—"}</dd>
+                                  <dt className="text-fg-muted">Service</dt>
+                                  <dd>{source.serviceName ?? "—"}</dd>
+                                  <dt className="text-fg-muted">Type</dt>
+                                  <dd>{source.type}</dd>
+                                  <dt className="text-fg-muted">Path</dt>
+                                  <dd className="break-all font-mono">
+                                    {String(source.config.path ?? "—")}
+                                  </dd>
+                                </dl>
+                              ),
+                              impact:
+                                "すでに取得済みのログ履歴には影響しませんが、以後このソースは収集されません。",
+                              confirmLabel: "削除",
+                            },
+                            () => deleteSource(source),
+                          )
+                        }
+                        className="min-h-9 rounded border border-danger-400/20 px-2.5 py-1 text-xs text-danger-400 hover:border-danger-400/50 hover:text-danger-400 disabled:opacity-50"
                       >
                         削除
                       </button>
@@ -799,13 +819,11 @@ export default function LogsPage() {
               className="mt-4 grid gap-2 rounded-lg border border-ink-700 bg-ink-950/40 p-3 md:grid-cols-6"
             >
               <label className="block md:col-span-2">
-                <span className="mb-1 block text-[10px] uppercase tracking-[0.12em] text-mist-400">
-                  Host
-                </span>
+                <span className="mb-1 block text-xs text-mist-400">Host</span>
                 <select
                   value={sourceForm.hostId}
                   onChange={(event) => onSourceHostChange(event.target.value)}
-                  className="w-full rounded border border-ink-700 bg-ink-950/70 px-2 py-1.5 text-xs text-mist-200 focus:border-signal-400/40 focus:outline-none"
+                  className="w-full rounded border border-ink-700 bg-ink-950/70 px-2 py-1.5 text-xs text-mist-200 focus:border-signal-400/40"
                 >
                   <option value="">選択</option>
                   {hosts.map((host) => (
@@ -816,7 +834,7 @@ export default function LogsPage() {
                 </select>
               </label>
               <label className="block md:col-span-2">
-                <span className="mb-1 block text-[10px] uppercase tracking-[0.12em] text-mist-400">
+                <span className="mb-1 block text-xs text-mist-400">
                   Service (optional)
                 </span>
                 <select
@@ -827,7 +845,7 @@ export default function LogsPage() {
                       serviceId: event.target.value,
                     })
                   }
-                  className="w-full rounded border border-ink-700 bg-ink-950/70 px-2 py-1.5 text-xs text-mist-200 focus:border-signal-400/40 focus:outline-none"
+                  className="w-full rounded border border-ink-700 bg-ink-950/70 px-2 py-1.5 text-xs text-mist-200 focus:border-signal-400/40"
                 >
                   <option value="">host level</option>
                   {services.map((service) => (
@@ -838,9 +856,7 @@ export default function LogsPage() {
                 </select>
               </label>
               <label className="block">
-                <span className="mb-1 block text-[10px] uppercase tracking-[0.12em] text-mist-400">
-                  Type
-                </span>
+                <span className="mb-1 block text-xs text-mist-400">Type</span>
                 <select
                   value={sourceForm.type}
                   onChange={(event) =>
@@ -849,23 +865,21 @@ export default function LogsPage() {
                       type: event.target.value as "file" | "wsl_file",
                     })
                   }
-                  className="w-full rounded border border-ink-700 bg-ink-950/70 px-2 py-1.5 text-xs text-mist-200 focus:border-signal-400/40 focus:outline-none"
+                  className="w-full rounded border border-ink-700 bg-ink-950/70 px-2 py-1.5 text-xs text-mist-200 focus:border-signal-400/40"
                 >
                   <option value="file">file</option>
                   <option value="wsl_file">wsl_file</option>
                 </select>
               </label>
               <label className="block md:col-span-4">
-                <span className="mb-1 block text-[10px] uppercase tracking-[0.12em] text-mist-400">
-                  Path
-                </span>
+                <span className="mb-1 block text-xs text-mist-400">Path</span>
                 <input
                   value={sourceForm.path}
                   onChange={(event) =>
                     setSourceForm({ ...sourceForm, path: event.target.value })
                   }
                   placeholder="C:\dev\app\logs\app.log / /home/me/app/app.log"
-                  className="w-full rounded border border-ink-700 bg-ink-950/70 px-2 py-1.5 font-mono text-xs text-mist-200 placeholder:text-mist-400/50 focus:border-signal-400/40 focus:outline-none"
+                  className="w-full rounded border border-ink-700 bg-ink-950/70 px-2 py-1.5 font-mono text-xs text-mist-200 placeholder:text-mist-400 focus:border-signal-400/40"
                 />
               </label>
               <div className="flex items-end md:col-span-2">
@@ -879,12 +893,14 @@ export default function LogsPage() {
               </div>
             </form>
           ) : (
-            <p className="mt-3 text-[11px] text-mist-400">
+            <p className="mt-3 text-xs text-mist-400">
               ログソースの追加・変更は管理者のみ実行できます。
             </p>
           )}
         </div>
       </details>
+
+      {confirmDialog}
     </main>
   );
 }
