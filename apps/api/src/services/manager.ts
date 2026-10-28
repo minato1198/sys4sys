@@ -7,6 +7,7 @@ import {
   runFile,
   stopProcess,
   stripAnsi,
+  type ProcessLiveness,
 } from "@sys4sys/agent";
 import type { HealthCheckInput } from "@sys4sys/shared";
 import { writeAudit } from "../audit.js";
@@ -19,6 +20,7 @@ import {
   type ProcessLineStreamHandle,
 } from "../logs/process-lines.js";
 import { isCommandAllowed } from "./allowlist.js";
+import { runCommand } from "./command-check.js";
 import { serviceEvents } from "./events.js";
 import { decryptServiceEnv, SERVICE_ENV_DECRYPTION_ERROR } from "./secrets.js";
 
@@ -505,24 +507,25 @@ async function waitForDeath(
   scope: "windows" | "wsl",
   pidScope: string | null,
   timeoutMs: number,
-): Promise<boolean> {
+): Promise<ProcessLiveness> {
   if (runtime?.child) {
     if (runtime.child.exitCode === null && runtime.child.signalCode === null) {
       const exited = await Promise.race([
         onceExit(runtime.child).then(() => true),
         sleep(timeoutMs).then(() => false),
       ]);
-      if (!exited) return false;
+      if (!exited) return "alive";
     }
   }
 
-  if (!pid) return true;
+  if (!pid) return "dead";
   const deadline = Date.now() + Math.max(500, timeoutMs);
   while (Date.now() < deadline) {
-    if (!(await isProcessAlive({ scope, pidScope, pid }))) return true;
+    const liveness = await isProcessAlive({ scope, pidScope, pid });
+    if (liveness !== "alive") return liveness;
     await sleep(200);
   }
-  return !(await isProcessAlive({ scope, pidScope, pid }));
+  return isProcessAlive({ scope, pidScope, pid });
 }
 
 export async function stopService(id: string): Promise<ServiceRow> {
@@ -553,23 +556,27 @@ export async function stopService(id: string): Promise<ServiceRow> {
       // 猶予後に KILL へフォールバックする。
     }
 
-    let died = await waitForDeath(
+    let liveness = await waitForDeath(
       runtime,
       pid,
       scope,
       pidScope,
       config.SERVICE_STOP_GRACE_MS,
     );
-    if (!died) {
+    if (liveness === "alive") {
       try {
         await signalStop(scope, pidScope, pid, runtime, "KILL");
       } catch {
         // 最終確認で判断する
       }
-      died = await waitForDeath(runtime, pid, scope, pidScope, 3000);
+      liveness = await waitForDeath(runtime, pid, scope, pidScope, 3000);
     }
 
-    if (!died) {
+    if (liveness === "unknown") {
+      if (runtime) runtime.stopping = false;
+      throw new ServiceError(503, "プロセス状態を確認できませんでした");
+    }
+    if (liveness !== "dead") {
       if (runtime) runtime.stopping = false;
       throw new ServiceError(409, "プロセスを停止できませんでした");
     }
@@ -697,7 +704,7 @@ async function runHealthCheck(
   service: ServiceRow,
   host: HostRow,
   check: HealthCheckInput,
-): Promise<{ healthy: boolean; detail: string }> {
+): Promise<{ healthy: boolean | null; detail: string }> {
   const timeoutMs = Math.max(1, check.timeoutSec ?? 3) * 1000;
 
   if (check.type === "http") {
@@ -711,16 +718,19 @@ async function runHealthCheck(
   if (check.type === "process") {
     const pid = runsPidFor(service);
     if (!pid) return { healthy: false, detail: "PID がありません" };
-    const alive = await isProcessAlive({
+    const liveness = await isProcessAlive({
       scope: service.pidScope ? "wsl" : "windows",
       pidScope: service.pidScope,
       pid,
     });
     return {
-      healthy: alive,
-      detail: alive
-        ? `pid ${pid} は生存しています`
-        : `pid ${pid} が見つかりません`,
+      healthy: liveness === "alive" ? true : liveness === "dead" ? false : null,
+      detail:
+        liveness === "alive"
+          ? `pid ${pid} は生存しています`
+          : liveness === "dead"
+            ? `pid ${pid} が見つかりません`
+            : `pid ${pid} の状態を確認できません`,
     };
   }
 
@@ -737,16 +747,18 @@ async function runHealthCheck(
   }
   try {
     let serviceEnv: Record<string, string> | null = null;
-    if (host.kind !== "windows") {
-      try {
-        serviceEnv = decryptServiceEnv(service.env);
-      } catch {
-        return { healthy: false, detail: SERVICE_ENV_DECRYPTION_ERROR };
-      }
+    try {
+      serviceEnv = decryptServiceEnv(service.env);
+    } catch {
+      return { healthy: false, detail: SERVICE_ENV_DECRYPTION_ERROR };
     }
 
     if (host.kind === "windows") {
-      await runFile(command[0]!, command.slice(1), timeoutMs);
+      await runCommand(command, {
+        cwd: service.cwd,
+        env: { ...process.env, ...(serviceEnv ?? {}) },
+        timeoutMs,
+      });
     } else {
       await runFile(
         "wsl.exe",
@@ -807,6 +819,20 @@ export async function checkServiceHealth(id: string): Promise<HealthResult> {
   const started = performance.now();
   const result = await runHealthCheck(service, host, check);
   const latencyMs = Math.round(performance.now() - started);
+
+  // プロセス状態を確認できない場合は、停止・劣化のどちらにも倒さない。
+  if (result.healthy === null) {
+    const health: HealthResult = {
+      serviceId: id,
+      status: "unknown",
+      latencyMs,
+      checkedAt,
+      detail: result.detail,
+    };
+    if (runtime) runtime.health = health;
+    return health;
+  }
+
   const failures = result.healthy ? 0 : (healthFailures.get(id) ?? 0) + 1;
   healthFailures.set(id, failures);
 
@@ -904,16 +930,16 @@ export async function reconcileServices(): Promise<void> {
       continue;
     }
 
-    let alive = false;
+    let liveness: ProcessLiveness = "dead";
     if (service.pid) {
-      alive = await isProcessAlive({
+      liveness = await isProcessAlive({
         scope: service.pidScope ? "wsl" : "windows",
         pidScope: service.pidScope,
         pid: service.pid,
       });
     }
 
-    if (alive) {
+    if (liveness === "alive") {
       const runtime: Runtime = {
         serviceId: service.id,
         child: null,
@@ -930,6 +956,15 @@ export async function reconcileServices(): Promise<void> {
         .set({
           status: service.status === "degraded" ? "degraded" : "running",
           lastError: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(services.id, service.id));
+    } else if (liveness === "unknown") {
+      // WSL / taskkill の一時障害で、稼働中の PID と状態を失わない。
+      await db
+        .update(services)
+        .set({
+          lastError: "API 再起動時にプロセス状態を確認できませんでした",
           updatedAt: new Date(),
         })
         .where(eq(services.id, service.id));

@@ -34,6 +34,22 @@ describe("process log line decoding", () => {
     expect(rest).toEqual([]);
   });
 
+  it("decodes UTF-16LE file logs without a BOM", () => {
+    expect(
+      decodeProcessBytes(Buffer.from("日本語テスト 成功", "utf16le")),
+    ).toBe("日本語テスト 成功");
+  });
+
+  it("keeps Shift-JIS multibyte characters across byte chunks", () => {
+    const bytes = Buffer.from("93fa967b8cea8365835883672090ac8cf70d0a", "hex");
+    const decoder = new ProcessLineDecoder();
+    const first = decoder.push(bytes.subarray(0, 3));
+    const second = decoder.push(bytes.subarray(3));
+
+    expect(first).toEqual([]);
+    expect(second).toEqual(["日本語テスト 成功"]);
+  });
+
   it("attaches to a stream-like child process output", () => {
     const stream = new EventEmitter();
     const lines: string[] = [];

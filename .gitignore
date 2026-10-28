@@ -23,6 +23,9 @@ opencode.json
 **/*.sqlite3-*
 **/data/backups/
 
+# Generated first-run admin password (development only)
+**/initial-admin-password.txt
+
 # Local certificates / keys
 *.pem
 *.key

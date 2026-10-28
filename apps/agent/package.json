@@ -11,7 +11,8 @@
   "scripts": {
     "scan": "tsx src/cli.ts",
     "dev": "tsx src/cli.ts --watch",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
     "@sys4sys/shared": "workspace:*"
@@ -19,6 +20,7 @@
   "devDependencies": {
     "@types/node": "^24.10.1",
     "tsx": "^4.20.6",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.5"
   }
 }

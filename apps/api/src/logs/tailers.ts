@@ -5,6 +5,7 @@ import { config } from "../config.js";
 import { db } from "../db/index.js";
 import { hosts, logSources } from "../db/schema.js";
 import { ingestLogs } from "./ingest.js";
+import { ProcessLineDecoder } from "./process-lines.js";
 
 type LogSourceRow = typeof logSources.$inferSelect;
 
@@ -16,34 +17,55 @@ interface TailerState {
   path: string;
   distro: string | null;
   offset: number;
-  carry: string;
+  decoder: ProcessLineDecoder;
   initialized: boolean;
   running: boolean;
   timer?: NodeJS.Timeout;
 }
 
 interface ReadResult {
-  text: string;
+  bytes: Buffer;
   size: number;
   dropped: boolean;
 }
 
 const tailers = new Map<string, TailerState>();
+const DISTRO_CACHE_TTL_MS = 30_000;
 
-let distroCache: { at: number; states: Map<string, string> } | null = null;
+let distroCache: {
+  at: number;
+  states: Map<string, string>;
+  error: string | null;
+} | null = null;
+let lastDistroWarning: string | null = null;
 
 async function distroRunning(distro: string): Promise<boolean> {
-  if (!distroCache || Date.now() - distroCache.at > 5000) {
+  if (!distroCache || Date.now() - distroCache.at > DISTRO_CACHE_TTL_MS) {
     try {
       const distros = await listDistroStates();
       distroCache = {
         at: Date.now(),
         states: new Map(distros.map((item) => [item.name, item.state])),
+        error: null,
       };
-    } catch {
-      return false;
+      lastDistroWarning = null;
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? (error.message.split("\n")[0] ?? error.message)
+          : String(error);
+      distroCache = {
+        at: Date.now(),
+        states: new Map(),
+        error: message,
+      };
+      if (lastDistroWarning !== message) {
+        console.warn(`[logs] WSL distro detection failed: ${message}`);
+        lastDistroWarning = message;
+      }
     }
   }
+  if (distroCache.error) return false;
   return distroCache.states.get(distro) === "Running";
 }
 
@@ -79,17 +101,37 @@ async function readWindows(path: string, offset: number): Promise<ReadResult> {
     start = size - config.LOG_MAX_TAIL_BYTES;
     dropped = true;
   }
-  if (size <= start) return { text: "", size, dropped };
+  if (size <= start) return { bytes: Buffer.alloc(0), size, dropped };
 
   const length = size - start;
   const handle = await fs.open(path, "r");
   try {
     const buffer = Buffer.alloc(length);
     await handle.read(buffer, 0, length, start);
-    return { text: buffer.toString("utf8"), size, dropped };
+    return { bytes: buffer, size, dropped };
   } finally {
     await handle.close();
   }
+}
+
+/**
+ * wsl.exe がファイル内容を UTF-16LE に変換して返す環境があるため、
+ * その場合だけ UTF-8 バイト列へ正規化する。Shift-JIS などの生バイトは
+ * そのまま ProcessLineDecoder に渡す。
+ */
+function normalizeWslLogBytes(buffer: Buffer): Buffer {
+  if (buffer.length >= 2 && buffer[0] === 0xff && buffer[1] === 0xfe) {
+    return Buffer.from(decodeWslOutput(buffer), "utf8");
+  }
+  const sample = Math.min(buffer.length, 4096);
+  let nul = 0;
+  for (let i = 0; i < sample; i += 1) {
+    if (buffer[i] === 0) nul += 1;
+  }
+  if (nul > sample * 0.1) {
+    return Buffer.from(decodeWslOutput(buffer), "utf8");
+  }
+  return buffer;
 }
 
 async function readWsl(
@@ -108,14 +150,14 @@ async function readWsl(
     start = size - config.LOG_MAX_TAIL_BYTES;
     dropped = true;
   }
-  if (size <= start) return { text: "", size, dropped };
+  if (size <= start) return { bytes: Buffer.alloc(0), size, dropped };
 
   const output = await runFile(
     "wsl.exe",
     ["-d", distro, "--", "tail", "-c", `+${start + 1}`, "--", path],
     15_000,
   );
-  return { text: decodeWslOutput(output), size, dropped };
+  return { bytes: normalizeWslLogBytes(output), size, dropped };
 }
 
 async function initialize(state: TailerState): Promise<void> {
@@ -154,17 +196,18 @@ async function tick(state: TailerState): Promise<void> {
         ? await readWindows(state.path, state.offset)
         : await readWsl(state.distro ?? "", state.path, state.offset);
 
-    if (result.text.length === 0) {
+    if (result.dropped) {
+      state.decoder = new ProcessLineDecoder();
+    }
+
+    if (result.bytes.length === 0) {
       if (result.size !== state.offset) {
         state.offset = result.size;
-        if (result.dropped) state.carry = "";
       }
       return;
     }
 
-    const combined = (result.dropped ? "" : state.carry) + result.text;
-    const lines = combined.split(/\r?\n/);
-    const carry = lines.pop() ?? "";
+    const lines = state.decoder.push(result.bytes);
     const serviceId = state.serviceId ?? `host:${state.hostId}`;
 
     const inputs = lines
@@ -182,8 +225,6 @@ async function tick(state: TailerState): Promise<void> {
     }
 
     state.offset = result.size;
-    state.carry =
-      carry.length > 64 * 1024 ? carry.slice(carry.length - 64 * 1024) : carry;
   } catch (error) {
     console.warn(
       `[logs] tail ${state.sourceId} failed: ${
@@ -228,14 +269,19 @@ async function startTailer(row: LogSourceRow): Promise<void> {
     path,
     distro: host.distro,
     offset: 0,
-    carry: "",
+    decoder: new ProcessLineDecoder(),
     initialized: false,
     running: false,
   };
   tailers.set(row.id, state);
 
-  // 既存のログを大量に取り込まないよう、初期位置はファイル末尾。
-  await initialize(state);
+  try {
+    // 既存のログを大量に取り込まないよう、初期位置はファイル末尾。
+    await initialize(state);
+  } catch (error) {
+    stopTailer(row.id);
+    throw error;
+  }
 
   const timer = setInterval(() => {
     void tick(state);
@@ -245,6 +291,10 @@ async function startTailer(row: LogSourceRow): Promise<void> {
 }
 
 export async function refreshLogTailer(sourceId: string): Promise<void> {
+  // 手動 refresh は WSL 復旧直後の操作を想定しているため、
+  // ネガティブキャッシュを待たずに再検出する。
+  distroCache = null;
+  lastDistroWarning = null;
   stopTailer(sourceId);
   const [row] = await db
     .select()
@@ -257,7 +307,17 @@ export async function refreshLogTailer(sourceId: string): Promise<void> {
 export async function startAllLogTailers(): Promise<void> {
   const rows = await db.select().from(logSources);
   for (const row of rows) {
-    await startTailer(row);
+    try {
+      await startTailer(row);
+    } catch (error) {
+      console.warn(
+        `[logs] tailer ${row.id} could not start: ${
+          error instanceof Error
+            ? (error.message.split("\n")[0] ?? error.message)
+            : String(error)
+        }`,
+      );
+    }
   }
 }
 

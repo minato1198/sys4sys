@@ -1,18 +1,54 @@
 const strictUtf8Decoder = new TextDecoder("utf-8", { fatal: true });
 const shiftJisDecoder = new TextDecoder("shift-jis");
+const utf16LeDecoder = new TextDecoder("utf-16le");
+const utf16BeDecoder = new TextDecoder("utf-16be");
+
+function looksLikeUtf16Le(buffer: Buffer): boolean {
+  if (buffer.length < 2 || buffer.length % 2 !== 0) return false;
+  const sample = Math.min(buffer.length, 4096);
+  let nul = 0;
+  for (let i = 0; i < sample; i += 1) {
+    if (buffer[i] === 0) nul += 1;
+  }
+  return nul > sample * 0.1;
+}
 
 export function decodeProcessBytes(buffer: Buffer): string {
+  if (buffer.length >= 2 && buffer[0] === 0xff && buffer[1] === 0xfe) {
+    return utf16LeDecoder.decode(buffer.subarray(2));
+  }
+  if (buffer.length >= 2 && buffer[0] === 0xfe && buffer[1] === 0xff) {
+    return utf16BeDecoder.decode(buffer.subarray(2));
+  }
+  if (looksLikeUtf16Le(buffer)) {
+    return utf16LeDecoder.decode(buffer);
+  }
   try {
     return strictUtf8Decoder.decode(buffer);
   } catch {
-    return shiftJisDecoder.decode(buffer);
+    const shiftJis = shiftJisDecoder.decode(buffer);
+    // UTF-16LE の日本語は NUL が 1 割未満のことがあり、Shift-JIS として
+    // デコードすると NUL や制御文字が残る。その場合だけ UTF-16LE を試す。
+    if (shiftJis.includes("\0") && buffer.length % 2 === 0) {
+      return utf16LeDecoder.decode(buffer);
+    }
+    return shiftJis;
   }
 }
 
 function stripTrailingCarriageReturn(buffer: Buffer): Buffer {
-  return buffer.length > 0 && buffer[buffer.length - 1] === 0x0d
-    ? buffer.subarray(0, -1)
-    : buffer;
+  if (buffer.length > 0 && buffer[buffer.length - 1] === 0x0d) {
+    return buffer.subarray(0, -1);
+  }
+  // UTF-16LE の CRLF は 0D 00 0A 00。0A の直前は 0D 00 になる。
+  if (
+    buffer.length >= 2 &&
+    buffer[buffer.length - 1] === 0 &&
+    buffer[buffer.length - 2] === 0x0d
+  ) {
+    return buffer.subarray(0, -2);
+  }
+  return buffer;
 }
 
 export class ProcessLineDecoder {

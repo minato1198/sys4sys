@@ -12,7 +12,7 @@ import {
 } from "@sys4sys/shared";
 import { and, desc, eq, lt, or } from "drizzle-orm";
 import { z } from "zod";
-import { writeAudit } from "../audit.js";
+import { tryWriteAudit, writeAudit } from "../audit.js";
 import { requireAuth, requireRole } from "../auth/guard.js";
 import { config } from "../config.js";
 import { db } from "../db/index.js";
@@ -394,6 +394,7 @@ export async function serviceRoutes(app: FastifyInstance): Promise<void> {
       }
 
       const user = actor(request);
+      // 秘密値の開示は監査ログの記録を前提にする。ここだけは fail-closed。
       await writeAudit({
         actorUserId: user.id,
         actorLabel: user.email,
@@ -501,7 +502,7 @@ export async function serviceRoutes(app: FastifyInstance): Promise<void> {
         throw error;
       }
 
-      await writeAudit({
+      await tryWriteAudit({
         actorUserId: user.id,
         actorLabel: user.email,
         action: "service.create",
@@ -657,7 +658,7 @@ export async function serviceRoutes(app: FastifyInstance): Promise<void> {
         throw error;
       }
 
-      await writeAudit({
+      await tryWriteAudit({
         actorUserId: user.id,
         actorLabel: user.email,
         action: "service.update",
@@ -748,7 +749,7 @@ export async function serviceRoutes(app: FastifyInstance): Promise<void> {
         for (const source of sources) await refreshLogTailer(source.id);
       }
 
-      await writeAudit({
+      await tryWriteAudit({
         actorUserId: user.id,
         actorLabel: user.email,
         action: "service.delete",
@@ -802,7 +803,7 @@ export async function serviceRoutes(app: FastifyInstance): Promise<void> {
         .set({ status: "succeeded", finishedAt })
         .where(eq(actions.id, actionId));
 
-      await writeAudit({
+      await tryWriteAudit({
         actorUserId: user.id,
         actorLabel: user.email,
         action: `service.${type}`,
@@ -850,7 +851,7 @@ export async function serviceRoutes(app: FastifyInstance): Promise<void> {
         })
         .where(eq(actions.id, actionId));
 
-      await writeAudit({
+      await tryWriteAudit({
         actorUserId: user.id,
         actorLabel: user.email,
         action: `service.${type}.failed`,

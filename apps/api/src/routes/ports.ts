@@ -13,7 +13,7 @@ import {
 } from "@sys4sys/shared";
 import { and, desc, eq, gte, isNull, lte } from "drizzle-orm";
 import { z } from "zod";
-import { writeAudit } from "../audit.js";
+import { tryWriteAudit } from "../audit.js";
 import { requireAuth, requireRole } from "../auth/guard.js";
 import { db } from "../db/index.js";
 import { actions, portHistory, portReservations, ports } from "../db/schema.js";
@@ -26,6 +26,11 @@ import {
   type ReservationView,
 } from "../ports/reservations.js";
 import { scanAndPersist } from "../ports/scanner.js";
+import {
+  allRequestedScopesFailed,
+  scanFailureDetail,
+  scopeFailed,
+} from "../ports/scope-status.js";
 import { signKillToken, verifyKillToken } from "../security/confirm-token.js";
 
 const listQuerySchema = z.object({
@@ -163,11 +168,22 @@ export async function portRoutes(app: FastifyInstance): Promise<void> {
   app.get(
     "/ports",
     { preHandler: requireAuth, config: { scopes: ["ports:read"] } },
-    async (request) => {
+    async (request, reply) => {
       const query = listQuerySchema.parse(request.query);
       const { scan, reservationViews } = await scanAndPersist({
         scope: query.scope,
       });
+
+      if (allRequestedScopesFailed(scan, query.scope)) {
+        const detail =
+          query.scope === "all"
+            ? `${scanFailureDetail(scan, "windows")} / ${scanFailureDetail(
+                scan,
+                "wsl",
+              )}`
+            : scanFailureDetail(scan, query.scope);
+        return problem(reply, 503, "Service Unavailable", detail);
+      }
 
       const persisted = await db.select().from(ports);
       const persistedByKey = new Map(
@@ -247,6 +263,8 @@ export async function portRoutes(app: FastifyInstance): Promise<void> {
           (reservation) => reservation.status === "conflict",
         ),
         skipped: scan.skipped,
+        scanErrors: scan.scanErrors,
+        warnings: scan.warnings,
         distros: scan.distros,
       };
     },
@@ -310,6 +328,17 @@ export async function portRoutes(app: FastifyInstance): Promise<void> {
       const user = actor(request);
       const { scan, reservations } = await scanAndPersist({ scope: "all" });
 
+      // 予約対象のスコープが取得できていない場合は、空の結果を
+      // 「空いている」と誤判定しないよう fail-closed にする。
+      if (scopeFailed(scan, body.scope)) {
+        return problem(
+          reply,
+          503,
+          "Service Unavailable",
+          scanFailureDetail(scan, body.scope),
+        );
+      }
+
       if (isEndpointInUse(scan.rows, body.protocol, body.port)) {
         return problem(
           reply,
@@ -352,7 +381,7 @@ export async function portRoutes(app: FastifyInstance): Promise<void> {
         throw error;
       }
 
-      await writeAudit({
+      await tryWriteAudit({
         actorUserId: user.id,
         actorLabel: user.email,
         action: "port.reserve",
@@ -407,7 +436,7 @@ export async function portRoutes(app: FastifyInstance): Promise<void> {
         .delete(portReservations)
         .where(eq(portReservations.id, reservation.id));
 
-      await writeAudit({
+      await tryWriteAudit({
         actorUserId: user.id,
         actorLabel: user.email,
         action: "port.reserve.delete",
@@ -438,6 +467,15 @@ export async function portRoutes(app: FastifyInstance): Promise<void> {
       const { port } = portParamsSchema.parse(request.params);
       const query = killTokenQuerySchema.parse(request.query);
       const { scan } = await scanAndPersist({ scope: query.scope });
+
+      if (scopeFailed(scan, query.scope)) {
+        return problem(
+          reply,
+          503,
+          "Service Unavailable",
+          scanFailureDetail(scan, query.scope),
+        );
+      }
 
       const candidates = killCandidatesFromScan(scan.rows).filter(
         (candidate) =>
@@ -547,6 +585,14 @@ export async function portRoutes(app: FastifyInstance): Promise<void> {
       const { scan, reservations } = await scanAndPersist({
         scope: token.scope,
       });
+      if (scopeFailed(scan, token.scope)) {
+        return problem(
+          reply,
+          503,
+          "Service Unavailable",
+          scanFailureDetail(scan, token.scope),
+        );
+      }
       const matchingCandidates = killCandidatesFromScan(scan.rows).filter(
         (candidate) =>
           candidate.scope === token.scope &&
@@ -626,7 +672,7 @@ export async function portRoutes(app: FastifyInstance): Promise<void> {
             ),
           );
 
-        await writeAudit({
+        await tryWriteAudit({
           actorUserId: user.id,
           actorLabel: user.email,
           action: "port.kill",
@@ -678,7 +724,7 @@ export async function portRoutes(app: FastifyInstance): Promise<void> {
           error: message.slice(0, 2000),
         });
 
-        await writeAudit({
+        await tryWriteAudit({
           actorUserId: user.id,
           actorLabel: user.email,
           action: "port.kill.failed",

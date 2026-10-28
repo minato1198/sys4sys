@@ -76,6 +76,17 @@ async function main(): Promise<void> {
     for (const item of result.skipped)
       console.log(`  ${item.distro}: ${item.error}`);
   }
+  if (result.scanErrors.length > 0) {
+    console.log("scan errors:");
+    for (const item of result.scanErrors)
+      console.log(
+        `  ${item.scope}${item.distro ? `:${item.distro}` : ""}: ${item.message}`,
+      );
+  }
+  if (result.warnings.length > 0) {
+    console.log("warnings:");
+    for (const item of result.warnings) console.log(`  ${item}`);
+  }
   console.log("");
   printTable(result.rows);
 

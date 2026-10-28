@@ -207,14 +207,28 @@ async function persistScan(scan: DetailedScanResult): Promise<PersistedScan> {
 }
 
 let queue: Promise<void> = Promise.resolve();
+const inFlight = new Map<string, Promise<PersistedScan>>();
+
+function scanKey(options: ScanOptions): string {
+  return JSON.stringify({
+    scope: options.scope ?? "all",
+    distro: options.distro ?? null,
+    includeStopped: Boolean(options.includeStopped),
+  });
+}
 
 /**
  * スキャンを直列化して DB に反映する。
  * 複数リクエストが同時に来ても、履歴の opened/closed が壊れないようにする。
+ * 同一オプションの実行中リクエストは同じ Promise を共有する。
  */
 export function scanAndPersist(
   options: ScanOptions = {},
 ): Promise<PersistedScan> {
+  const key = scanKey(options);
+  const existing = inFlight.get(key);
+  if (existing) return existing;
+
   const result = queue.then(async () => {
     const scan = await scanPorts(options);
     return persistScan(scan);
@@ -224,6 +238,12 @@ export function scanAndPersist(
     () => undefined,
     () => undefined,
   );
+  inFlight.set(key, result);
+
+  const clear = () => {
+    if (inFlight.get(key) === result) inFlight.delete(key);
+  };
+  void result.then(clear, clear);
 
   return result;
 }

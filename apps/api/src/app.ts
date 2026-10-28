@@ -107,10 +107,13 @@ export async function buildApp() {
     app.log.info("default Windows host registered");
   }
   if (bootstrap.created) {
-    if (bootstrap.generatedPassword) {
+    if (bootstrap.generatedPasswordFile) {
       app.log.warn(
-        { email: bootstrap.email, password: bootstrap.generatedPassword },
-        "initial admin user created; set ADMIN_PASSWORD or change it after login",
+        {
+          email: bootstrap.email,
+          passwordFile: bootstrap.generatedPasswordFile,
+        },
+        "initial admin user created; password was written to a restricted file",
       );
     } else {
       app.log.info(

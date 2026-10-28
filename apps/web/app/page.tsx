@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 import Link from "next/link";
 import { AppShell } from "./components/AppShell";
 import { StatusRail } from "./components/StatusRail";
@@ -21,6 +27,13 @@ interface PortsResponse {
   reservations: ReservationView[];
   conflicts: ReservationView[];
   skipped: Array<{ distro: string; error: string }>;
+  scanErrors?: Array<{
+    scope: "windows" | "wsl";
+    distro?: string;
+    code?: string;
+    message: string;
+  }>;
+  warnings?: string[];
   distros: Array<{
     name: string;
     state: string;
@@ -114,8 +127,14 @@ export default function DashboardPage() {
     pendingApprovals: 0,
     incidents: [],
   });
+  const loadInFlight = useRef(false);
 
   const load = useCallback(async (showProgress = false) => {
+    if (loadInFlight.current) {
+      if (showProgress) setRefreshing(false);
+      return;
+    }
+    loadInFlight.current = true;
     if (showProgress) setRefreshing(true);
     try {
       const response = await fetch("/api/ports", { cache: "no-store" });
@@ -130,6 +149,7 @@ export default function DashboardPage() {
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
+      loadInFlight.current = false;
       setLoading(false);
       if (showProgress) setRefreshing(false);
     }
@@ -505,6 +525,22 @@ export default function DashboardPage() {
           ? `スキップ: ${data.skipped.map((s) => s.distro).join(", ")}`
           : "WSL 3.x の共有ネットワークを考慮してマージ済み"}
       </p>
+      {data?.scanErrors?.length ? (
+        <p className="mt-1 text-sm text-warning">
+          取得できなかったスコープ:{" "}
+          {data.scanErrors
+            .map(
+              (item) =>
+                `${item.scope}${item.distro ? ` (${item.distro})` : ""}`,
+            )
+            .join(", ")}
+        </p>
+      ) : null}
+      {data?.warnings?.length ? (
+        <p className="mt-1 text-xs text-fg-muted">
+          警告: {data.warnings.join(" / ")}
+        </p>
+      ) : null}
 
       {historyFor ? (
         <section className="mt-6 overflow-hidden rounded-xl border border-border bg-surface">

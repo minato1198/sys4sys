@@ -50,10 +50,27 @@ export const skippedDistroSchema = z.object({
 });
 export type SkippedDistro = z.infer<typeof skippedDistroSchema>;
 
+export const scanErrorCodeSchema = z.enum([
+  "not_available",
+  "timeout",
+  "command_failed",
+  "invalid_output",
+]);
+export type ScanErrorCode = z.infer<typeof scanErrorCodeSchema>;
+
+export const scanErrorSchema = z.object({
+  scope: portScopeSchema,
+  distro: z.string().optional(),
+  code: scanErrorCodeSchema.optional(),
+  message: z.string(),
+});
+export type ScanError = z.infer<typeof scanErrorSchema>;
+
 export const portScanResultSchema = z.object({
   scannedAt: z.string(),
   rows: z.array(portRowSchema),
   skipped: z.array(skippedDistroSchema),
+  scanErrors: z.array(scanErrorSchema).default([]),
 });
 export type PortScanResult = z.infer<typeof portScanResultSchema>;
 

@@ -27,3 +27,19 @@ export async function writeAudit(entry: AuditEntry): Promise<void> {
     ts: new Date(),
   });
 }
+
+/**
+ * 外部操作の結果を監査ログの保存失敗で覆さないための best-effort 書き込み。
+ * entry の内容（秘密値を含み得る）はログに出さない。
+ */
+export async function tryWriteAudit(entry: AuditEntry): Promise<void> {
+  try {
+    await writeAudit(entry);
+  } catch (error) {
+    console.warn(
+      `[audit] audit.write_failed action=${entry.action}: ${
+        error instanceof Error ? error.message.split("\n")[0] : String(error)
+      }`,
+    );
+  }
+}

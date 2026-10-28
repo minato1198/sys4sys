@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 import type { PortRow } from "@sys4sys/shared";
-import { decodeWslOutput, runFile } from "./exec.js";
+import { decodeCommandOutput, runFile } from "./exec.js";
 
 const SCRIPT_PATH = fileURLToPath(
   new URL("../scripts/scan-windows.ps1", import.meta.url),
@@ -38,12 +38,15 @@ export async function scanWindows(): Promise<WindowsScanResult> {
         "-File",
         SCRIPT_PATH,
       ]);
-      const text = decodeWslOutput(stdout).trim();
+      const text = decodeCommandOutput(stdout).trim();
       if (!text) {
-        return { rows: [], elapsedMs: performance.now() - started, shell };
+        throw new Error(`${shell} returned empty output`);
       }
 
       const parsed: unknown = JSON.parse(text);
+      if (parsed === null || typeof parsed !== "object") {
+        throw new Error(`${shell} returned invalid JSON output`);
+      }
       const raw: RawWindowsPort[] = Array.isArray(parsed)
         ? (parsed as RawWindowsPort[])
         : [parsed as RawWindowsPort];
@@ -76,5 +79,7 @@ export async function scanWindows(): Promise<WindowsScanResult> {
 
   const message =
     lastError instanceof Error ? lastError.message : String(lastError);
-  throw new Error(`Windows port scan failed (pwsh / powershell). ${message}`);
+  throw new Error(`Windows port scan failed (pwsh / powershell). ${message}`, {
+    cause: lastError,
+  });
 }

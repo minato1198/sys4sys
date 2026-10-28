@@ -49,14 +49,33 @@ interface WslProc {
 export interface WslScanResult {
   rows: PortRow[];
   elapsedMs: number;
+  warnings: string[];
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error
+    ? (error.message.split("\n")[0] ?? error.message)
+    : String(error);
 }
 
 export async function scanWslDistro(distro: string): Promise<WslScanResult> {
   const started = performance.now();
-  const [ssOut, psOut] = await Promise.all([
+  const [ssResult, psResult] = await Promise.allSettled([
     wsl(["-d", distro, "--", "ss", "-H", "-tulpn"]),
     wsl(["-d", distro, "--", "ps", "-eo", "pid=,ppid=,etimes=,args="]),
   ]);
+
+  // `ss` が取れなければポート一覧そのものが不明なので distro を失敗扱いにする。
+  // `ps` はプロセス名・開始時刻の補助情報なので、失敗してもポート行は返す。
+  if (ssResult.status === "rejected") throw ssResult.reason;
+  const ssOut = ssResult.value;
+  const warnings: string[] = [];
+  let psOut = "";
+  if (psResult.status === "fulfilled") {
+    psOut = psResult.value;
+  } else {
+    warnings.push(`ps failed: ${errorMessage(psResult.reason)}`);
+  }
 
   const now = Date.now();
   const procs = new Map<number, WslProc>();
@@ -112,5 +131,5 @@ export async function scanWslDistro(distro: string): Promise<WslScanResult> {
     });
   }
 
-  return { rows, elapsedMs: performance.now() - started };
+  return { rows, elapsedMs: performance.now() - started, warnings };
 }

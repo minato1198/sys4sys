@@ -1,14 +1,16 @@
 import { randomBytes, randomUUID } from "node:crypto";
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
 import { count } from "drizzle-orm";
 import { config } from "../config.js";
-import { db } from "../db/index.js";
+import { databasePath, db } from "../db/index.js";
 import { users } from "../db/schema.js";
 import { hashPassword } from "./password.js";
 
 export interface AdminBootstrapResult {
   created: boolean;
   email: string;
-  generatedPassword?: string;
+  generatedPasswordFile?: string;
 }
 
 /**
@@ -47,9 +49,24 @@ export async function ensureAdminUser(): Promise<AdminBootstrapResult> {
     createdAt: new Date(),
   });
 
+  // 生成パスワードはログに出さない。開発環境では DB と同じディレクトリに
+  // 制限付きファイルとして保存し、初回ログイン後に削除できるようにする。
+  let generatedPasswordFile: string | undefined;
+  if (generated) {
+    generatedPasswordFile = resolve(
+      dirname(databasePath),
+      "initial-admin-password.txt",
+    );
+    await mkdir(dirname(generatedPasswordFile), { recursive: true });
+    await writeFile(generatedPasswordFile, `${password}\n`, {
+      encoding: "utf8",
+      mode: 0o600,
+    });
+  }
+
   return {
     created: true,
     email,
-    ...(generated ? { generatedPassword: password } : {}),
+    ...(generatedPasswordFile ? { generatedPasswordFile } : {}),
   };
 }

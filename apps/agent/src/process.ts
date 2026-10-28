@@ -1,4 +1,4 @@
-import { runFile } from "./exec.js";
+import { runFile, ExternalCommandError } from "./exec.js";
 
 export interface StopProcessOptions {
   scope: "windows" | "wsl";
@@ -14,29 +14,41 @@ export interface ProcessRef {
   pid: number;
 }
 
-/** PID が生存しているか。WSL は `kill -0` で確認する。 */
-export async function isProcessAlive(ref: ProcessRef): Promise<boolean> {
-  if (!Number.isInteger(ref.pid) || ref.pid <= 0) return false;
+export type ProcessLiveness = "alive" | "dead" | "unknown";
+
+/** PID が生存しているかを三値で返す。WSL は `kill -0` で確認する。 */
+export async function isProcessAlive(
+  ref: ProcessRef,
+): Promise<ProcessLiveness> {
+  if (!Number.isInteger(ref.pid) || ref.pid <= 0) return "dead";
 
   if (ref.scope === "windows") {
     try {
       process.kill(ref.pid, 0);
-      return true;
+      return "alive";
     } catch (error) {
-      return (error as NodeJS.ErrnoException).code === "EPERM";
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "EPERM") return "alive";
+      if (code === "ESRCH") return "dead";
+      return "unknown";
     }
   }
 
-  if (!ref.pidScope) return false;
+  if (!ref.pidScope) return "unknown";
   try {
     await runFile(
       "wsl.exe",
       ["-d", ref.pidScope, "--", "kill", "-0", String(ref.pid)],
       5000,
     );
-    return true;
-  } catch {
-    return false;
+    return "alive";
+  } catch (error) {
+    if (error instanceof ExternalCommandError) {
+      if (error.timedOut) return "unknown";
+      // `kill -0` の exit code 1 は「その PID が存在しない」を意味する。
+      if (error.exitCode === 1) return "dead";
+    }
+    return "unknown";
   }
 }
 

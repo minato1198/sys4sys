@@ -3,8 +3,10 @@ import {
   type PortOwner,
   type PortRow,
   type PortScanResult,
+  type ScanError,
   type SkippedDistro,
 } from "@sys4sys/shared";
+import { ExternalCommandError } from "./exec.js";
 import { scanWindows } from "./windows.js";
 import { listDistroStates, scanWslDistro, type WslDistro } from "./wsl.js";
 
@@ -27,6 +29,25 @@ export interface ScanTiming {
 export interface DetailedScanResult extends PortScanResult {
   distros: WslDistro[];
   timings: Record<string, ScanTiming>;
+  warnings: string[];
+}
+
+function firstLine(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.split("\n")[0] ?? message;
+}
+
+function scanErrorCode(error: unknown): ScanError["code"] {
+  let current: unknown = error;
+  while (current instanceof Error) {
+    if (current instanceof ExternalCommandError) {
+      if (current.timedOut) return "timeout";
+      if (current.code === "ENOENT") return "not_available";
+      if (current.exitCode !== null) return "command_failed";
+    }
+    current = current.cause;
+  }
+  return "command_failed";
 }
 
 const relayProcess = /^(system|wslrelay|wslservice|vmwp|vmmem)/i;
@@ -78,27 +99,54 @@ export async function scanPorts(
   options: ScanOptions = {},
 ): Promise<DetailedScanResult> {
   const scope = options.scope ?? "all";
-  const distros = await listDistroStates();
+  const needsWsl = scope === "all" || scope === "wsl";
   const skipped: SkippedDistro[] = [];
+  const scanErrors: ScanError[] = [];
+  const warnings: string[] = [];
   const timings: Record<string, ScanTiming> = {};
   const rows: PortRow[] = [];
   const wslRows: PortRow[] = [];
   const tasks: Promise<void>[] = [];
+  let distros: WslDistro[] = [];
+  let wslListAvailable = true;
+
+  // WSL を含むスコープだけ wsl.exe を呼ぶ。Windows のみの操作を
+  // WSL 未導入環境で失敗させない。
+  if (needsWsl) {
+    try {
+      distros = await listDistroStates();
+    } catch (error) {
+      wslListAvailable = false;
+      scanErrors.push({
+        scope: "wsl",
+        code: scanErrorCode(error),
+        message: firstLine(error),
+      });
+    }
+  }
 
   if (scope === "all" || scope === "windows") {
     tasks.push(
-      scanWindows().then((result) => {
-        rows.push(...result.rows);
-        timings["windows"] = {
-          rows: result.rows.length,
-          elapsedMs: result.elapsedMs,
-          shell: result.shell,
-        };
-      }),
+      scanWindows()
+        .then((result) => {
+          rows.push(...result.rows);
+          timings["windows"] = {
+            rows: result.rows.length,
+            elapsedMs: result.elapsedMs,
+            shell: result.shell,
+          };
+        })
+        .catch((error: unknown) => {
+          scanErrors.push({
+            scope: "windows",
+            code: scanErrorCode(error),
+            message: firstLine(error),
+          });
+        }),
     );
   }
 
-  if (scope === "all" || scope === "wsl") {
+  if (needsWsl && wslListAvailable) {
     const wanted = options.distro
       ? distros.filter((d) => d.name === options.distro)
       : distros;
@@ -120,19 +168,25 @@ export async function scanPorts(
         scanWslDistro(distro.name)
           .then((result) => {
             wslRows.push(...result.rows);
+            for (const warning of result.warnings) {
+              warnings.push(`wsl:${distro.name}: ${warning}`);
+            }
             timings[`wsl:${distro.name}`] = {
               rows: result.rows.length,
               elapsedMs: result.elapsedMs,
             };
           })
           .catch((error: unknown) => {
-            const message =
-              error instanceof Error
-                ? error.message.split("\n")[0]
-                : String(error);
+            const message = firstLine(error);
             skipped.push({
               distro: distro.name,
-              error: message ?? "scan failed",
+              error: message || "scan failed",
+            });
+            scanErrors.push({
+              scope: "wsl",
+              distro: distro.name,
+              code: scanErrorCode(error),
+              message: message || "scan failed",
             });
           }),
       );
@@ -146,8 +200,10 @@ export async function scanPorts(
     scannedAt: new Date().toISOString(),
     rows: annotateWslForwarding(sortRows(aggregatedRows)),
     skipped,
+    scanErrors,
     distros,
     timings,
+    warnings,
   };
 }
 
