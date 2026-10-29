@@ -136,8 +136,8 @@ export async function buildApp() {
   }
   await cleanupExpiredSessions();
   await cleanupExpiredTokens();
-  await reconcileServices();
   await reconcileDeployments();
+  await reconcileServices();
   await startAllLogTailers();
   await cleanupLogs();
   const retentionTimer = startLogRetention();

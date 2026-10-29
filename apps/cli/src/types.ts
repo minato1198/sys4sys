@@ -38,6 +38,7 @@ export interface DeployConfig {
   restartAfter: boolean;
   healthTimeoutSec: number;
   requireApproval?: boolean;
+  serviceControlOwner?: "sys4sys" | "script" | null;
 }
 
 export interface ServiceSecrets {
@@ -81,6 +82,8 @@ export interface Service {
   id: string;
   hostId: string;
   name: string;
+  controlMode: "spawn" | "windows-service";
+  serviceName: string | null;
   command: string[];
   cwd: string | null;
   env?: Record<string, string> | null;

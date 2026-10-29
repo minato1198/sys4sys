@@ -16,7 +16,14 @@ import { z } from "zod";
 import { tryWriteAudit } from "../audit.js";
 import { requireAuth, requireRole } from "../auth/guard.js";
 import { db } from "../db/index.js";
-import { actions, portHistory, portReservations, ports } from "../db/schema.js";
+import {
+  actions,
+  portHistory,
+  portReservations,
+  ports,
+  services,
+} from "../db/schema.js";
+import { hasRunningDeploy } from "../services/deploy-lock.js";
 import {
   findReservationForEndpoint,
   findReservationForRow,
@@ -129,13 +136,67 @@ function problem(
   status: number,
   title: string,
   detail: string,
+  extra?: Record<string, unknown>,
 ) {
-  return reply.code(status).type("application/problem+json").send({
-    type: "about:blank",
-    title,
-    status,
-    detail,
-  });
+  return reply
+    .code(status)
+    .type("application/problem+json")
+    .send({
+      type: "about:blank",
+      title,
+      status,
+      detail,
+      ...(extra ?? {}),
+    });
+}
+
+type ExternalPortOwner = {
+  serviceId: string;
+  serviceName: string;
+  serviceControlOwner: string | null;
+  deployRunning: boolean;
+};
+
+async function externalServiceForPort(
+  port: number,
+  scope: "windows" | "wsl",
+): Promise<ExternalPortOwner | null> {
+  if (scope !== "windows") return null;
+  const rows = await db
+    .select()
+    .from(services)
+    .where(
+      and(
+        eq(services.isActive, true),
+        eq(services.controlMode, "windows-service"),
+      ),
+    );
+  for (const row of rows) {
+    if (!row.expectedPorts?.includes(port)) continue;
+    return {
+      serviceId: row.id,
+      serviceName: row.serviceName ?? "",
+      serviceControlOwner: row.deploy?.serviceControlOwner ?? null,
+      deployRunning: await hasRunningDeploy(row.id),
+    };
+  }
+  return null;
+}
+
+function portProtectionProblem(reply: FastifyReply, owner: ExternalPortOwner) {
+  return problem(
+    reply,
+    409,
+    "Conflict",
+    owner.deployRunning
+      ? "デプロイ中の外部サービスが使用しているポートは停止できません。デプロイ完了後に再試行してください"
+      : "外部サービスが使用しているポートは ports kill では停止できません。services stop でサービスを停止してください",
+    {
+      serviceId: owner.serviceId,
+      serviceName: owner.serviceName,
+      serviceControlOwner: owner.serviceControlOwner,
+    },
+  );
 }
 
 function actor(request: FastifyRequest) {
@@ -524,6 +585,9 @@ export async function portRoutes(app: FastifyInstance): Promise<void> {
         );
       }
 
+      const externalOwner = await externalServiceForPort(port, target.scope);
+      if (externalOwner) return portProtectionProblem(reply, externalOwner);
+
       const signed = signKillToken({
         scope: target.scope,
         pidScope: target.pidScope ?? null,
@@ -627,6 +691,9 @@ export async function portRoutes(app: FastifyInstance): Promise<void> {
           "プロセスの開始時刻が変わったため停止を中止しました。再スキャンしてください",
         );
       }
+
+      const externalOwner = await externalServiceForPort(port, token.scope);
+      if (externalOwner) return portProtectionProblem(reply, externalOwner);
 
       const reservation = findReservationForRow(reservations, target);
       const serviceId = reservation?.serviceId ?? `port:${token.scope}:${port}`;

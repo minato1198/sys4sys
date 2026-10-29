@@ -25,6 +25,7 @@ import {
   snapshotsEqual,
   type DeployRequestRow,
 } from "../services/deploy-approvals.js";
+import { hasRunningDeploy } from "../services/deploy-lock.js";
 import { beginDeploy, isDeployRunning, runDeploy } from "../services/deploy.js";
 import { ServiceError, type ServiceRow } from "../services/manager.js";
 
@@ -93,6 +94,16 @@ async function findService(id: string): Promise<ServiceRow | null> {
     .where(eq(services.id, id))
     .limit(1);
   return row ?? null;
+}
+
+function isSelfService(service: ServiceRow): boolean {
+  if (service.controlMode !== "windows-service" || !config.SELF_SERVICE_NAME) {
+    return false;
+  }
+  return (
+    service.serviceName?.trim().toLowerCase() ===
+    config.SELF_SERVICE_NAME.toLowerCase()
+  );
 }
 
 async function findRequest(id: string): Promise<DeployRequestRow | null> {
@@ -183,6 +194,14 @@ export async function deployRequestRoutes(app: FastifyInstance): Promise<void> {
           "デプロイ設定がありません",
         );
       }
+      if (isSelfService(service)) {
+        return problem(
+          reply,
+          409,
+          "Conflict",
+          "sys4sys 自身はこの API からデプロイできません。外部のオーケストレータから実行してください",
+        );
+      }
 
       let deploy;
       try {
@@ -208,7 +227,7 @@ export async function deployRequestRoutes(app: FastifyInstance): Promise<void> {
 
       await expirePendingDeployRequests(id);
 
-      if (isDeployRunning(id)) {
+      if (isDeployRunning(id) || (await hasRunningDeploy(id))) {
         return problem(reply, 409, "Conflict", "デプロイは既に実行中です");
       }
 
@@ -369,6 +388,14 @@ export async function deployRequestRoutes(app: FastifyInstance): Promise<void> {
           409,
           "Conflict",
           "サービスまたはデプロイ設定が存在しません",
+        );
+      }
+      if (isSelfService(service)) {
+        return problem(
+          reply,
+          409,
+          "Conflict",
+          "sys4sys 自身はこの API からデプロイできません。外部のオーケストレータから実行してください",
         );
       }
 

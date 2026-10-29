@@ -573,6 +573,9 @@ paths:
     post:
       tags: [services]
       summary: 起動（operator 以上）
+      description: |
+        windows-service では SCM（`sc.exe start`）で起動する。deploy 実行中と
+        `SELF_SERVICE_NAME` に指定した sys4sys 自身の操作は 409 で拒否する。
       responses:
         "202":
           description: 起動処理を受け付け
@@ -587,12 +590,16 @@ paths:
     post:
       tags: [services]
       summary: 停止（operator 以上）
+      description: |
+        windows-service では SCM（`sc.exe stop`）で停止し、`taskkill` は使わない。
+        deploy 実行中と `SELF_SERVICE_NAME` に指定した sys4sys 自身の操作は 409 で拒否する。
       responses:
         "202":
           description: 停止処理を受け付け
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Action" }
+        "409": { $ref: "#/components/responses/Conflict" }
 
   /services/{id}/restart:
     parameters:
@@ -600,12 +607,17 @@ paths:
     post:
       tags: [services]
       summary: 再起動（operator 以上）
+      description: |
+        手動再起動は所有者に関係なく sys4sys controller が行う。windows-service では
+        SCM を使用する。deploy 実行中と `SELF_SERVICE_NAME` に指定した sys4sys 自身の操作は
+        409 で拒否する。
       responses:
         "202":
           description: 再起動処理を受け付け
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Action" }
+        "409": { $ref: "#/components/responses/Conflict" }
 
   /services/{id}/deploy:
     parameters:
@@ -615,9 +627,12 @@ paths:
       summary: 登録済み deploy 設定でデプロイ（operator 以上）
       description: |
         サービスの `deploy.command` を非同期実行し、`actions.type=deploy` を作成して 202 を返します。
-        `deploy.restartAfter=true` の場合は、コマンド成功後に sys4sys がサービスを再起動し、
-        `deploy.healthTimeoutSec` の間ヘルスチェックを待ちます。ログは `[deploy]` プレフィックスと
-        `fields.source="deploy"` 付きで保存されます。
+        spawn では `deploy.restartAfter=true` の場合にコマンド成功後に sys4sys が再起動する。
+        windows-service では `serviceControlOwner` が所有者を決定する。`sys4sys` は
+        SCM stop → deploy.command → SCM start → health を実行し、`script` は deploy
+        スクリプトが stop / start / health を担当するため sys4sys は停止・起動しない。
+        ログは `[deploy]` プレフィックスと `fields.source="deploy"` 付きで保存される。
+        deploy 実行中と `SELF_SERVICE_NAME` に指定した sys4sys 自身の deploy は 409 で拒否する。
       responses:
         "202":
           description: デプロイを受け付け
@@ -1771,11 +1786,14 @@ components:
 
     Service:
       type: object
-      required: [id, hostId, name, status, autoRestartPhase]
+      required:
+        [id, hostId, name, controlMode, serviceName, status, autoRestartPhase]
       properties:
         id: { type: string }
         hostId: { type: string }
         name: { type: string }
+        controlMode: { type: string, enum: [spawn, windows-service] }
+        serviceName: { type: string, nullable: true }
         command:
           type: array
           items: { type: string }
@@ -1803,7 +1821,8 @@ components:
         autoRestartPhase: { type: string, enum: [observe, approve, auto] }
         status:
           type: string
-          enum: [stopped, starting, running, degraded, restarting, failed]
+          enum:
+            [stopped, starting, running, stopping, degraded, restarting, failed]
         isActive: { type: boolean }
         pid:
           type: integer
@@ -1853,6 +1872,14 @@ components:
           allOf:
             - $ref: "#/components/schemas/HealthResult"
           nullable: true
+        controlMode: { type: string, enum: [spawn, windows-service] }
+        serviceName: { type: string, nullable: true }
+        serviceState:
+          {
+            type: string,
+            enum: [running, stopped, starting, stopping, degraded, unknown],
+            nullable: true,
+          }
 
     ServiceDetail:
       allOf:
@@ -1900,6 +1927,14 @@ components:
         autoStart: { type: boolean, default: false }
         autoRestartPhase:
           { type: string, enum: [observe, approve, auto], default: observe }
+        controlMode:
+          { type: string, enum: [spawn, windows-service], default: spawn }
+        serviceName:
+          {
+            type: string,
+            nullable: true,
+            description: "windows-service では SCM のサービス名。spawn では null",
+          }
 
     ServiceUpdate:
       type: object
@@ -1925,6 +1960,8 @@ components:
           items: { type: string }
         autoStart: { type: boolean }
         autoRestartPhase: { type: string, enum: [observe, approve, auto] }
+        controlMode: { type: string, enum: [spawn, windows-service] }
+        serviceName: { type: string, nullable: true }
 
     DeployConfig:
       type: object
@@ -1955,6 +1992,13 @@ components:
             type: boolean,
             default: false,
             description: "true なら即時 deploy は 409 approval_required になり deploy-requests 承認が必要",
+          }
+        serviceControlOwner:
+          {
+            type: string,
+            enum: [sys4sys, script],
+            nullable: true,
+            description: "windows-service の deploy で stop/start の所有者。spawn では無視",
           }
 
     HealthCheck:
@@ -2264,6 +2308,9 @@ components:
           healthTimeoutSec,
           envHash,
           deployEnvHash,
+          controlMode,
+          serviceName,
+          serviceControlOwner,
         ]
       properties:
         command:
@@ -2284,6 +2331,10 @@ components:
             type: string,
             description: "deploy.env の SHA-256 ハッシュ。平文値は保存しない",
           }
+        controlMode: { type: string, enum: [spawn, windows-service] }
+        serviceName: { type: string, nullable: true }
+        serviceControlOwner:
+          { type: string, enum: [sys4sys, script], nullable: true }
 
     DeployRequestService:
       type: object

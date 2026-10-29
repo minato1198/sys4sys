@@ -17,6 +17,7 @@ export const listServicesInput = z.object({
       "stopped",
       "starting",
       "running",
+      "stopping",
       "degraded",
       "restarting",
       "failed",

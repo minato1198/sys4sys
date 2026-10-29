@@ -9,6 +9,7 @@ import {
   protocolSchema,
   restartPhaseSchema,
   roleSchema,
+  serviceStatusSchema,
 } from "./ports.js";
 
 /** API が通常のサービス応答で返す env / deploy.env のマスク値。 */
@@ -30,6 +31,22 @@ export type DeployEnvResponse = z.infer<typeof deployEnvResponseSchema>;
 
 export const deployEnvKeysResponseSchema = envKeysSchema;
 export type DeployEnvKeysResponse = z.infer<typeof deployEnvKeysResponseSchema>;
+
+export const controlModeSchema = z.enum(["spawn", "windows-service"]);
+export type ControlMode = z.infer<typeof controlModeSchema>;
+
+export const serviceControlOwnerSchema = z.enum(["sys4sys", "script"]);
+export type ServiceControlOwner = z.infer<typeof serviceControlOwnerSchema>;
+
+export const serviceNameSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(256)
+  .refine((value) => !/[/\\\u0000-\u001f\u007f]/.test(value), {
+    message: "serviceName に /、\\、制御文字は使用できません",
+  });
+export type ServiceName = z.infer<typeof serviceNameSchema>;
 
 export const serviceSecretsResponseSchema = z.object({
   env: envRecordSchema.nullable(),
@@ -162,22 +179,51 @@ export const deployConfigSchema = z.object({
   restartAfter: z.boolean().default(true),
   healthTimeoutSec: z.number().int().min(5).max(900).default(120),
   requireApproval: z.boolean().optional(),
+  serviceControlOwner: serviceControlOwnerSchema.optional(),
 });
 export type DeployConfigInput = z.infer<typeof deployConfigSchema>;
 
-export const serviceCreateSchema = z.object({
-  hostId: z.string().min(1),
-  name: z.string().min(1).max(100),
-  command: z.array(z.string().min(1)).min(1),
-  cwd: z.string().optional(),
-  env: z.record(z.string(), z.string()).optional(),
-  expectedPorts: z.array(z.number().int().min(1).max(65535)).optional(),
-  healthCheck: healthCheckSchema.optional(),
-  deploy: deployConfigSchema.optional(),
-  dependsOn: z.array(z.string()).optional(),
-  autoStart: z.boolean().default(false),
-  autoRestartPhase: restartPhaseSchema.default("observe"),
-});
+export const serviceCreateSchema = z
+  .object({
+    hostId: z.string().min(1),
+    name: z.string().min(1).max(100),
+    command: z.array(z.string().min(1)).min(1),
+    cwd: z.string().optional(),
+    env: z.record(z.string(), z.string()).optional(),
+    expectedPorts: z.array(z.number().int().min(1).max(65535)).optional(),
+    healthCheck: healthCheckSchema.optional(),
+    deploy: deployConfigSchema.optional(),
+    dependsOn: z.array(z.string()).optional(),
+    autoStart: z.boolean().default(false),
+    autoRestartPhase: restartPhaseSchema.default("observe"),
+    controlMode: controlModeSchema.default("spawn"),
+    serviceName: serviceNameSchema.nullable().optional(),
+  })
+  .superRefine((value, context) => {
+    if (value.controlMode === "windows-service") {
+      if (!value.serviceName) {
+        context.addIssue({
+          code: "custom",
+          path: ["serviceName"],
+          message: "windows-service には serviceName が必要です",
+        });
+      }
+      if (value.deploy && !value.deploy.serviceControlOwner) {
+        context.addIssue({
+          code: "custom",
+          path: ["deploy", "serviceControlOwner"],
+          message:
+            "windows-service の deploy には serviceControlOwner が必要です",
+        });
+      }
+    } else if (value.serviceName) {
+      context.addIssue({
+        code: "custom",
+        path: ["serviceName"],
+        message: "spawn サービスに serviceName は指定できません",
+      });
+    }
+  });
 export type ServiceCreateInput = z.infer<typeof serviceCreateSchema>;
 
 export const serviceUpdateSchema = z.object({
@@ -194,21 +240,14 @@ export const serviceUpdateSchema = z.object({
   dependsOn: z.array(z.string()).nullable().optional(),
   autoStart: z.boolean().optional(),
   autoRestartPhase: restartPhaseSchema.optional(),
+  controlMode: controlModeSchema.optional(),
+  serviceName: serviceNameSchema.nullable().optional(),
 });
 export type ServiceUpdateInput = z.infer<typeof serviceUpdateSchema>;
 
 export const serviceListQuerySchema = z.object({
   hostId: z.string().optional(),
-  status: z
-    .enum([
-      "stopped",
-      "starting",
-      "running",
-      "degraded",
-      "restarting",
-      "failed",
-    ])
-    .optional(),
+  status: serviceStatusSchema.optional(),
 });
 export type ServiceListQuery = z.infer<typeof serviceListQuerySchema>;
 
@@ -236,6 +275,9 @@ export const deployRequestSnapshotSchema = z.object({
   healthTimeoutSec: z.number().int(),
   envHash: z.string(),
   deployEnvHash: z.string(),
+  controlMode: controlModeSchema.default("spawn"),
+  serviceName: serviceNameSchema.nullable().default(null),
+  serviceControlOwner: serviceControlOwnerSchema.nullable().default(null),
 });
 export type DeployRequestSnapshot = z.infer<typeof deployRequestSnapshotSchema>;
 

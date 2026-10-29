@@ -41,6 +41,9 @@ function canonicalSnapshot(snapshot: DeployRequestSnapshot): string {
     healthTimeoutSec: snapshot.healthTimeoutSec,
     envHash: snapshot.envHash,
     deployEnvHash: snapshot.deployEnvHash,
+    controlMode: snapshot.controlMode ?? "spawn",
+    serviceName: snapshot.serviceName ?? null,
+    serviceControlOwner: snapshot.serviceControlOwner ?? null,
   });
 }
 
@@ -64,14 +67,24 @@ export function buildDeployRequestSnapshot(
     throw new ServiceError(500, SERVICE_ENV_DECRYPTION_ERROR);
   }
 
+  const external = service.controlMode === "windows-service";
+  const controlOwner = external ? (deploy.serviceControlOwner ?? null) : null;
   return {
     command: deploy.command,
     cwd: deploy.cwd ?? service.cwd ?? null,
     timeoutSec: deploy.timeoutSec,
-    restartAfter: deploy.restartAfter,
+    restartAfter:
+      controlOwner === "sys4sys"
+        ? true
+        : controlOwner === "script"
+          ? false
+          : deploy.restartAfter,
     healthTimeoutSec: deploy.healthTimeoutSec,
     envHash: hashEnv(serviceEnv),
     deployEnvHash: hashEnv(deployEnv),
+    controlMode: service.controlMode,
+    serviceName: service.serviceName ?? null,
+    serviceControlOwner: controlOwner,
   };
 }
 

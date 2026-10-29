@@ -69,12 +69,14 @@ erDiagram
         text id PK
         text host_id FK
         text name
-        json command "string[] (allowlist)"
+        text control_mode "spawn | windows-service"
+        text service_name "nullable (SCM 名、host 内で case-insensitive unique)"
+        json command "string[] (spawn allowlist / windows-service では表示用)"
         text cwd
         json env
         json expected_ports
         json health_check
-        json deploy "command / cwd / env / timeoutSec / restartAfter / healthTimeoutSec / requireApproval"
+        json deploy "command / cwd / env / timeoutSec / restartAfter / healthTimeoutSec / requireApproval / serviceControlOwner"
         json depends_on
         boolean auto_start
         text auto_restart_phase "observe | approve | auto"
@@ -205,7 +207,7 @@ erDiagram
         datetime decided_at
         text note
         text action_id FK "nullable"
-        json snapshot "command / cwd / timeoutSec / restartAfter / healthTimeoutSec / envHash / deployEnvHash"
+        json snapshot "command / cwd / timeoutSec / restartAfter / healthTimeoutSec / envHash / deployEnvHash / controlMode / serviceName / serviceControlOwner"
         datetime expires_at
     }
 
@@ -297,11 +299,13 @@ WSL 3.x では distro 間でネットワーク名前空間が共有されるた�
 - 同じポートが複数 distro から見えるため、保存時は `(scope, protocol, address, port)` で upsert する
 - Windows 側の `wslrelay.exe` は `scope=windows` のまま残し、UI で「WSL フォワーディング」と注記する
 
-### 2.2 サービスの PID
+### 2.2 サービスの PID と外部サービス同一性
 
-- Windows サービスは起動したプロセスの Windows PID を `services.pid` に保存する
+- `control_mode=spawn` のサービスは起動したプロセスの Windows PID を `services.pid` に保存する
 - WSL サービスは `wsl.exe` の Windows PID を保存する。`services.pid_scope` は `NULL`
 - 停止は `taskkill /PID <pid> /T /F` でプロセスツリーごと行う。WSL でも Linux 側プロセスが終了することを実機確認済み
+- `control_mode=windows-service` は NSSM / WinSW / ネイティブの SCM サービスとし、同一性は PID ではなく `service_name` で判定する
+- windows-service の PID は SCM 状態から観測する診断情報であり、停止操作では `sc.exe stop` を使い `taskkill` を使わない
 - `ports.pid_host_id`（観測できた distro）と `services.pid_scope` は用途が異なる。前者はポートスキャン、後者は旧方式の互換用
 
 ### 2.3 ログの粒度
@@ -362,37 +366,40 @@ WSL 3.x では distro 間でネットワーク名前空間が共有されるた�
 
 ### 2.10 デプロイ
 
-- `services.deploy` は `{ command, cwd?, env?, timeoutSec, restartAfter, healthTimeoutSec, requireApproval? }` の JSON。`command` は `SERVICE_COMMAND_ALLOWLIST` に従う
+- `services.deploy` は `{ command, cwd?, env?, timeoutSec, restartAfter, healthTimeoutSec, requireApproval?, serviceControlOwner? }` の JSON。`command` は `SERVICE_COMMAND_ALLOWLIST` に従う
+- windows-service の deploy には `serviceControlOwner=sys4sys | script` が必要。`sys4sys` は SCM stop → deploy.command → SCM start → health を実行し、`script` は sys4sys が stop/start しない
+- windows-service で `restartAfter` は `sys4sys` なら `true`、`script` なら `false` に正規化される。spawn では `restartAfter` をそのまま使う
 - `requireApproval=true` のサービスでは即時 deploy を拒否し、`deploy_requests` の承認を必須にする
-- `deploy_requests` は要求作成時点の deploy 設定と env / deploy.env の SHA-256 ハッシュのみを `snapshot` に保存し、秘密値そのものは保存しない
+- `deploy_requests` は要求作成時点の deploy 設定、control mode / service name / owner、env / deploy.env の SHA-256 ハッシュのみを `snapshot` に保存し、秘密値そのものは保存しない
 - 承認時点で現在の deploy 設定・env / deploy.env のハッシュが要求作成時と一致しなければ 409。期限切れ要求も `expired` として 409 で拒否する
 - `POST /api/services/:id/deploy` は `actions.type=deploy` を作成して `202` を返し、コマンドを非同期実行する。`deploy.requireApproval=true` の場合は `approval_required` と `deployRequestId` を 409 で返す
 - `cwd` を省略した場合は `services.cwd` を使う。Windows ホストでは実行前にディレクトリの存在を確認する
 - 実行ログは `log_events` に `[deploy]` プレフィックス、`fields.source="deploy"`、`fields.actionId` 付きで保存する。エラーログ件数・パターン監視の対象からは除外する
 - `restartAfter=true` の場合はコマンド成功後にサービスを再起動し、`healthTimeoutSec` の間ヘルスチェックを待つ。失敗時は action と `services.last_deploy_*` を failed にする
-- 同一サービスの多重デプロイは in-memory Set と DB の running action で防止する。API 再起動時に running のまま残った deploy は起動時 reconciliation で failed にする
+- 同一サービスの多重デプロイは in-memory Set と DB の running deploy action の partial unique index で防止する。API 再起動時に `DEPLOY_STALE_MS` より古い running deploy だけ起動時 reconciliation で failed にする
+- 手動 start / stop / restart、incident 自動再起動、ports kill は deploy 実行中を 409 で拒否するかスキップする
 
 ---
 
 ## 3. 制約・インデックス
 
-| テーブル            | 制約 / インデックス                                                   |
-| ------------------- | --------------------------------------------------------------------- |
-| `users`             | `email` UNIQUE、`role` CHECK                                          |
-| `sessions`          | `token_hash` UNIQUE、`expires_at` INDEX                               |
-| `hosts`             | `(kind, distro)` UNIQUE（WSL）、`kind` CHECK                          |
-| `services`          | `(host_id, name)` UNIQUE                                              |
-| `ports`             | `(scope, protocol, address, port)` UNIQUE、`port` INDEX               |
-| `port_history`      | `(scope, port, opened_at)` INDEX、`closed_at` INDEX                   |
-| `port_reservations` | `(protocol, port)` UNIQUE（Windows / WSL 横断）                       |
-| `log_events`        | `(host_id, service_id, ts)` INDEX、`(fingerprint, ts)` INDEX          |
-| `incidents`         | `(fingerprint, started_at)` INDEX、`status` INDEX、`service_id` INDEX |
-| `incident_events`   | `incident_id` INDEX                                                   |
-| `approvals`         | `status` INDEX、`incident_id` INDEX                                   |
-| `deploy_requests`   | `status` INDEX、`(service_id, requested_at)` INDEX                    |
-| `actions`           | `(service_id, started_at)` INDEX                                      |
-| `audit_logs`        | `(ts)` INDEX、`actor_user_id` INDEX                                   |
-| `settings`          | `key` PK                                                              |
+| テーブル            | 制約 / インデックス                                                       |
+| ------------------- | ------------------------------------------------------------------------- |
+| `users`             | `email` UNIQUE、`role` CHECK                                              |
+| `sessions`          | `token_hash` UNIQUE、`expires_at` INDEX                                   |
+| `hosts`             | `(kind, distro)` UNIQUE（WSL）、`kind` CHECK                              |
+| `services`          | `(host_id, name)` UNIQUE、`(host_id, lower(service_name))` partial UNIQUE |
+| `ports`             | `(scope, protocol, address, port)` UNIQUE、`port` INDEX                   |
+| `port_history`      | `(scope, port, opened_at)` INDEX、`closed_at` INDEX                       |
+| `port_reservations` | `(protocol, port)` UNIQUE（Windows / WSL 横断）                           |
+| `log_events`        | `(host_id, service_id, ts)` INDEX、`(fingerprint, ts)` INDEX              |
+| `incidents`         | `(fingerprint, started_at)` INDEX、`status` INDEX、`service_id` INDEX     |
+| `incident_events`   | `incident_id` INDEX                                                       |
+| `approvals`         | `status` INDEX、`incident_id` INDEX                                       |
+| `deploy_requests`   | `status` INDEX、`(service_id, requested_at)` INDEX                        |
+| `actions`           | `(service_id, started_at)` INDEX、running deploy partial UNIQUE           |
+| `audit_logs`        | `(ts)` INDEX、`actor_user_id` INDEX                                       |
+| `settings`          | `key` PK                                                                  |
 
 外部キーは SQLite の `PRAGMA foreign_keys = ON` を前提。削除は原則ソフトデリートではなく、`is_active` / `enabled` で無効化する（ログ・監査の参照整合性を保つ）。
 

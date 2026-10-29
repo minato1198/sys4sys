@@ -21,8 +21,15 @@ import {
 } from "../logs/process-lines.js";
 import { isCommandAllowed } from "./allowlist.js";
 import { runCommand } from "./command-check.js";
+import { hasRunningDeploy } from "./deploy-lock.js";
 import { serviceEvents } from "./events.js";
 import { decryptServiceEnv, SERVICE_ENV_DECRYPTION_ERROR } from "./secrets.js";
+import {
+  getServiceController,
+  ServiceControlError,
+  type ExternalServiceState,
+  type ServiceInspection,
+} from "./service-control.js";
 
 export type ServiceRow = typeof services.$inferSelect;
 export type HostRow = typeof hosts.$inferSelect;
@@ -44,6 +51,9 @@ export interface RuntimeInfo {
   pid: number | null;
   pidScope: string | null;
   health: HealthResult | null;
+  controlMode: "spawn" | "windows-service";
+  serviceName: string | null;
+  serviceState: ExternalServiceState | null;
 }
 
 interface Runtime {
@@ -54,10 +64,17 @@ interface Runtime {
   scope: "windows" | "wsl";
   stopping: boolean;
   startedAt: Date;
+  controlMode: "spawn" | "windows-service";
+  serviceState: ExternalServiceState | null;
   stdout?: ProcessLineStreamHandle;
   stderr?: ProcessLineStreamHandle;
   healthTimer?: NodeJS.Timeout;
   health?: HealthResult;
+}
+
+export interface ServiceControlOptions {
+  /** deploy オーケストレーションだけが true を指定できる。 */
+  allowDuringDeploy?: boolean;
 }
 
 export class ServiceError extends Error {
@@ -79,6 +96,83 @@ function sleep(ms: number): Promise<void> {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function isExternalService(service: ServiceRow): boolean {
+  return service.controlMode === "windows-service";
+}
+
+function serviceControlError(error: unknown): ServiceError {
+  if (error instanceof ServiceError) return error;
+  if (error instanceof ServiceControlError) {
+    return new ServiceError(error.statusCode, error.message);
+  }
+  return new ServiceError(
+    503,
+    `Windows サービスを操作できませんでした: ${errorMessage(error)}`,
+  );
+}
+
+function assertNotSelfService(service: ServiceRow): void {
+  if (!isExternalService(service) || !config.SELF_SERVICE_NAME) return;
+  if (
+    service.serviceName?.trim().toLowerCase() ===
+    config.SELF_SERVICE_NAME.toLowerCase()
+  ) {
+    throw new ServiceError(
+      409,
+      "sys4sys 自身はこの API から停止・再起動できません。外部のオーケストレータから実行してください",
+    );
+  }
+}
+
+async function assertNoDeployLock(
+  service: ServiceRow,
+  options: ServiceControlOptions,
+): Promise<void> {
+  if (options.allowDuringDeploy) return;
+  if (await hasRunningDeploy(service.id)) {
+    throw new ServiceError(
+      409,
+      "デプロイ中はサービスを開始・停止・再起動できません",
+    );
+  }
+}
+
+function externalRuntime(
+  service: ServiceRow,
+  inspection: ServiceInspection,
+): Runtime {
+  return {
+    serviceId: service.id,
+    child: null,
+    pid: inspection.pid,
+    pidScope: null,
+    scope: "windows",
+    stopping: false,
+    startedAt: service.lastStartedAt ?? new Date(),
+    controlMode: "windows-service",
+    serviceState: inspection.state,
+  };
+}
+
+function setRuntimeInspection(
+  runtime: Runtime,
+  inspection: ServiceInspection,
+): void {
+  runtime.pid = inspection.pid;
+  runtime.serviceState = inspection.state;
+  runtime.stopping = inspection.state === "stopping";
+}
+
+async function inspectExternal(
+  service: ServiceRow,
+): Promise<ServiceInspection> {
+  const controller = getServiceController(service);
+  if (!controller) {
+    throw new ServiceError(422, "外部サービスではありません");
+  }
+  return controller.inspect(service);
 }
 
 async function getService(id: string): Promise<ServiceRow | undefined> {
@@ -303,22 +397,177 @@ function startHealthTimer(
   void host;
 }
 
-export async function startService(id: string): Promise<ServiceRow> {
+async function startExternalService(
+  service: ServiceRow,
+  host: HostRow,
+  options: ServiceControlOptions,
+): Promise<ServiceRow> {
+  await assertNoDeployLock(service, options);
+  assertNotSelfService(service);
+  if (host.kind !== "windows") {
+    throw new ServiceError(
+      422,
+      "windows-service は Windows ホストでのみ使用できます",
+    );
+  }
+
+  await assertReservations(service);
+  const tracked =
+    runtimes.has(service.id) ||
+    ["starting", "running", "degraded", "restarting"].includes(service.status);
+  const controller = getServiceController(service);
+  if (!controller) throw new ServiceError(422, "外部サービスではありません");
+
+  let before: ServiceInspection;
+  try {
+    before = await controller.inspect(service);
+  } catch (error) {
+    throw serviceControlError(error);
+  }
+  if (before.missing) {
+    const now = new Date();
+    await db
+      .update(services)
+      .set({
+        status: "failed",
+        pid: null,
+        pidScope: null,
+        lastError: "Windows サービスが見つかりません",
+        updatedAt: now,
+      })
+      .where(eq(services.id, service.id));
+    throw new ServiceError(503, "Windows サービスが見つかりません");
+  }
+  if (before.state === "unknown") {
+    await db
+      .update(services)
+      .set({
+        lastError:
+          before.detail ?? "Windows サービスの状態を確認できませんでした",
+        updatedAt: new Date(),
+      })
+      .where(eq(services.id, service.id));
+    throw new ServiceError(
+      503,
+      before.detail ?? "Windows サービスの状態を確認できませんでした",
+    );
+  }
+
+  if (before.state === "running" || before.state === "degraded") {
+    if (tracked) {
+      throw new ServiceError(409, "サービスは既に起動しています");
+    }
+    const runtime = externalRuntime(service, before);
+    runtimes.set(service.id, runtime);
+    startHealthTimer(runtime, service, host);
+    const now = new Date();
+    await db
+      .update(services)
+      .set({
+        status: before.state === "degraded" ? "degraded" : "running",
+        pid: before.pid,
+        pidScope: null,
+        lastStartedAt: service.lastStartedAt ?? now,
+        lastExitedAt: null,
+        lastExitCode: null,
+        lastError:
+          before.state === "degraded" ? "サービスは Paused 状態です" : null,
+        updatedAt: now,
+      })
+      .where(eq(services.id, service.id));
+    return (await getService(service.id)) ?? service;
+  }
+
+  const startedAt = new Date();
+  await db
+    .update(services)
+    .set({
+      status: "starting",
+      pid: null,
+      pidScope: null,
+      lastStartedAt: startedAt,
+      lastError: null,
+      updatedAt: startedAt,
+    })
+    .where(eq(services.id, service.id));
+
+  try {
+    const inspection = await controller.start(service);
+    const runtime = externalRuntime(service, inspection);
+    runtimes.set(service.id, runtime);
+    startHealthTimer(runtime, service, host);
+    const now = new Date();
+    await db
+      .update(services)
+      .set({
+        status: inspection.state === "degraded" ? "degraded" : "running",
+        pid: inspection.pid,
+        pidScope: null,
+        lastStartedAt: startedAt,
+        lastExitedAt: null,
+        lastExitCode: null,
+        lastError:
+          inspection.state === "degraded" ? "サービスは Paused 状態です" : null,
+        updatedAt: now,
+      })
+      .where(eq(services.id, service.id));
+
+    void ingestLog({
+      hostId: service.hostId,
+      serviceId: service.id,
+      stream: "stdout",
+      level: "info",
+      message: `Windows service started (name=${service.serviceName ?? "?"}, pid=${inspection.pid ?? "unknown"})`,
+    }).catch(() => undefined);
+
+    return (await getService(service.id)) ?? service;
+  } catch (error) {
+    const message = errorMessage(error);
+    await db
+      .update(services)
+      .set({
+        status: "failed",
+        pid: null,
+        pidScope: null,
+        lastError: message.slice(0, 2000),
+        updatedAt: new Date(),
+      })
+      .where(eq(services.id, service.id));
+    void ingestLog({
+      hostId: service.hostId,
+      serviceId: service.id,
+      stream: "stderr",
+      level: "error",
+      message: `Windows service start failed: ${message}`,
+    }).catch(() => undefined);
+    throw serviceControlError(error);
+  }
+}
+
+export async function startService(
+  id: string,
+  options: ServiceControlOptions = {},
+): Promise<ServiceRow> {
   const service = await getService(id);
   if (!service || !service.isActive) {
     throw new ServiceError(404, "サービスが見つかりません");
-  }
-  if (
-    runtimes.has(id) ||
-    ["starting", "running", "degraded", "restarting"].includes(service.status)
-  ) {
-    throw new ServiceError(409, "サービスは既に起動しています");
   }
 
   const host = await getHost(service.hostId);
   if (!host) throw new ServiceError(422, "ホストが見つかりません");
   if (!host.enabled) {
     throw new ServiceError(409, "ホストが無効化されています");
+  }
+  if (isExternalService(service)) {
+    return startExternalService(service, host, options);
+  }
+
+  await assertNoDeployLock(service, options);
+  if (
+    runtimes.has(id) ||
+    ["starting", "running", "degraded", "restarting"].includes(service.status)
+  ) {
+    throw new ServiceError(409, "サービスは既に起動しています");
   }
   if (host.kind === "wsl" && !host.distro) {
     throw new ServiceError(422, "WSL ホストに distro が設定されていません");
@@ -356,6 +605,8 @@ export async function startService(id: string): Promise<ServiceRow> {
     scope: "windows",
     stopping: false,
     startedAt,
+    controlMode: "spawn",
+    serviceState: null,
   };
   runtimes.set(id, runtime);
 
@@ -528,7 +779,87 @@ async function waitForDeath(
   return isProcessAlive({ scope, pidScope, pid });
 }
 
-export async function stopService(id: string): Promise<ServiceRow> {
+async function stopExternalService(
+  service: ServiceRow,
+  host: HostRow,
+  options: ServiceControlOptions,
+): Promise<ServiceRow> {
+  await assertNoDeployLock(service, options);
+  assertNotSelfService(service);
+  if (host.kind !== "windows") {
+    throw new ServiceError(
+      422,
+      "windows-service は Windows ホストでのみ使用できます",
+    );
+  }
+  if (!runtimes.has(service.id) && service.status === "stopped") {
+    throw new ServiceError(409, "サービスは停止しています");
+  }
+
+  const controller = getServiceController(service);
+  if (!controller) throw new ServiceError(422, "外部サービスではありません");
+
+  const now = new Date();
+  await db
+    .update(services)
+    .set({ status: "stopping", updatedAt: now })
+    .where(eq(services.id, service.id));
+
+  try {
+    const inspection = await controller.stop(service);
+    const runtime = runtimes.get(service.id);
+    if (runtime) {
+      runtimes.delete(service.id);
+      closeRuntime(runtime);
+    }
+    healthFailures.delete(service.id);
+    await db
+      .update(services)
+      .set({
+        status: "stopped",
+        pid: null,
+        pidScope: null,
+        lastExitedAt: new Date(),
+        lastExitCode: inspection.exitCode,
+        lastError: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(services.id, service.id));
+
+    void ingestLog({
+      hostId: service.hostId,
+      serviceId: service.id,
+      stream: "stdout",
+      level: "info",
+      message: `Windows service stopped (name=${service.serviceName ?? "?"})`,
+    }).catch(() => undefined);
+
+    return (await getService(service.id)) ?? service;
+  } catch (error) {
+    const message = errorMessage(error);
+    await db
+      .update(services)
+      .set({
+        status: "failed",
+        lastError: message.slice(0, 2000),
+        updatedAt: new Date(),
+      })
+      .where(eq(services.id, service.id));
+    void ingestLog({
+      hostId: service.hostId,
+      serviceId: service.id,
+      stream: "stderr",
+      level: "error",
+      message: `Windows service stop failed: ${message}`,
+    }).catch(() => undefined);
+    throw serviceControlError(error);
+  }
+}
+
+export async function stopService(
+  id: string,
+  options: ServiceControlOptions = {},
+): Promise<ServiceRow> {
   const service = await getService(id);
   if (!service || !service.isActive) {
     throw new ServiceError(404, "サービスが見つかりません");
@@ -537,7 +868,11 @@ export async function stopService(id: string): Promise<ServiceRow> {
   const runtime = runtimes.get(id);
   const host = await getHost(service.hostId);
   if (!host) throw new ServiceError(422, "ホストが見つかりません");
+  if (isExternalService(service)) {
+    return stopExternalService(service, host, options);
+  }
 
+  await assertNoDeployLock(service, options);
   const pid = runtime?.pid ?? service.pid ?? null;
   const pidScope = runtime?.pidScope ?? service.pidScope ?? null;
   const scope = runtime?.scope ?? (service.pidScope ? "wsl" : "windows");
@@ -623,12 +958,82 @@ export async function stopService(id: string): Promise<ServiceRow> {
   return updated ?? service;
 }
 
-export async function restartService(id: string): Promise<ServiceRow> {
+async function restartExternalService(
+  service: ServiceRow,
+  host: HostRow,
+  options: ServiceControlOptions,
+): Promise<ServiceRow> {
+  await assertNoDeployLock(service, options);
+  assertNotSelfService(service);
+  if (host.kind !== "windows") {
+    throw new ServiceError(
+      422,
+      "windows-service は Windows ホストでのみ使用できます",
+    );
+  }
+
+  const controller = getServiceController(service);
+  if (!controller) throw new ServiceError(422, "外部サービスではありません");
+
+  await db
+    .update(services)
+    .set({ status: "restarting", lastError: null, updatedAt: new Date() })
+    .where(eq(services.id, service.id));
+
+  try {
+    const inspection = await controller.restart(service);
+    const existing = runtimes.get(service.id);
+    if (existing) {
+      closeRuntime(existing);
+      runtimes.delete(service.id);
+    }
+    const runtime = externalRuntime(service, inspection);
+    runtimes.set(service.id, runtime);
+    startHealthTimer(runtime, service, host);
+    await db
+      .update(services)
+      .set({
+        status: inspection.state === "degraded" ? "degraded" : "running",
+        pid: inspection.pid,
+        pidScope: null,
+        lastStartedAt: new Date(),
+        lastExitedAt: null,
+        lastExitCode: null,
+        lastError:
+          inspection.state === "degraded" ? "サービスは Paused 状態です" : null,
+        updatedAt: new Date(),
+      })
+      .where(eq(services.id, service.id));
+    return (await getService(service.id)) ?? service;
+  } catch (error) {
+    await db
+      .update(services)
+      .set({
+        status: "failed",
+        lastError: errorMessage(error).slice(0, 2000),
+        updatedAt: new Date(),
+      })
+      .where(eq(services.id, service.id));
+    throw serviceControlError(error);
+  }
+}
+
+export async function restartService(
+  id: string,
+  options: ServiceControlOptions = {},
+): Promise<ServiceRow> {
   const service = await getService(id);
   if (!service || !service.isActive) {
     throw new ServiceError(404, "サービスが見つかりません");
   }
 
+  const host = await getHost(service.hostId);
+  if (!host) throw new ServiceError(422, "ホストが見つかりません");
+  if (isExternalService(service)) {
+    return restartExternalService(service, host, options);
+  }
+
+  await assertNoDeployLock(service, options);
   const runtime = runtimes.get(id);
   const running =
     Boolean(runtime) ||
@@ -641,9 +1046,9 @@ export async function restartService(id: string): Promise<ServiceRow> {
         .update(services)
         .set({ status: "restarting", updatedAt: new Date() })
         .where(eq(services.id, id));
-      await stopService(id);
+      await stopService(id, options);
     }
-    return await startService(id);
+    return await startService(id, options);
   } catch (error) {
     await db
       .update(services)
@@ -716,6 +1121,25 @@ async function runHealthCheck(
     return runTcpCheck(check.port, timeoutMs);
   }
   if (check.type === "process") {
+    if (isExternalService(service)) {
+      const inspection = await inspectExternal(service);
+      if (inspection.missing) {
+        return { healthy: false, detail: "Windows サービスが見つかりません" };
+      }
+      if (inspection.state === "unknown") {
+        return {
+          healthy: null,
+          detail: inspection.detail ?? "Windows サービスの状態を確認できません",
+        };
+      }
+      return {
+        healthy:
+          inspection.state === "running" || inspection.state === "degraded",
+        detail: `SCM state=${inspection.state}${
+          inspection.pid ? `, pid=${inspection.pid}` : ""
+        }`,
+      };
+    }
     const pid = runsPidFor(service);
     if (!pid) return { healthy: false, detail: "PID がありません" };
     const liveness = await isProcessAlive({
@@ -776,6 +1200,61 @@ function runsPidFor(service: ServiceRow): number | null {
   return runtimes.get(service.id)?.pid ?? service.pid ?? null;
 }
 
+async function handleUnexpectedExternalExit(
+  service: ServiceRow,
+  runtime: Runtime | undefined,
+  inspection: ServiceInspection,
+): Promise<void> {
+  if (
+    ["stopped", "stopping", "failed", "restarting"].includes(service.status)
+  ) {
+    return;
+  }
+
+  if (runtime?.stopping) return;
+  if (await hasRunningDeploy(service.id)) return;
+
+  const now = new Date();
+  const detail = inspection.missing
+    ? "Windows service missing"
+    : `SCM state=${inspection.state}`;
+
+  await db
+    .update(services)
+    .set({
+      status: "failed",
+      pid: null,
+      pidScope: null,
+      lastExitedAt: now,
+      lastError: `Windows service unexpectedly stopped: ${detail}`,
+      updatedAt: now,
+    })
+    .where(eq(services.id, service.id));
+
+  healthFailures.delete(service.id);
+
+  const activeRuntime = runtime ?? runtimes.get(service.id);
+  if (activeRuntime) {
+    runtimes.delete(service.id);
+    closeRuntime(activeRuntime);
+  }
+
+  await ingestLog({
+    hostId: service.hostId,
+    serviceId: service.id,
+    stream: "stderr",
+    level: "error",
+    message: `Windows service unexpectedly stopped: ${detail}`,
+  }).catch(() => undefined);
+
+  serviceEvents.emit("exited", {
+    serviceId: service.id,
+    code: null,
+    signal: null,
+    exitedAt: now.toISOString(),
+  });
+}
+
 export async function checkServiceHealth(id: string): Promise<HealthResult> {
   const service = await getService(id);
   if (!service || !service.isActive) {
@@ -785,13 +1264,45 @@ export async function checkServiceHealth(id: string): Promise<HealthResult> {
   const checkedAt = new Date().toISOString();
   const runtime = runtimes.get(id);
   const pid = runsPidFor(service);
-  const running =
-    Boolean(runtime) ||
-    Boolean(pid) ||
-    ["starting", "running", "degraded"].includes(service.status);
 
-  if (!running || service.status === "stopped" || service.status === "failed") {
-    return { serviceId: id, status: "stopped", checkedAt, detail: "停止中" };
+  if (isExternalService(service)) {
+    const inspection = await inspectExternal(service);
+    if (inspection.state === "unknown") {
+      return {
+        serviceId: id,
+        status: "unknown",
+        checkedAt,
+        detail: inspection.detail ?? "Windows サービスの状態を確認できません",
+      };
+    }
+    const running =
+      inspection.state === "running" ||
+      inspection.state === "starting" ||
+      inspection.state === "degraded";
+    if (!running) {
+      await handleUnexpectedExternalExit(service, runtime, inspection);
+      return {
+        serviceId: id,
+        status: "stopped",
+        checkedAt,
+        detail: inspection.missing
+          ? "Windows サービスが見つかりません"
+          : `SCM state=${inspection.state}`,
+      };
+    }
+  } else {
+    const running =
+      Boolean(runtime) ||
+      Boolean(pid) ||
+      ["starting", "running", "degraded"].includes(service.status);
+
+    if (
+      !running ||
+      service.status === "stopped" ||
+      service.status === "failed"
+    ) {
+      return { serviceId: id, status: "stopped", checkedAt, detail: "停止中" };
+    }
   }
 
   const check = healthCheckOf(service);
@@ -881,7 +1392,7 @@ export async function checkServiceHealth(id: string): Promise<HealthResult> {
   return health;
 }
 
-export function runtimeInfo(id: string): RuntimeInfo {
+export function runtimeInfo(id: string, service?: ServiceRow): RuntimeInfo {
   const runtime = runtimes.get(id);
   if (!runtime) {
     return {
@@ -890,6 +1401,9 @@ export function runtimeInfo(id: string): RuntimeInfo {
       pid: null,
       pidScope: null,
       health: null,
+      controlMode: service?.controlMode ?? "spawn",
+      serviceName: service?.serviceName ?? null,
+      serviceState: null,
     };
   }
   return {
@@ -898,6 +1412,9 @@ export function runtimeInfo(id: string): RuntimeInfo {
     pid: runtime.pid,
     pidScope: runtime.pidScope,
     health: runtime.health ?? null,
+    controlMode: runtime.controlMode,
+    serviceName: service?.serviceName ?? null,
+    serviceState: runtime.serviceState,
   };
 }
 
@@ -912,15 +1429,12 @@ export async function reconcileServices(): Promise<void> {
   const hostMap = new Map(hostRows.map((row) => [row.id, row]));
 
   for (const service of rows) {
-    if (service.status === "stopped" && !service.pid) continue;
-    if (service.status === "failed" && !service.pid) continue;
-
     const host = hostMap.get(service.hostId);
     if (!host) {
       await db
         .update(services)
         .set({
-          status: "stopped",
+          status: isExternalService(service) ? "failed" : "stopped",
           pid: null,
           pidScope: null,
           lastError: "ホストが見つかりません",
@@ -929,6 +1443,109 @@ export async function reconcileServices(): Promise<void> {
         .where(eq(services.id, service.id));
       continue;
     }
+
+    if (isExternalService(service)) {
+      const locked = await hasRunningDeploy(service.id);
+      const inspection = await inspectExternal(service);
+
+      if (inspection.missing) {
+        const existing = runtimes.get(service.id);
+        if (existing) {
+          runtimes.delete(service.id);
+          closeRuntime(existing);
+        }
+        healthFailures.delete(service.id);
+        if (!locked) {
+          await db
+            .update(services)
+            .set({
+              status: "failed",
+              pid: null,
+              pidScope: null,
+              lastError: "Windows サービスが見つかりません",
+              updatedAt: new Date(),
+            })
+            .where(eq(services.id, service.id));
+        }
+        continue;
+      }
+
+      if (inspection.state === "unknown") {
+        if (!locked) {
+          await db
+            .update(services)
+            .set({
+              lastError:
+                inspection.detail ??
+                "API 再起動時に Windows サービスの状態を確認できませんでした",
+              updatedAt: new Date(),
+            })
+            .where(eq(services.id, service.id));
+        }
+        continue;
+      }
+
+      if (
+        inspection.state === "running" ||
+        inspection.state === "starting" ||
+        inspection.state === "degraded" ||
+        inspection.state === "stopping"
+      ) {
+        const existing = runtimes.get(service.id);
+        if (existing) {
+          setRuntimeInspection(existing, inspection);
+        } else {
+          const runtime = externalRuntime(service, inspection);
+          runtimes.set(service.id, runtime);
+          startHealthTimer(runtime, service, host);
+        }
+        if (!locked) {
+          await db
+            .update(services)
+            .set({
+              status:
+                inspection.state === "running"
+                  ? service.status === "degraded"
+                    ? "degraded"
+                    : "running"
+                  : inspection.state,
+              pid: inspection.pid,
+              pidScope: null,
+              lastError:
+                inspection.state === "degraded"
+                  ? "サービスは Paused 状態です"
+                  : service.lastError,
+              updatedAt: new Date(),
+            })
+            .where(eq(services.id, service.id));
+        }
+        continue;
+      }
+
+      const existing = runtimes.get(service.id);
+      if (existing) {
+        runtimes.delete(service.id);
+        closeRuntime(existing);
+      }
+      healthFailures.delete(service.id);
+      if (!locked) {
+        await db
+          .update(services)
+          .set({
+            status: "stopped",
+            pid: null,
+            pidScope: null,
+            lastExitedAt: new Date(),
+            lastError: null,
+            updatedAt: new Date(),
+          })
+          .where(eq(services.id, service.id));
+      }
+      continue;
+    }
+
+    if (service.status === "stopped" && !service.pid) continue;
+    if (service.status === "failed" && !service.pid) continue;
 
     let liveness: ProcessLiveness = "dead";
     if (service.pid) {
@@ -948,6 +1565,8 @@ export async function reconcileServices(): Promise<void> {
         scope: service.pidScope ? "wsl" : "windows",
         stopping: false,
         startedAt: service.lastStartedAt ?? new Date(),
+        controlMode: "spawn",
+        serviceState: null,
       };
       runtimes.set(service.id, runtime);
       startHealthTimer(runtime, service, host);
@@ -986,8 +1605,21 @@ export async function reconcileServices(): Promise<void> {
     }
   }
 
+  for (const service of rows) {
+    if (
+      service.controlMode === "windows-service" &&
+      service.autoStart &&
+      config.SERVICE_AUTOSTART_ON_BOOT
+    ) {
+      console.warn(
+        `[services] autoStart is ignored for windows-service: ${service.name} (SCM owns startup)`,
+      );
+    }
+  }
+
   if (config.SERVICE_AUTOSTART_ON_BOOT) {
     for (const service of rows) {
+      if (service.controlMode === "windows-service") continue;
       if (!service.autoStart) continue;
       try {
         await startService(service.id);
@@ -998,6 +1630,15 @@ export async function reconcileServices(): Promise<void> {
       }
     }
   }
+}
+
+export function clearServiceRuntime(id: string): void {
+  const runtime = runtimes.get(id);
+  if (runtime) {
+    runtimes.delete(id);
+    closeRuntime(runtime);
+  }
+  healthFailures.delete(id);
 }
 
 export function closeServiceWatchers(): void {

@@ -104,6 +104,29 @@ const envSchema = z.object({
     .string()
     .default("false")
     .transform((value) => value === "true"),
+  SERVICE_CONTROL_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .min(1000)
+    .max(600_000)
+    .default(30_000),
+  SERVICE_CONTROL_POLL_MS: z.coerce
+    .number()
+    .int()
+    .min(100)
+    .max(10_000)
+    .default(500),
+  DEPLOY_STALE_MS: z.coerce
+    .number()
+    .int()
+    .min(60_000)
+    .max(86_400_000)
+    .default(900_000),
+  SELF_SERVICE_NAME: z
+    .string()
+    .trim()
+    .optional()
+    .transform((value) => value || undefined),
 
   MONITOR_ENABLED: z
     .string()

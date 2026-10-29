@@ -1,4 +1,5 @@
 import type { DeployConfigInput, DeployRequestSnapshot } from "@sys4sys/shared";
+import { sql } from "drizzle-orm";
 import {
   index,
   integer,
@@ -59,6 +60,12 @@ export const services = sqliteTable(
     id: text("id").primaryKey(),
     hostId: text("host_id").notNull(),
     name: text("name").notNull(),
+    controlMode: text("control_mode", {
+      enum: ["spawn", "windows-service"],
+    })
+      .notNull()
+      .default("spawn"),
+    serviceName: text("service_name"),
     command: text("command", { mode: "json" }).$type<string[]>().notNull(),
     cwd: text("cwd"),
     env: text("env", { mode: "json" }).$type<Record<string, string>>(),
@@ -81,6 +88,7 @@ export const services = sqliteTable(
         "stopped",
         "starting",
         "running",
+        "stopping",
         "degraded",
         "restarting",
         "failed",
@@ -105,6 +113,9 @@ export const services = sqliteTable(
   },
   (table) => [
     uniqueIndex("services_host_name_uq").on(table.hostId, table.name),
+    uniqueIndex("services_host_service_name_uq")
+      .on(table.hostId, sql`lower(${table.serviceName})`)
+      .where(sql`${table.serviceName} is not null`),
   ],
 );
 
@@ -371,6 +382,11 @@ export const actions = sqliteTable(
   },
   (table) => [
     index("actions_service_started_idx").on(table.serviceId, table.startedAt),
+    uniqueIndex("actions_one_running_deploy")
+      .on(table.serviceId)
+      .where(
+        sql`${table.type} = 'deploy' and ${table.status} in ('pending', 'running')`,
+      ),
   ],
 );
 

@@ -197,13 +197,16 @@ docs/
 - [データモデル](./docs/ER.md)
 - [OpenAPI](./docs/openapi.yaml)
 - [CLI スキーマ](./docs/cli-schema.json)
+- [外部サービス運用](./docs/EXTERNAL_SERVICES.md)
 - [CLI セキュリティ](./apps/cli/docs/SECURITY.md)
 - [認証 ADR](./docs/adr/0001-auth.md)
 - [API トークン ADR](./docs/adr/0002-tokens.md)
 - [CLI 資格情報 ADR](./docs/adr/0003-credentials.md)
 - [シークレット ADR](./docs/adr/0004-secrets.md)
 - [デプロイ承認 ADR](./docs/adr/0005-deploy-approval.md)
+- [外部サービス制御 ADR](./docs/adr/0006-external-service-control.md)
 - [デモ API](./apps/demo-api/README.md)
+- [NSSM デモ API](./apps/demo-nssm-api/README.md)
 - [セキュリティポリシー](./SECURITY.md)
 
 ## コントリビュート

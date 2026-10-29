@@ -260,6 +260,10 @@ function printService(service: Service, options: CommandOptions): void {
   out(options, `ID:      ${service.id}\n`);
   out(options, `Name:    ${service.name}\n`);
   out(options, `Host:    ${service.host?.name ?? service.hostId}\n`);
+  out(options, `Control: ${service.controlMode ?? "spawn"}\n`);
+  if (service.controlMode === "windows-service") {
+    out(options, `Service: ${service.serviceName ?? "-"}\n`);
+  }
   out(options, `Status:  ${service.status}\n`);
   out(options, `Health:  ${service.health?.status ?? "unknown"}\n`);
   out(options, `PID:     ${service.pid ?? "-"}\n`);
@@ -283,6 +287,7 @@ function printService(service: Service, options: CommandOptions): void {
     out(options, `  command: ${service.deploy.command.join(" ")}\n`);
     out(options, `  cwd:     ${service.deploy.cwd ?? "-"}\n`);
     out(options, `  timeout: ${service.deploy.timeoutSec}s\n`);
+    out(options, `  owner:   ${service.deploy.serviceControlOwner ?? "-"}\n`);
     out(options, `  restart: ${service.deploy.restartAfter ? "yes" : "no"}\n`);
     out(options, `  health:  ${service.deploy.healthTimeoutSec}s\n`);
     if (options.showEnv) {
@@ -323,6 +328,9 @@ function printDeployPlan(
   out(options, `Command: ${deploy.command.join(" ")}\n`);
   out(options, `CWD:     ${deploy.cwd ?? "-"}\n`);
   out(options, `Timeout: ${deploy.timeoutSec}s\n`);
+  if (deploy.serviceControlOwner) {
+    out(options, `Owner:   ${deploy.serviceControlOwner}\n`);
+  }
   out(options, `Restart: ${deploy.restartAfter ? "yes" : "no"}\n`);
   out(options, `Health:  ${deploy.healthTimeoutSec}s\n`);
   if (options.showEnv) {

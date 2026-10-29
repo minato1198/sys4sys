@@ -285,6 +285,7 @@ export const serviceStatusSchema = z.enum([
   "stopped",
   "starting",
   "running",
+  "stopping",
   "degraded",
   "restarting",
   "failed",

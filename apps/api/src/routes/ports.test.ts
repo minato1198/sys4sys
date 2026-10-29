@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -26,6 +27,10 @@ type App = Awaited<ReturnType<typeof import("../app.js").buildApp>>;
 let app: App;
 let tempDir: string;
 let adminCookie: string;
+let adminUserId: string;
+let hostId: string;
+let db: any;
+let actions: any;
 
 function cookieHeader(setCookie: string | string[] | undefined): string {
   const first = Array.isArray(setCookie) ? setCookie[0] : setCookie;
@@ -86,6 +91,22 @@ beforeAll(async () => {
   });
   expect(response.statusCode).toBe(200);
   adminCookie = cookieHeader(response.headers["set-cookie"]);
+  adminUserId = (response.json() as Record<string, any>).id as string;
+
+  const hosts = await app.inject({
+    method: "GET",
+    url: "/api/hosts",
+    headers: { cookie: adminCookie },
+  });
+  expect(hosts.statusCode).toBe(200);
+  hostId = (hosts.json() as Array<Record<string, any>>).find(
+    (host) => host.kind === "windows",
+  )!.id as string;
+
+  const dbMod = await import("../db/index.js");
+  const schema = await import("../db/schema.js");
+  db = dbMod.db;
+  actions = schema.actions;
 });
 
 afterAll(async () => {
@@ -95,6 +116,101 @@ afterAll(async () => {
 
 beforeEach(() => {
   scanAndPersistMock.mockReset();
+});
+
+let serviceSequence = 0;
+
+async function createExternalPortService(port: number, controlOwner?: string) {
+  serviceSequence += 1;
+  const response = await app.inject({
+    method: "POST",
+    url: "/api/services",
+    headers: { cookie: adminCookie },
+    payload: {
+      hostId,
+      name: `ports-external-${serviceSequence}`,
+      controlMode: "windows-service",
+      serviceName: `PortsExternalService${serviceSequence}`,
+      command: ["unused"],
+      expectedPorts: [port],
+      deploy: controlOwner
+        ? {
+            command: ["node", "-e", "process.exit(0)"],
+            cwd: tempDir,
+            serviceControlOwner: controlOwner,
+          }
+        : undefined,
+    },
+  });
+  expect(response.statusCode).toBe(201);
+  return response.json() as Record<string, any>;
+}
+
+async function insertRunningDeploy(serviceId: string): Promise<string> {
+  const id = randomUUID();
+  await db.insert(actions).values({
+    id,
+    incidentId: null,
+    serviceId,
+    type: "deploy",
+    status: "running",
+    requestedBy: adminUserId,
+    approvedBy: null,
+    policyId: null,
+    startedAt: new Date(),
+    finishedAt: null,
+    error: null,
+  });
+  return id;
+}
+
+describe("ports external service protection", () => {
+  it("rejects kill-token for ports owned by an external service", async () => {
+    const port = 34561 + (serviceSequence % 100);
+    const service = await createExternalPortService(port);
+    scanAndPersistMock.mockResolvedValue(
+      persisted(scan({ rows: [windowsRow(port)] })),
+    );
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/ports/${port}/kill-token?scope=windows&pid=123`,
+      headers: { cookie: adminCookie },
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({
+      title: "Conflict",
+      detail: expect.stringContaining("services stop"),
+      serviceId: service.id,
+      serviceName: service.serviceName,
+      serviceControlOwner: null,
+    });
+  });
+
+  it("reports deploy ownership when the external service is deploying", async () => {
+    const port = 34661 + (serviceSequence % 100);
+    const service = await createExternalPortService(port, "sys4sys");
+    await insertRunningDeploy(service.id);
+    scanAndPersistMock.mockResolvedValue(
+      persisted(scan({ rows: [windowsRow(port)] })),
+    );
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/ports/${port}/kill-token?scope=windows&pid=123`,
+      headers: { cookie: adminCookie },
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({
+      title: "Conflict",
+      detail: expect.stringContaining("デプロイ中"),
+      serviceId: service.id,
+      serviceName: service.serviceName,
+      serviceControlOwner: "sys4sys",
+    });
+  });
 });
 
 describe("ports API partial scans", () => {

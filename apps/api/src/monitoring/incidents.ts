@@ -14,6 +14,7 @@ import {
   incidents,
   services,
 } from "../db/schema.js";
+import { hasRunningDeploy } from "../services/deploy-lock.js";
 import { checkServiceHealth, restartService } from "../services/manager.js";
 import { notifyApprovalRequest, notifyIncident } from "./notify.js";
 import {
@@ -756,6 +757,18 @@ async function executeRestart(actionId: string): Promise<void> {
     return;
   }
 
+  if (await hasRunningDeploy(service.id)) {
+    await db
+      .update(actions)
+      .set({
+        status: "failed",
+        finishedAt: new Date(),
+        error: "デプロイ中のため自動再起動をスキップしました",
+      })
+      .where(eq(actions.id, actionId));
+    return;
+  }
+
   await db
     .update(actions)
     .set({ status: "running", startedAt: new Date() })
@@ -842,6 +855,7 @@ export async function evaluateIncidentAutomation(
   context: AutomationContext = {},
 ): Promise<RestartDecision | null> {
   if (incident.status === "resolved") return null;
+  if (await hasRunningDeploy(service.id)) return null;
   const now = nowMs();
   const windowStart = new Date(now - config.AUTO_RESTART_WINDOW_SEC * 1000);
 

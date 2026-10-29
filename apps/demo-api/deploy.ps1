@@ -11,6 +11,7 @@ param(
   [switch]$SkipInstall,
   [switch]$RunTests,
   [switch]$NoRestart,
+  [switch]$NoServiceControl,
   [switch]$AllowDirty,
   [int]$HealthTimeoutSec = 120
 )
@@ -116,6 +117,17 @@ try {
   Write-Host "service: $ServiceName"
   Write-Host "branch:  $Branch"
 
+  $serviceControlRaw = if ($env:SYS4SYS_SERVICE_CONTROL) {
+    $env:SYS4SYS_SERVICE_CONTROL
+  } else {
+    "script"
+  }
+  $serviceControl = $serviceControlRaw.Trim().ToLowerInvariant()
+  if ($serviceControl -notin @("sys4sys", "script")) {
+    throw "SYS4SYS_SERVICE_CONTROL は sys4sys または script のいずれかを指定してください: $serviceControlRaw"
+  }
+  Write-Host "control: $serviceControl"
+
   $previousCommitRaw = (& git rev-parse --short HEAD 2>$null)
   if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($previousCommitRaw)) {
     throw "git の HEAD を取得できません: $RepoRoot"
@@ -193,7 +205,10 @@ try {
   }
   Write-Ok "build 成功 ($serverEntry)"
 
-  if ($NoRestart) {
+  if ($serviceControl -eq "sys4sys") {
+    Write-Step "service control (owned by sys4sys)"
+    Write-Ok "sys4sys が SCM の停止・起動・health 確認を管理するため、このスクリプトはサービスを操作しません。"
+  } elseif ($NoServiceControl -or $NoRestart) {
     Write-Step "sys4sys restart (skipped)"
     Write-Ok "ビルド完了。サービスは再起動していません。"
   } else {

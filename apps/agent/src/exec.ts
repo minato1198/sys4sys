@@ -46,6 +46,7 @@ export function runFile(
   cmd: string,
   args: string[],
   timeoutMs = 30_000,
+  env?: NodeJS.ProcessEnv,
 ): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     execFile(
@@ -56,6 +57,7 @@ export function runFile(
         maxBuffer: 32 * 1024 * 1024,
         windowsHide: true,
         encoding: "buffer",
+        ...(env ? { env } : {}),
       },
       (error, stdout, stderr) => {
         const out = toBuffer(stdout);

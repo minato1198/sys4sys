@@ -7,6 +7,7 @@ import { stopProcess, stripAnsi } from "@sys4sys/agent";
 import type { DeployConfigInput, LogLevel } from "@sys4sys/shared";
 import type { AuthUser } from "../auth/types.js";
 import { writeAudit } from "../audit.js";
+import { config } from "../config.js";
 import { db } from "../db/index.js";
 import { actions, deployRequests, hosts, services } from "../db/schema.js";
 import { ingestLog } from "../logs/ingest.js";
@@ -15,24 +16,29 @@ import {
   type ProcessLineStreamHandle,
 } from "../logs/process-lines.js";
 import { isCommandAllowed } from "./allowlist.js";
+import {
+  isLocalDeployRunning,
+  releaseLocalDeploy,
+  tryReserveLocalDeploy,
+} from "./deploy-lock.js";
 import { decryptServiceEnv, SERVICE_ENV_DECRYPTION_ERROR } from "./secrets.js";
 import {
   checkServiceHealth,
   restartService,
   ServiceError,
+  startService,
+  stopService,
   wslCommandArgs,
   type HostRow,
   type ServiceRow,
 } from "./manager.js";
+import {
+  getServiceController,
+  type ServiceInspection,
+} from "./service-control.js";
 
 type ActionRow = typeof actions.$inferSelect;
 type DeployResultStatus = "succeeded" | "failed";
-
-/**
- * 同一 API プロセス内での多重デプロイ防止。
- * DB の running action チェックと併用し、リクエストの競合も防ぐ。
- */
-const activeDeploys = new Set<string>();
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -40,6 +46,22 @@ function sleep(ms: number): Promise<void> {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function isUniqueConstraint(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const code = (error as { code?: unknown }).code;
+  return typeof code === "string" && code.includes("SQLITE_CONSTRAINT");
+}
+
+function isSelfService(service: ServiceRow): boolean {
+  if (service.controlMode !== "windows-service" || !config.SELF_SERVICE_NAME) {
+    return false;
+  }
+  return (
+    service.serviceName?.trim().toLowerCase() ===
+    config.SELF_SERVICE_NAME.toLowerCase()
+  );
 }
 
 async function getHost(id: string): Promise<HostRow | undefined> {
@@ -166,7 +188,28 @@ async function waitForHealthy(
     const health = await checkServiceHealth(serviceId);
     last = health;
 
-    if (
+    if (row.controlMode === "windows-service") {
+      const controller = getServiceController(row);
+      if (controller) {
+        const inspection = await controller.inspect(row);
+        if (inspection.missing) {
+          throw new Error("Windows サービスが見つかりません");
+        }
+        if (
+          inspection.state === "unknown" &&
+          inspection.detail &&
+          Date.now() >= deadline
+        ) {
+          throw new Error(inspection.detail);
+        }
+        const scmRunning =
+          inspection.state === "running" || inspection.state === "degraded";
+        const hasHealthCheck = Boolean(row.healthCheck);
+        if (scmRunning && (!hasHealthCheck || health.status === "healthy")) {
+          return health;
+        }
+      }
+    } else if (
       row.status === "running" &&
       (health.status === "healthy" || health.status === "unknown")
     ) {
@@ -189,7 +232,7 @@ async function waitForHealthy(
 }
 
 export function isDeployRunning(serviceId: string): boolean {
-  return activeDeploys.has(serviceId);
+  return isLocalDeployRunning(serviceId);
 }
 
 /**
@@ -201,10 +244,9 @@ export async function beginDeploy(
   user: AuthUser,
 ): Promise<ActionRow> {
   // DB チェックの await 中に別リクエストが入らないよう、先に in-memory で確保する。
-  if (activeDeploys.has(service.id)) {
+  if (!tryReserveLocalDeploy(service.id)) {
     throw new ServiceError(409, "デプロイは既に実行中です");
   }
-  activeDeploys.add(service.id);
 
   try {
     const [running] = await db
@@ -255,7 +297,10 @@ export async function beginDeploy(
     if (!action) throw new Error("デプロイ action の作成に失敗しました");
     return action;
   } catch (error) {
-    activeDeploys.delete(service.id);
+    releaseLocalDeploy(service.id);
+    if (isUniqueConstraint(error)) {
+      throw new ServiceError(409, "デプロイは既に実行中です");
+    }
     throw error;
   }
 }
@@ -272,7 +317,18 @@ export async function runDeploy(
   ip: string | null,
   deployRequestId: string | null = null,
 ): Promise<void> {
+  const external = service.controlMode === "windows-service";
+  const controlOwner = external ? (deploy.serviceControlOwner ?? null) : null;
+  let mustStartAfterDeploy = false;
+
   try {
+    if (isSelfService(service)) {
+      throw new ServiceError(
+        409,
+        "sys4sys 自身はこの API からデプロイできません。外部のオーケストレータから実行してください",
+      );
+    }
+
     const allowed = isCommandAllowed(deploy.command);
     if (!allowed.ok) {
       throw new ServiceError(
@@ -309,15 +365,90 @@ export async function runDeploy(
       }
     }
 
+    if (external) {
+      if (host.kind !== "windows") {
+        throw new ServiceError(
+          422,
+          "windows-service は Windows ホストでのみ deploy できます",
+        );
+      }
+      if (!service.serviceName) {
+        throw new ServiceError(422, "serviceName が設定されていません");
+      }
+      if (!controlOwner) {
+        throw new ServiceError(
+          422,
+          "windows-service の deploy には serviceControlOwner が必要です",
+        );
+      }
+    }
+
+    const restartAfter = external
+      ? controlOwner === "sys4sys"
+      : deploy.restartAfter;
+
     let env: Record<string, string>;
     try {
       env = {
         ...(decryptServiceEnv(service.env) ?? {}),
         ...(decryptServiceEnv(deploy.env) ?? {}),
+        SYS4SYS_DEPLOY_ACTION_ID: actionId,
+        ...(external
+          ? {
+              SYS4SYS_SERVICE_CONTROL: controlOwner!,
+              SYS4SYS_SERVICE_NAME: service.serviceName!,
+            }
+          : {}),
       };
     } catch {
       throw new ServiceError(500, SERVICE_ENV_DECRYPTION_ERROR);
     }
+
+    if (external && controlOwner === "sys4sys") {
+      const controller = getServiceController(service);
+      if (!controller) {
+        throw new ServiceError(422, "外部サービスではありません");
+      }
+      await writeDeployLog(
+        service,
+        "stdout",
+        "stopping service via SCM",
+        actionId,
+        "info",
+      );
+      const before = await controller.inspect(service);
+      if (before.missing) {
+        throw new ServiceError(503, "Windows サービスが見つかりません");
+      }
+      if (before.state === "unknown") {
+        throw new ServiceError(
+          503,
+          before.detail ?? "Windows サービスの状態を確認できませんでした",
+        );
+      }
+      if (before.state !== "stopped") {
+        await stopService(service.id, { allowDuringDeploy: true });
+      }
+      const stopped: ServiceInspection = await controller.inspect(service);
+      if (stopped.missing) {
+        throw new ServiceError(503, "Windows サービスが見つかりません");
+      }
+      if (stopped.state !== "stopped") {
+        throw new ServiceError(
+          503,
+          `サービスの停止を確認できませんでした (state=${stopped.state})`,
+        );
+      }
+      mustStartAfterDeploy = true;
+      await writeDeployLog(
+        service,
+        "stdout",
+        "service is stopped",
+        actionId,
+        "info",
+      );
+    }
+
     await writeDeployLog(
       service,
       "stdout",
@@ -408,7 +539,49 @@ export async function runDeploy(
       "info",
     );
 
-    if (deploy.restartAfter) {
+    if (external) {
+      if (controlOwner === "sys4sys") {
+        await writeDeployLog(
+          service,
+          "stdout",
+          "starting service via SCM",
+          actionId,
+          "info",
+        );
+        await startService(service.id, { allowDuringDeploy: true });
+        mustStartAfterDeploy = false;
+        await writeDeployLog(
+          service,
+          "stdout",
+          "service is running",
+          actionId,
+          "info",
+        );
+      } else {
+        await writeDeployLog(
+          service,
+          "stdout",
+          "service control owned by deploy script",
+          actionId,
+          "info",
+        );
+      }
+      await writeDeployLog(
+        service,
+        "stdout",
+        `waiting for health (timeout ${deploy.healthTimeoutSec}s)`,
+        actionId,
+        "info",
+      );
+      const health = await waitForHealthy(service.id, deploy.healthTimeoutSec);
+      await writeDeployLog(
+        service,
+        "stdout",
+        `service is ${health.status}`,
+        actionId,
+        "info",
+      );
+    } else if (restartAfter) {
       await writeDeployLog(
         service,
         "stdout",
@@ -416,7 +589,7 @@ export async function runDeploy(
         actionId,
         "info",
       );
-      await restartService(service.id);
+      await restartService(service.id, { allowDuringDeploy: true });
       await writeDeployLog(
         service,
         "stdout",
@@ -467,6 +640,9 @@ export async function runDeploy(
           command: deploy.command,
           cwd,
           status: "succeeded",
+          controlMode: service.controlMode,
+          serviceName: service.serviceName,
+          serviceControlOwner: controlOwner,
         },
         ip,
       });
@@ -477,7 +653,39 @@ export async function runDeploy(
       );
     }
   } catch (error) {
-    const message = errorMessage(error).slice(0, 2000);
+    let message = errorMessage(error).slice(0, 2000);
+
+    if (mustStartAfterDeploy && controlOwner === "sys4sys") {
+      try {
+        await writeDeployLog(
+          service,
+          "stdout",
+          "deploy failed; starting service via SCM",
+          actionId,
+          "warn",
+        );
+        await startService(service.id, { allowDuringDeploy: true });
+        mustStartAfterDeploy = false;
+        await writeDeployLog(
+          service,
+          "stdout",
+          "service recovery start completed",
+          actionId,
+          "info",
+        );
+      } catch (startError) {
+        const startMessage = `サービスの復旧起動に失敗しました: ${errorMessage(startError)}`;
+        message = `${message}\n${startMessage}`.slice(0, 2000);
+        await writeDeployLog(
+          service,
+          "stderr",
+          startMessage,
+          actionId,
+          "error",
+        ).catch(() => undefined);
+      }
+    }
+
     try {
       await writeDeployLog(
         service,
@@ -508,7 +716,12 @@ export async function runDeploy(
         actorLabel: user.email,
         action: "service.deploy.failed",
         target: `service:${service.id}`,
-        after: { actionId },
+        after: {
+          actionId,
+          controlMode: service.controlMode,
+          serviceName: service.serviceName,
+          serviceControlOwner: controlOwner,
+        },
         reason: message.slice(0, 500),
         ip,
       });
@@ -518,7 +731,7 @@ export async function runDeploy(
       );
     }
   } finally {
-    activeDeploys.delete(service.id);
+    releaseLocalDeploy(service.id);
   }
 }
 
@@ -537,7 +750,10 @@ export async function reconcileDeployments(): Promise<void> {
       ),
     );
 
+  const cutoff = Date.now() - config.DEPLOY_STALE_MS;
   for (const row of rows) {
+    if (isLocalDeployRunning(row.serviceId)) continue;
+    if (new Date(row.startedAt).getTime() > cutoff) continue;
     const now = new Date();
     const message =
       "API がデプロイ中に再起動したため、デプロイ結果を確認できませんでした";

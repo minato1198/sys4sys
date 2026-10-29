@@ -46,6 +46,7 @@ interface DeployConfig {
   timeoutSec?: number;
   restartAfter?: boolean;
   healthTimeoutSec?: number;
+  serviceControlOwner?: "sys4sys" | "script" | null;
 }
 
 interface HealthResult {
@@ -63,12 +64,17 @@ interface RuntimeInfo {
   pid: number | null;
   pidScope: string | null;
   health: HealthResult | null;
+  controlMode?: "spawn" | "windows-service";
+  serviceName?: string | null;
+  serviceState?: string | null;
 }
 
 interface Service {
   id: string;
   hostId: string;
   name: string;
+  controlMode: "spawn" | "windows-service";
+  serviceName: string | null;
   command: string[];
   cwd: string | null;
   env?: Record<string, string> | null;
@@ -80,7 +86,13 @@ interface Service {
   autoStart: boolean;
   autoRestartPhase: "observe" | "approve" | "auto";
   status:
-    "stopped" | "starting" | "running" | "degraded" | "restarting" | "failed";
+    | "stopped"
+    | "starting"
+    | "running"
+    | "stopping"
+    | "degraded"
+    | "restarting"
+    | "failed";
   isActive: boolean;
   pid: number | null;
   pidScope: string | null;
@@ -195,6 +207,8 @@ function deployEnvValuesFromService(
 const EMPTY_FORM = {
   hostId: "",
   name: "",
+  controlMode: "spawn" as "spawn" | "windows-service",
+  serviceName: "",
   command: '["node.exe","worker.js"]',
   cwd: "",
   env: "{}",
@@ -214,6 +228,7 @@ const EMPTY_FORM = {
   deployTimeout: "600",
   deployHealthTimeout: "120",
   deployRestartAfter: true,
+  deployServiceControlOwner: "sys4sys" as "sys4sys" | "script",
 };
 
 function formatDate(value: string | null | undefined): string {
@@ -227,7 +242,8 @@ function statusTone(status: Service["status"]): string {
   if (status === "running") return "text-success";
   if (status === "degraded") return "text-warning";
   if (status === "failed") return "text-danger";
-  if (status === "starting" || status === "restarting") return "text-info";
+  if (status === "starting" || status === "stopping" || status === "restarting")
+    return "text-info";
   return "text-fg-muted";
 }
 
@@ -235,7 +251,8 @@ function statusDot(status: Service["status"]): string {
   if (status === "running") return "bg-success";
   if (status === "degraded") return "bg-warning";
   if (status === "failed") return "bg-danger";
-  if (status === "starting" || status === "restarting") return "bg-sky-300";
+  if (status === "starting" || status === "stopping" || status === "restarting")
+    return "bg-sky-300";
   return "bg-mist-400";
 }
 
@@ -554,6 +571,8 @@ export default function ServicesPage() {
       setForm({
         hostId: detail.hostId,
         name: detail.name,
+        controlMode: detail.controlMode,
+        serviceName: detail.serviceName ?? "",
         command: JSON.stringify(detail.command, null, 0),
         cwd: detail.cwd ?? "",
         env: envValues ? JSON.stringify(envValues, null, 0) : "{}",
@@ -581,6 +600,8 @@ export default function ServicesPage() {
         deployTimeout: String(detail.deploy?.timeoutSec ?? 600),
         deployHealthTimeout: String(detail.deploy?.healthTimeoutSec ?? 120),
         deployRestartAfter: detail.deploy?.restartAfter ?? true,
+        deployServiceControlOwner:
+          detail.deploy?.serviceControlOwner ?? "sys4sys",
       });
       setMessage(null);
       window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
@@ -607,6 +628,7 @@ export default function ServicesPage() {
       deployTimeout: current.deployTimeout || "600",
       deployHealthTimeout: current.deployHealthTimeout || "120",
       deployRestartAfter: true,
+      deployServiceControlOwner: "sys4sys",
     }));
   }
 
@@ -698,6 +720,21 @@ export default function ServicesPage() {
         )
       ) {
         throw new Error("expected ports は 1〜65535 の整数で入力してください");
+      }
+
+      const external = form.controlMode === "windows-service";
+      const serviceName = form.serviceName.trim();
+      if (external && !serviceName) {
+        throw new Error("Windows サービスの serviceName を入力してください");
+      }
+      if (
+        external &&
+        form.deployCommand.trim() &&
+        !form.deployServiceControlOwner
+      ) {
+        throw new Error(
+          "外部サービスの deploy には serviceControlOwner が必要です",
+        );
       }
 
       let healthCheck: HealthCheck | null = null;
@@ -794,9 +831,14 @@ export default function ServicesPage() {
         deploy = {
           command: parsed as string[],
           timeoutSec,
-          restartAfter: form.deployRestartAfter,
+          restartAfter: external
+            ? form.deployServiceControlOwner === "sys4sys"
+            : form.deployRestartAfter,
           healthTimeoutSec,
         };
+        if (external) {
+          deploy.serviceControlOwner = form.deployServiceControlOwner;
+        }
         if (form.deployCwd.trim()) deploy.cwd = form.deployCwd.trim();
         if (!deployEnvUnchanged) {
           if (deployEnv) {
@@ -810,6 +852,8 @@ export default function ServicesPage() {
       const payload: Record<string, unknown> = {
         hostId: form.hostId,
         name: form.name.trim(),
+        controlMode: form.controlMode,
+        serviceName: external ? serviceName : null,
         command: command as string[],
         cwd: form.cwd.trim() || undefined,
         expectedPorts: expectedPorts.length > 0 ? expectedPorts : undefined,
@@ -1001,12 +1045,21 @@ export default function ServicesPage() {
                         >
                           {service.name}
                         </button>
-                        <div
-                          className="mt-0.5 max-w-72 truncate font-mono text-xs text-fg-muted"
-                          title={service.command.join(" ")}
-                        >
-                          {service.command.join(" ")}
-                        </div>
+                        {service.controlMode === "windows-service" ? (
+                          <div
+                            className="mt-0.5 max-w-72 truncate font-mono text-xs text-info"
+                            title={`Windows service: ${service.serviceName ?? ""}`}
+                          >
+                            SCM / {service.serviceName ?? "-"}
+                          </div>
+                        ) : (
+                          <div
+                            className="mt-0.5 max-w-72 truncate font-mono text-xs text-fg-muted"
+                            title={service.command.join(" ")}
+                          >
+                            {service.command.join(" ")}
+                          </div>
+                        )}
                         {service.deploy ? (
                           <div className="mt-1 max-w-72 text-xs text-fg-muted">
                             deploy:{" "}
@@ -1085,7 +1138,12 @@ export default function ServicesPage() {
                             <>
                               <button
                                 type="button"
-                                disabled={busy || service.status === "running"}
+                                disabled={
+                                  busy ||
+                                  service.status === "running" ||
+                                  service.status === "starting" ||
+                                  service.status === "stopping"
+                                }
                                 onClick={() => void runAction(service, "start")}
                                 className="rounded border border-success/30 bg-success/10 px-2 py-1 text-xs text-success transition hover:bg-success/20 disabled:cursor-not-allowed disabled:opacity-40"
                               >
@@ -1093,7 +1151,11 @@ export default function ServicesPage() {
                               </button>
                               <button
                                 type="button"
-                                disabled={busy || service.status === "stopped"}
+                                disabled={
+                                  busy ||
+                                  service.status === "stopped" ||
+                                  service.status === "stopping"
+                                }
                                 onClick={() =>
                                   requestConfirm(
                                     {
@@ -1408,6 +1470,52 @@ export default function ServicesPage() {
                 className="w-full rounded-md border border-border bg-bg px-2 py-1.5 text-xs text-fg placeholder:text-fg-muted focus:border-success/40"
               />
             </label>
+            <label className="block">
+              <span className="mb-1 block text-xs text-fg-muted">
+                Control mode
+              </span>
+              <select
+                value={form.controlMode}
+                onChange={(event) => {
+                  const controlMode = event.target.value as
+                    "spawn" | "windows-service";
+                  setForm({
+                    ...form,
+                    controlMode,
+                    autoStart:
+                      controlMode === "windows-service"
+                        ? false
+                        : form.autoStart,
+                    deployServiceControlOwner:
+                      controlMode === "windows-service"
+                        ? form.deployServiceControlOwner
+                        : "sys4sys",
+                  });
+                }}
+                className="w-full rounded-md border border-border bg-bg px-2 py-1.5 text-xs text-fg focus:border-success/40"
+              >
+                <option value="spawn">spawn (sys4sys)</option>
+                <option value="windows-service">
+                  windows-service (NSSM / WinSW / SCM)
+                </option>
+              </select>
+            </label>
+            {form.controlMode === "windows-service" ? (
+              <label className="block">
+                <span className="mb-1 block text-xs text-fg-muted">
+                  Windows service name
+                </span>
+                <input
+                  required
+                  value={form.serviceName}
+                  onChange={(event) =>
+                    setForm({ ...form, serviceName: event.target.value })
+                  }
+                  placeholder="MyApiService"
+                  className="w-full rounded-md border border-border bg-bg px-2 py-1.5 font-mono text-xs text-fg placeholder:text-fg-muted focus:border-success/40"
+                />
+              </label>
+            ) : null}
             <label className="block md:col-span-2">
               <span className="mb-1 block text-xs text-fg-muted">
                 Command (JSON array)
@@ -1421,6 +1529,12 @@ export default function ServicesPage() {
                 }
                 className="w-full rounded-md border border-border bg-bg px-2 py-1.5 font-mono text-xs text-fg focus:border-success/40"
               />
+              {form.controlMode === "windows-service" ? (
+                <span className="mt-1 block text-xs text-fg-muted">
+                  windows-service では command は起動に使用しません。SCM
+                  がサービスの起動・停止を行います。
+                </span>
+              ) : null}
             </label>
             <label className="block">
               <span className="mb-1 block text-xs text-fg-muted">
@@ -1484,6 +1598,7 @@ export default function ServicesPage() {
               <input
                 type="checkbox"
                 checked={form.autoStart}
+                disabled={form.controlMode === "windows-service"}
                 onChange={(event) =>
                   setForm({ ...form, autoStart: event.target.checked })
                 }
@@ -1627,8 +1742,10 @@ export default function ServicesPage() {
               <div>
                 <div className="text-xs text-fg-muted">Deploy</div>
                 <p className="mt-1 text-xs text-fg-muted">
-                  deploy.ps1 などの実行コマンドを登録します。成功後に sys4sys
-                  がサービスを再起動し、ヘルス確認します。
+                  deploy.ps1 などの実行コマンドを登録します。
+                  {form.controlMode === "windows-service"
+                    ? "外部サービスは serviceControlOwner に従って停止・起動を一元化します。"
+                    : "成功後に sys4sys がサービスを再起動し、ヘルス確認します。"}
                 </p>
               </div>
               <button
@@ -1654,8 +1771,10 @@ export default function ServicesPage() {
                   className="w-full rounded-md border border-border bg-bg px-2 py-1.5 font-mono text-xs text-fg placeholder:text-fg-muted focus:border-success/40"
                 />
                 <span className="mt-1 block text-xs text-fg-muted">
-                  空欄でデプロイ設定なし。deploy.ps1 側で再起動する場合は
-                  restartAfter を OFF にしてください。
+                  空欄でデプロイ設定なし。
+                  {form.controlMode === "windows-service"
+                    ? "ラッパーが停止・起動する場合は owner=script、sys4sys が SCM 制御する場合は owner=sys4sys を選びます。"
+                    : "deploy.ps1 側で再起動する場合は restartAfter を OFF にしてください。"}
                 </span>
               </label>
               <label className="block">
@@ -1671,6 +1790,31 @@ export default function ServicesPage() {
                   className="w-full rounded-md border border-border bg-bg px-2 py-1.5 font-mono text-xs text-fg placeholder:text-fg-muted focus:border-success/40"
                 />
               </label>
+              {form.controlMode === "windows-service" ? (
+                <label className="block">
+                  <span className="mb-1 block text-xs text-fg-muted">
+                    Service control owner
+                  </span>
+                  <select
+                    value={form.deployServiceControlOwner}
+                    onChange={(event) =>
+                      setForm({
+                        ...form,
+                        deployServiceControlOwner: event.target
+                          .value as typeof form.deployServiceControlOwner,
+                      })
+                    }
+                    className="w-full rounded-md border border-border bg-bg px-2 py-1.5 text-xs text-fg focus:border-success/40"
+                  >
+                    <option value="sys4sys">
+                      sys4sys (stop → deploy → start)
+                    </option>
+                    <option value="script">
+                      script (deploy script owns stop/start)
+                    </option>
+                  </select>
+                </label>
+              ) : null}
               <div className="grid grid-cols-2 gap-2">
                 <label className="block">
                   <span className="mb-1 block text-xs text-fg-muted">
@@ -1717,7 +1861,12 @@ export default function ServicesPage() {
               <label className="flex items-center gap-2 rounded-md border border-border bg-surface-muted px-3 py-2 text-xs text-fg md:col-span-2">
                 <input
                   type="checkbox"
-                  checked={form.deployRestartAfter}
+                  checked={
+                    form.controlMode === "windows-service"
+                      ? form.deployServiceControlOwner === "sys4sys"
+                      : form.deployRestartAfter
+                  }
+                  disabled={form.controlMode === "windows-service"}
                   onChange={(event) =>
                     setForm({
                       ...form,
@@ -1726,7 +1875,11 @@ export default function ServicesPage() {
                   }
                   className="accent-success"
                 />
-                Restart service after successful deploy
+                {form.controlMode === "windows-service"
+                  ? form.deployServiceControlOwner === "sys4sys"
+                    ? "sys4sys が deploy 後にサービスを起動します"
+                    : "deploy script がサービスを停止・起動します"
+                  : "Restart service after successful deploy"}
               </label>
             </div>
           </div>

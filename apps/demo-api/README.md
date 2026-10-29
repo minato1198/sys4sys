@@ -116,18 +116,19 @@ $env:SYS4SYS_PASSWORD = "..."
 
 ### オプション
 
-| Option              | 説明                                                                            |
-| ------------------- | ------------------------------------------------------------------------------- |
-| `-SkipPull`         | `git pull` を省略する（CI で checkout 済みの場合）                              |
-| `-SkipInstall`      | `pnpm install` を省略する                                                       |
-| `-RunTests`         | ビルド前に `pnpm test` を実行する                                               |
-| `-NoRestart`        | sys4sys API を呼ばず、ビルドだけで終了する                                      |
-| `-AllowDirty`       | 追跡対象ファイルに未コミット変更があっても続行する                              |
-| `-Branch main`      | pull するブランチ                                                               |
-| `-ServiceName`      | sys4sys 上のサービス名（既定: `demo-api`）                                      |
-| `-RepoRoot`         | デプロイ対象リポジトリのパス。CI の checkout と実行ディレクトリが違う場合に指定 |
-| `-ApiBaseUrl`       | sys4sys API（既定: `http://127.0.0.1:8787`）                                    |
-| `-HealthTimeoutSec` | 再起動後のヘルス確認タイムアウト（既定: 120 秒）                                |
+| Option              | 説明                                                                             |
+| ------------------- | -------------------------------------------------------------------------------- |
+| `-SkipPull`         | `git pull` を省略する（CI で checkout 済みの場合）                               |
+| `-SkipInstall`      | `pnpm install` を省略する                                                        |
+| `-RunTests`         | ビルド前に `pnpm test` を実行する                                                |
+| `-NoRestart`        | sys4sys API を呼ばず、ビルドだけで終了する                                       |
+| `-NoServiceControl` | `SYS4SYS_SERVICE_CONTROL=sys4sys` と同じく、このスクリプトでサービスを操作しない |
+| `-AllowDirty`       | 追跡対象ファイルに未コミット変更があっても続行する                               |
+| `-Branch main`      | pull するブランチ                                                                |
+| `-ServiceName`      | sys4sys 上のサービス名（既定: `demo-api`）                                       |
+| `-RepoRoot`         | デプロイ対象リポジトリのパス。CI の checkout と実行ディレクトリが違う場合に指定  |
+| `-ApiBaseUrl`       | sys4sys API（既定: `http://127.0.0.1:8787`）                                     |
+| `-HealthTimeoutSec` | 再起動後のヘルス確認タイムアウト（既定: 120 秒）                                 |
 
 ### CI/CD の例
 

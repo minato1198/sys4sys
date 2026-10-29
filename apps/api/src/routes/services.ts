@@ -25,9 +25,11 @@ import {
   findPendingDeployRequest,
   requiresDeployApproval,
 } from "../services/deploy-approvals.js";
+import { hasRunningDeploy } from "../services/deploy-lock.js";
 import { beginDeploy, runDeploy } from "../services/deploy.js";
 import {
   checkServiceHealth,
+  clearServiceRuntime,
   restartService,
   runtimeInfo,
   ServiceError,
@@ -108,6 +110,7 @@ function deployDetail(deploy: DeployConfigInput | null | undefined) {
     restartAfter: deploy.restartAfter,
     healthTimeoutSec: deploy.healthTimeoutSec,
     requireApproval: deploy.requireApproval === true,
+    serviceControlOwner: deploy.serviceControlOwner ?? null,
   };
 }
 
@@ -121,6 +124,7 @@ function deploySummary(deploy: DeployConfigInput | null | undefined) {
     restartAfter: deploy.restartAfter,
     healthTimeoutSec: deploy.healthTimeoutSec,
     requireApproval: deploy.requireApproval === true,
+    serviceControlOwner: deploy.serviceControlOwner ?? null,
   };
 }
 
@@ -129,11 +133,13 @@ function serviceResponse(
   host: HostRow | undefined,
   options: { list?: boolean } = {},
 ) {
-  const runtime = runtimeInfo(row.id);
+  const runtime = runtimeInfo(row.id, row);
   return {
     id: row.id,
     hostId: row.hostId,
     name: row.name,
+    controlMode: row.controlMode,
+    serviceName: row.serviceName,
     command: row.command,
     cwd: row.cwd,
     env: options.list ? undefined : maskedEnv(row.env),
@@ -220,6 +226,66 @@ function deployValidationError(deploy: DeployConfigInput | null | undefined) {
     : (allowed.reason ?? "デプロイコマンドが許可されていません");
 }
 
+function normalizeDeployControl(
+  deploy: DeployConfigInput | null | undefined,
+  controlMode: "spawn" | "windows-service",
+): DeployConfigInput | null {
+  if (!deploy) return null;
+  if (controlMode === "windows-service") {
+    return {
+      ...deploy,
+      restartAfter: deploy.serviceControlOwner === "sys4sys",
+    };
+  }
+  const { serviceControlOwner: _ignored, ...rest } = deploy;
+  return rest;
+}
+
+function serviceControlValidationError(input: {
+  controlMode: "spawn" | "windows-service";
+  serviceName: string | null | undefined;
+  hostKind: "windows" | "wsl";
+  deploy: DeployConfigInput | null | undefined;
+}): string | null {
+  if (input.controlMode === "windows-service") {
+    if (!input.serviceName?.trim()) {
+      return "windows-service には serviceName が必要です";
+    }
+    if (input.hostKind !== "windows") {
+      return "windows-service は Windows ホストでのみ使用できます";
+    }
+    if (input.deploy && !input.deploy.serviceControlOwner) {
+      return "windows-service の deploy には serviceControlOwner が必要です";
+    }
+    return null;
+  }
+  if (input.serviceName) {
+    return "spawn サービスに serviceName は指定できません";
+  }
+  return null;
+}
+
+function isSelfServiceTarget(
+  controlMode: "spawn" | "windows-service",
+  serviceName: string | null | undefined,
+): boolean {
+  if (controlMode !== "windows-service" || !config.SELF_SERVICE_NAME) {
+    return false;
+  }
+  return (
+    serviceName?.trim().toLowerCase() === config.SELF_SERVICE_NAME.toLowerCase()
+  );
+}
+
+function selfServiceProblem(reply: FastifyReply) {
+  return problem(
+    reply,
+    409,
+    "Conflict",
+    "sys4sys 自身はこの API から停止・再起動・デプロイできません。外部のオーケストレータから実行してください",
+  );
+}
+
 /** 監査ログには env / deploy.env（秘密値を含み得る）を残さない。 */
 function deployAuditValue(deploy: DeployConfigInput | null | undefined) {
   if (!deploy) return null;
@@ -231,6 +297,7 @@ function deployAuditValue(deploy: DeployConfigInput | null | undefined) {
     restartAfter: deploy.restartAfter,
     healthTimeoutSec: deploy.healthTimeoutSec,
     requireApproval: deploy.requireApproval === true,
+    serviceControlOwner: deploy.serviceControlOwner ?? null,
   };
 }
 
@@ -438,14 +505,27 @@ export async function serviceRoutes(app: FastifyInstance): Promise<void> {
         );
       }
 
-      const allowed = isCommandAllowed(body.command);
-      if (!allowed.ok) {
-        return problem(
-          reply,
-          422,
-          "Unprocessable Entity",
-          allowed.reason ?? "コマンドが許可されていません",
-        );
+      const serviceName = body.serviceName?.trim() ?? null;
+      const controlError = serviceControlValidationError({
+        controlMode: body.controlMode,
+        serviceName,
+        hostKind: host.kind,
+        deploy: body.deploy,
+      });
+      if (controlError) {
+        return problem(reply, 422, "Unprocessable Entity", controlError);
+      }
+
+      if (body.controlMode === "spawn") {
+        const allowed = isCommandAllowed(body.command);
+        if (!allowed.ok) {
+          return problem(
+            reply,
+            422,
+            "Unprocessable Entity",
+            allowed.reason ?? "コマンドが許可されていません",
+          );
+        }
       }
 
       const deployError = deployValidationError(body.deploy);
@@ -461,12 +541,16 @@ export async function serviceRoutes(app: FastifyInstance): Promise<void> {
       const now = new Date();
       const id = randomUUID();
       const envToStore = encryptServiceEnv(body.env);
+      const normalizedDeploy = normalizeDeployControl(
+        body.deploy,
+        body.controlMode,
+      );
       const deployToStore = encryptServiceDeploy(
-        body.deploy
+        normalizedDeploy
           ? {
-              ...body.deploy,
+              ...normalizedDeploy,
               requireApproval:
-                body.deploy.requireApproval ??
+                normalizedDeploy.requireApproval ??
                 config.DEPLOY_REQUIRE_APPROVAL_DEFAULT,
             }
           : null,
@@ -476,6 +560,8 @@ export async function serviceRoutes(app: FastifyInstance): Promise<void> {
           id,
           hostId: body.hostId,
           name: body.name,
+          controlMode: body.controlMode,
+          serviceName,
           command: body.command,
           cwd: body.cwd ?? null,
           env: envToStore,
@@ -496,7 +582,7 @@ export async function serviceRoutes(app: FastifyInstance): Promise<void> {
             reply,
             409,
             "Conflict",
-            "同じホストに同名のサービスが既にあります",
+            "同じホストに同名のサービス、または同じ serviceName が既にあります",
           );
         }
         throw error;
@@ -510,6 +596,8 @@ export async function serviceRoutes(app: FastifyInstance): Promise<void> {
         after: {
           hostId: body.hostId,
           name: body.name,
+          controlMode: body.controlMode,
+          serviceName,
           command: body.command,
           expectedPorts: body.expectedPorts ?? null,
           ...envAuditValue(envToStore),
@@ -529,6 +617,8 @@ export async function serviceRoutes(app: FastifyInstance): Promise<void> {
             id,
             hostId: body.hostId,
             name: body.name,
+            controlMode: body.controlMode,
+            serviceName,
             command: body.command,
             cwd: body.cwd ?? null,
             env: envToStore,
@@ -573,8 +663,52 @@ export async function serviceRoutes(app: FastifyInstance): Promise<void> {
         return problem(reply, 404, "Not Found", "サービスが見つかりません");
       }
 
-      if (body.command !== undefined) {
-        const allowed = isCommandAllowed(body.command);
+      const [targetHost] = await db
+        .select()
+        .from(hosts)
+        .where(eq(hosts.id, existing.hostId))
+        .limit(1);
+      if (!targetHost) {
+        return problem(
+          reply,
+          422,
+          "Unprocessable Entity",
+          "ホストが見つかりません",
+        );
+      }
+
+      const targetControlMode = body.controlMode ?? existing.controlMode;
+      const targetServiceName =
+        body.controlMode === "spawn" && body.serviceName === undefined
+          ? null
+          : body.serviceName !== undefined
+            ? (body.serviceName?.trim() ?? null)
+            : existing.serviceName;
+      const controlChanged =
+        targetControlMode !== existing.controlMode ||
+        targetServiceName !== existing.serviceName;
+
+      const candidateDeploy =
+        body.deploy !== undefined
+          ? body.deploy
+            ? mergeDeployUpdate(body.deploy, request.body, existing.deploy)
+            : null
+          : existing.deploy;
+      const controlError = serviceControlValidationError({
+        controlMode: targetControlMode,
+        serviceName: targetServiceName,
+        hostKind: targetHost.kind,
+        deploy: candidateDeploy,
+      });
+      if (controlError) {
+        return problem(reply, 422, "Unprocessable Entity", controlError);
+      }
+
+      if (
+        targetControlMode === "spawn" &&
+        (body.command !== undefined || controlChanged)
+      ) {
+        const allowed = isCommandAllowed(body.command ?? existing.command);
         if (!allowed.ok) {
           return problem(
             reply,
@@ -599,9 +733,14 @@ export async function serviceRoutes(app: FastifyInstance): Promise<void> {
         return problem(reply, 422, "Unprocessable Entity", envError);
       }
 
-      const runtime = runtimeInfo(id);
+      const runtime = runtimeInfo(id, existing);
+      const running =
+        runtime.running ||
+        ["starting", "running", "stopping", "degraded", "restarting"].includes(
+          existing.status,
+        );
       if (
-        runtime.running &&
+        running &&
         (body.command !== undefined ||
           body.cwd !== undefined ||
           body.env !== undefined)
@@ -613,6 +752,14 @@ export async function serviceRoutes(app: FastifyInstance): Promise<void> {
           "実行中は command / cwd / env を変更できません。停止してから更新してください",
         );
       }
+      if (running && controlChanged) {
+        return problem(
+          reply,
+          409,
+          "Conflict",
+          "実行中は controlMode / serviceName を変更できません。停止してから更新してください",
+        );
+      }
 
       const updates: Partial<typeof services.$inferInsert> = {
         updatedAt: new Date(),
@@ -620,15 +767,24 @@ export async function serviceRoutes(app: FastifyInstance): Promise<void> {
       const updatedEnv =
         body.env !== undefined ? encryptServiceEnv(body.env) : existing.env;
       let updatedDeploy = existing.deploy;
-      if (body.deploy !== undefined) {
-        updatedDeploy = body.deploy
-          ? (encryptServiceDeploy(
-              mergeDeployUpdate(body.deploy, request.body, existing.deploy),
-            ) ?? null)
-          : null;
+      if (body.deploy !== undefined || controlChanged) {
+        const mergedDeploy =
+          body.deploy !== undefined
+            ? body.deploy
+              ? mergeDeployUpdate(body.deploy, request.body, existing.deploy)
+              : null
+            : existing.deploy;
+        updatedDeploy =
+          encryptServiceDeploy(
+            normalizeDeployControl(mergedDeploy, targetControlMode),
+          ) ?? null;
       }
 
       if (body.name !== undefined) updates.name = body.name;
+      if (controlChanged) {
+        updates.controlMode = targetControlMode;
+        updates.serviceName = targetServiceName;
+      }
       if (body.command !== undefined) updates.command = body.command;
       if (body.cwd !== undefined) updates.cwd = body.cwd;
       if (body.env !== undefined) updates.env = updatedEnv;
@@ -637,7 +793,9 @@ export async function serviceRoutes(app: FastifyInstance): Promise<void> {
       }
       if (body.healthCheck !== undefined)
         updates.healthCheck = body.healthCheck;
-      if (body.deploy !== undefined) updates.deploy = updatedDeploy;
+      if (body.deploy !== undefined || controlChanged) {
+        updates.deploy = updatedDeploy;
+      }
       if (body.dependsOn !== undefined) updates.dependsOn = body.dependsOn;
       if (body.autoStart !== undefined) updates.autoStart = body.autoStart;
       if (body.autoRestartPhase !== undefined) {
@@ -658,6 +816,8 @@ export async function serviceRoutes(app: FastifyInstance): Promise<void> {
         throw error;
       }
 
+      if (controlChanged) clearServiceRuntime(id);
+
       await tryWriteAudit({
         actorUserId: user.id,
         actorLabel: user.email,
@@ -665,6 +825,8 @@ export async function serviceRoutes(app: FastifyInstance): Promise<void> {
         target: `service:${id}`,
         before: {
           name: existing.name,
+          controlMode: existing.controlMode,
+          serviceName: existing.serviceName,
           command: existing.command,
           cwd: existing.cwd,
           expectedPorts: existing.expectedPorts,
@@ -675,6 +837,8 @@ export async function serviceRoutes(app: FastifyInstance): Promise<void> {
         },
         after: {
           name: body.name ?? existing.name,
+          controlMode: targetControlMode,
+          serviceName: targetServiceName,
           command: body.command ?? existing.command,
           cwd: body.cwd !== undefined ? body.cwd : existing.cwd,
           expectedPorts:
@@ -713,10 +877,10 @@ export async function serviceRoutes(app: FastifyInstance): Promise<void> {
         return problem(reply, 404, "Not Found", "サービスが見つかりません");
       }
 
-      const runtime = runtimeInfo(id);
+      const runtime = runtimeInfo(id, existing);
       if (
         runtime.running ||
-        ["starting", "running", "degraded", "restarting"].includes(
+        ["starting", "running", "stopping", "degraded", "restarting"].includes(
           existing.status,
         )
       ) {
@@ -778,6 +942,17 @@ export async function serviceRoutes(app: FastifyInstance): Promise<void> {
     if (!existing) {
       return problem(reply, 404, "Not Found", "サービスが見つかりません");
     }
+    if (isSelfServiceTarget(existing.controlMode, existing.serviceName)) {
+      return selfServiceProblem(reply);
+    }
+    if (await hasRunningDeploy(id)) {
+      return problem(
+        reply,
+        409,
+        "Conflict",
+        "デプロイ中はサービスを開始・停止・再起動できません",
+      );
+    }
 
     const startedAt = new Date();
     const actionId = randomUUID();
@@ -813,6 +988,8 @@ export async function serviceRoutes(app: FastifyInstance): Promise<void> {
           name: service.name,
           status: service.status,
           pid: service.pid,
+          controlMode: service.controlMode,
+          serviceName: service.serviceName,
         },
         ip: request.ip,
       });
@@ -926,6 +1103,9 @@ export async function serviceRoutes(app: FastifyInstance): Promise<void> {
           "デプロイ設定がありません",
         );
       }
+      if (isSelfServiceTarget(service.controlMode, service.serviceName)) {
+        return selfServiceProblem(reply);
+      }
 
       let deploy: DeployConfigInput;
       try {
@@ -950,6 +1130,9 @@ export async function serviceRoutes(app: FastifyInstance): Promise<void> {
       }
 
       await expirePendingDeployRequests(id);
+      if (await hasRunningDeploy(id)) {
+        return problem(reply, 409, "Conflict", "デプロイは既に実行中です");
+      }
       if (requiresDeployApproval(deploy)) {
         const pending = await findPendingDeployRequest(id);
         return problem(reply, 409, "Conflict", "approval_required", {
