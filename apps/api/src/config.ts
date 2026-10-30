@@ -73,6 +73,26 @@ const envSchema = z.object({
     .string()
     .default("false")
     .transform((value) => value === "true"),
+  AI_ACTION_EXECUTION_ENABLED: z
+    .string()
+    .default("false")
+    .transform((value) => value === "true"),
+  AI_ACTION_ALLOWED_TYPES: z.string().default("restart,start"),
+  AI_ACTION_AUTO_REQUEST_APPROVAL: z
+    .string()
+    .default("true")
+    .transform((value) => value === "true"),
+  AI_ACTION_MIN_CONFIDENCE: z.coerce.number().min(0).max(1).default(0.6),
+  AI_ACTION_TTL_MIN: z.coerce.number().int().min(1).max(1440).default(30),
+  AI_ACTION_MAX_PROPOSALS: z.coerce.number().int().min(1).max(20).default(3),
+  AI_ACTION_HIGH_RISK_REQUIRE_ADMIN: z
+    .string()
+    .default("true")
+    .transform((value) => value === "true"),
+  AI_ACTION_STOP_ENABLED: z
+    .string()
+    .default("false")
+    .transform((value) => value === "true"),
 
   LOG_RETENTION_DAYS: z.coerce.number().int().min(1).default(14),
   LOG_TAIL_POLL_MS: z.coerce.number().int().min(200).max(60_000).default(1000),

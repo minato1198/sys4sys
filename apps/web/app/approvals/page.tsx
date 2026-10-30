@@ -17,12 +17,27 @@ type ApprovalStatus = "pending" | "approved" | "rejected" | "expired";
 interface ApprovalView {
   id: string;
   incidentId: string;
+  proposalId: string | null;
+  source: "policy" | "ai" | "manual";
   requestedAction: Record<string, unknown>;
   status: ApprovalStatus;
   requestedAt: string;
   decidedBy: string | null;
   decidedAt: string | null;
   note: string | null;
+  expiresAt: string | null;
+  executionStatus: string | null;
+  proposal: {
+    id: string;
+    actionType: "restart" | "start" | "stop" | "deploy";
+    risk: "low" | "medium" | "high";
+    confidence: number;
+    rationale: string | null;
+    status: string;
+    actionId: string | null;
+    expiresAt: string | null;
+    error: string | null;
+  } | null;
   incident: {
     id: string;
     serviceId: string;
@@ -90,6 +105,22 @@ function approvalBadge(status: ApprovalStatus): string {
 function requestedReason(value: Record<string, unknown>): string {
   const reason = value.reason;
   return typeof reason === "string" ? reason : "";
+}
+
+function requestedType(value: Record<string, unknown>): string {
+  const type = value.type;
+  return typeof type === "string" ? type : "restart";
+}
+
+function requestedRisk(value: Record<string, unknown>): string | null {
+  const risk = value.risk;
+  return typeof risk === "string" ? risk : null;
+}
+
+function riskBadge(risk: string | null): string {
+  if (risk === "high") return "border-danger/40 bg-danger/10 text-danger";
+  if (risk === "medium") return "border-warning/40 bg-warning/10 text-warning";
+  return "border-info/40 bg-info/10 text-info";
 }
 
 export default function ApprovalsPage() {
@@ -186,7 +217,9 @@ export default function ApprovalsPage() {
       setNote("");
       setMessage(
         decision === "approve"
-          ? "承認しました。再起動と復旧確認を実行しています。"
+          ? `承認しました。${requestedType(
+              approval.requestedAction,
+            )} と復旧確認を実行しています。`
           : "却下しました。",
       );
       await load();
@@ -206,7 +239,7 @@ export default function ApprovalsPage() {
   return (
     <AppShell
       title="承認"
-      description="承認待ちの再起動を確認し、実行または却下します。"
+      description="AI 提案や監視ルールからの承認待ちを確認し、実行または却下します。"
       user={user}
     >
       {error ? (
@@ -327,6 +360,12 @@ export default function ApprovalsPage() {
               ) : (
                 items.map((approval) => {
                   const busy = busyId === approval.id;
+                  const risk = requestedRisk(approval.requestedAction);
+                  const actionType = requestedType(approval.requestedAction);
+                  const requiresAdmin =
+                    risk === "high" || actionType === "stop";
+                  const canDecide =
+                    canOperate && (!requiresAdmin || user?.role === "admin");
                   return (
                     <tr
                       key={approval.id}
@@ -373,6 +412,30 @@ export default function ApprovalsPage() {
                             approval.incident?.summary ||
                             "—"}
                         </div>
+                        <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                          <span className="rounded border border-border bg-surface-muted px-1.5 py-0.5 text-xs text-fg-muted">
+                            {approval.source === "ai"
+                              ? "AI 提案"
+                              : approval.source}
+                          </span>
+                          <span className="rounded border border-border bg-surface-muted px-1.5 py-0.5 font-mono text-xs text-fg">
+                            {requestedType(approval.requestedAction)}
+                          </span>
+                          {requestedRisk(approval.requestedAction) ? (
+                            <span
+                              className={`rounded border px-1.5 py-0.5 text-xs font-medium ${riskBadge(
+                                requestedRisk(approval.requestedAction),
+                              )}`}
+                            >
+                              risk {requestedRisk(approval.requestedAction)}
+                            </span>
+                          ) : null}
+                        </div>
+                        {approval.expiresAt ? (
+                          <div className="mt-1 text-xs text-warning">
+                            期限: {formatDate(approval.expiresAt)}
+                          </div>
+                        ) : null}
                       </td>
                       <td className="px-4 py-3">
                         <span
@@ -387,7 +450,7 @@ export default function ApprovalsPage() {
                         {formatDate(approval.requestedAt)}
                       </td>
                       <td className="px-4 py-3">
-                        {approval.status === "pending" && canOperate ? (
+                        {approval.status === "pending" && canDecide ? (
                           <div className="flex flex-wrap gap-1.5">
                             <button
                               type="button"
@@ -398,7 +461,7 @@ export default function ApprovalsPage() {
                               }}
                               className="min-h-9 rounded border border-success/40 bg-success/10 px-2.5 py-1 text-xs font-medium text-success transition hover:bg-success/20 disabled:opacity-50"
                             >
-                              承認
+                              {actionType} を承認
                             </button>
                             <button
                               type="button"
@@ -407,9 +470,9 @@ export default function ApprovalsPage() {
                                 event.stopPropagation();
                                 requestConfirm(
                                   {
-                                    title: "再起動リクエストを却下しますか？",
+                                    title: `${actionType} リクエストを却下しますか？`,
                                     description:
-                                      "この承認要求を却下すると、自動復旧は実行されません。",
+                                      "この承認要求を却下すると、AI または監視ルールによる操作は実行されません。",
                                     target: (
                                       <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5">
                                         <dt className="text-fg-muted">
@@ -449,7 +512,11 @@ export default function ApprovalsPage() {
                                   approval.decidedAt,
                                 )}`
                               : approval.status === "pending"
-                                ? "権限なし"
+                                ? !canOperate
+                                  ? "権限なし"
+                                  : requiresAdmin
+                                    ? "admin のみ承認可"
+                                    : "権限なし"
                                 : "—"}
                           </span>
                         )}
@@ -488,9 +555,52 @@ export default function ApprovalsPage() {
               </dd>
             </div>
             <div>
+              <dt className="text-xs text-fg-muted">Source</dt>
+              <dd className="text-fg">
+                {selected.source === "ai" ? "AI 提案" : selected.source}
+              </dd>
+            </div>
+            <div>
               <dt className="text-xs text-fg-muted">Requested action</dt>
-              <dd className="break-words font-mono text-xs text-fg">
-                {JSON.stringify(selected.requestedAction)}
+              <dd className="text-fg">
+                <span className="font-mono">
+                  {requestedType(selected.requestedAction)}
+                </span>
+                {selected.service?.name ? ` / ${selected.service.name}` : ""}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-fg-muted">Risk</dt>
+              <dd>
+                {requestedRisk(selected.requestedAction) ? (
+                  <span
+                    className={`rounded border px-1.5 py-0.5 text-xs font-medium ${riskBadge(
+                      requestedRisk(selected.requestedAction),
+                    )}`}
+                  >
+                    {requestedRisk(selected.requestedAction)}
+                  </span>
+                ) : (
+                  <span className="text-fg-muted">—</span>
+                )}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-fg-muted">Confidence</dt>
+              <dd className="text-fg">
+                {selected.proposal
+                  ? `${(selected.proposal.confidence * 100).toFixed(0)}%`
+                  : "—"}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-fg-muted">Expires</dt>
+              <dd className="text-fg">{formatDate(selected.expiresAt)}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-fg-muted">Execution</dt>
+              <dd className="text-fg">
+                {selected.executionStatus ?? selected.proposal?.status ?? "—"}
               </dd>
             </div>
             <div>
@@ -501,6 +611,19 @@ export default function ApprovalsPage() {
               </dd>
             </div>
           </dl>
+          {selected.proposal?.rationale ? (
+            <div className="mt-3 rounded border border-border bg-surface-muted px-3 py-2 text-xs">
+              <div className="text-fg-muted">AI の理由</div>
+              <p className="mt-1 whitespace-pre-wrap text-fg">
+                {selected.proposal.rationale}
+              </p>
+            </div>
+          ) : null}
+          {selected.proposal?.error ? (
+            <p className="mt-3 rounded border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">
+              {selected.proposal.error}
+            </p>
+          ) : null}
           {selected.note ? (
             <p className="mt-3 whitespace-pre-wrap rounded border border-border bg-surface-muted px-3 py-2 text-xs text-fg">
               {selected.note}

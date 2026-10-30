@@ -1,6 +1,6 @@
 # ER 図 / データモデル詳細
 
-- 版: 1.1（P1 デプロイ承認モデルを含む）
+- 版: 1.2（AI 提案アクション承認モデルを含む）
 - 対象: SQLite（初期） / PostgreSQL（将来）
 - 正: `PLAN.md` の「6. データモデル」と本ドキュメント
 
@@ -28,9 +28,12 @@ erDiagram
 
     incidents ||--o{ incident_events : "timeline"
     incidents ||--o{ approvals : "requires"
+    incidents ||--o{ incident_action_proposals : "proposes"
     incidents ||--o{ ai_analyses : "analyzed by"
     incidents ||--o{ reports : "generates"
     incidents ||--o{ actions : "executes"
+    incident_action_proposals ||--o| approvals : "requested as"
+    incident_action_proposals ||--o| actions : "executes as"
 
     reports ||--o{ report_deliveries : "delivered as"
     policies ||--o{ actions : "governs"
@@ -172,7 +175,7 @@ erDiagram
         text status "open | acked | approval | resolved"
         datetime started_at
         datetime resolved_at
-        text detected_by "rule | health | process"
+        text detected_by "rule | health | process | ai"
         integer restart_attempts
         text summary
     }
@@ -185,9 +188,35 @@ erDiagram
         json payload
     }
 
+    incident_action_proposals {
+        text id PK
+        text incident_id FK
+        text analysis_id FK "nullable"
+        text service_id FK
+        text action_type "restart | start | stop | deploy"
+        text status "proposed | pending_approval | approved | executing | succeeded | failed | rejected | expired | superseded"
+        text risk "low | medium | high"
+        real confidence
+        text rationale
+        json parameters "nullable, command strings are not stored"
+        json snapshot "service and incident state at proposal time"
+        text dedupe_key
+        integer sort_order
+        text analysis_requested_by FK "nullable, manual analysis actor for four-eyes"
+        text approval_id FK "nullable"
+        text action_id FK "nullable"
+        datetime created_at
+        datetime expires_at
+        datetime decided_at "nullable"
+        datetime executed_at "nullable"
+        text error
+    }
+
     approvals {
         text id PK
         text incident_id FK
+        text proposal_id FK "nullable"
+        text source "policy | ai | manual"
         json requested_action
         text requested_by FK "nullable, null = system"
         text status "pending | approved | rejected | expired"
@@ -195,6 +224,7 @@ erDiagram
         text decided_by FK
         datetime decided_at
         text note
+        datetime expires_at "nullable, AI approvals use 30 min TTL"
     }
 
     deploy_requests {
@@ -252,6 +282,9 @@ erDiagram
         text requested_by FK
         text approved_by FK
         text policy_id FK
+        text proposal_id FK "nullable"
+        text approval_id FK "nullable"
+        text source "manual | policy | ai_approved"
         datetime started_at
         datetime finished_at
         text error
@@ -364,7 +397,22 @@ WSL 3.x では distro 間でネットワーク名前空間が共有されるた�
 - `pnpm db:backup` / `POST /api/admin/backup` は better-sqlite3 の online backup を使い、DB と同じディレクトリの `backups/` に `sys4sys-<timestamp>.db` を作成する
 - 復元時は API を停止し、`-wal` / `-shm` を削除してからバックアップを `DATABASE_URL` のファイルに戻す
 
-### 2.10 デプロイ
+### 2.10 AI 提案アクション
+
+- AI 分析は `recommended_actions` のうち、許可された種別（Phase 1 は `restart` / `start`、`stop` は admin 限定フラグ）だけを `incident_action_proposals` に保存する
+- 対象サービスは AI の `target` 文字列ではなく、インシデントの `service_id` を正とする。`target` がサービス名 / ID と一致しない提案は破棄する
+- フォールバック分析（`provider=template`）、信頼度不足、期限切れ、重複提案は保存しない
+- 実行可能な提案が 1 つ以上ある場合、分析完了時に主提案を選び、`approvals(source=ai, proposal_id=...)` を 1 件だけ自動作成する。自動承認は行わない
+- 主提案はサービス状態が `stopped` / `failed` なら `start`、それ以外は `restart` を優先し、次にリスク、信頼度、AI の出力順で選ぶ
+- 同一インシデントの pending 承認は 1 件まで。他の提案は `proposed` のまま残り、却下・期限切れ後に明示的に再依頼できる
+- 手動分析の実行者は `analysis_requested_by` に保存し、そのユーザーによる自己承認を禁止する。自動分析は `NULL`
+- 承認期限は既定 30 分（`AI_ACTION_TTL_MIN`）。期限切れは `approvals` と提案を `expired` にし、インシデントを `open` に戻す
+- 高リスク提案は admin のみ承認できる。`stop` は `AI_ACTION_STOP_ENABLED=true` かつ admin のみ
+- 承認後は `actions(source=ai_approved, proposal_id, approval_id)` を作成し、既存の deterministic な start / restart / stop 経路だけを実行する。任意コマンドや shell は実行しない
+- 実行前・実行開始時にインシデント、提案、承認、サービス、デプロイロック、提案時スナップショットを再検証する。不一致は `expired` / stale とし、再分析を促す
+- 失敗時の自動再試行は行わない。成功時は他提案を `superseded`、インシデントを `resolved` にする（`stop` は意図的停止として解決しない）
+
+### 2.11 デプロイ
 
 - `services.deploy` は `{ command, cwd?, env?, timeoutSec, restartAfter, healthTimeoutSec, requireApproval?, serviceControlOwner? }` の JSON。`command` は `SERVICE_COMMAND_ALLOWLIST` に従う
 - windows-service の deploy には `serviceControlOwner=sys4sys | script` が必要。`sys4sys` は SCM stop → deploy.command → SCM start → health を実行し、`script` は sys4sys が stop/start しない
@@ -383,23 +431,24 @@ WSL 3.x では distro 間でネットワーク名前空間が共有されるた�
 
 ## 3. 制約・インデックス
 
-| テーブル            | 制約 / インデックス                                                       |
-| ------------------- | ------------------------------------------------------------------------- |
-| `users`             | `email` UNIQUE、`role` CHECK                                              |
-| `sessions`          | `token_hash` UNIQUE、`expires_at` INDEX                                   |
-| `hosts`             | `(kind, distro)` UNIQUE（WSL）、`kind` CHECK                              |
-| `services`          | `(host_id, name)` UNIQUE、`(host_id, lower(service_name))` partial UNIQUE |
-| `ports`             | `(scope, protocol, address, port)` UNIQUE、`port` INDEX                   |
-| `port_history`      | `(scope, port, opened_at)` INDEX、`closed_at` INDEX                       |
-| `port_reservations` | `(protocol, port)` UNIQUE（Windows / WSL 横断）                           |
-| `log_events`        | `(host_id, service_id, ts)` INDEX、`(fingerprint, ts)` INDEX              |
-| `incidents`         | `(fingerprint, started_at)` INDEX、`status` INDEX、`service_id` INDEX     |
-| `incident_events`   | `incident_id` INDEX                                                       |
-| `approvals`         | `status` INDEX、`incident_id` INDEX                                       |
-| `deploy_requests`   | `status` INDEX、`(service_id, requested_at)` INDEX                        |
-| `actions`           | `(service_id, started_at)` INDEX、running deploy partial UNIQUE           |
-| `audit_logs`        | `(ts)` INDEX、`actor_user_id` INDEX                                       |
-| `settings`          | `key` PK                                                                  |
+| テーブル                    | 制約 / インデックス                                                                                                                    |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `users`                     | `email` UNIQUE、`role` CHECK                                                                                                           |
+| `sessions`                  | `token_hash` UNIQUE、`expires_at` INDEX                                                                                                |
+| `hosts`                     | `(kind, distro)` UNIQUE（WSL）、`kind` CHECK                                                                                           |
+| `services`                  | `(host_id, name)` UNIQUE、`(host_id, lower(service_name))` partial UNIQUE                                                              |
+| `ports`                     | `(scope, protocol, address, port)` UNIQUE、`port` INDEX                                                                                |
+| `port_history`              | `(scope, port, opened_at)` INDEX、`closed_at` INDEX                                                                                    |
+| `port_reservations`         | `(protocol, port)` UNIQUE（Windows / WSL 横断）                                                                                        |
+| `log_events`                | `(host_id, service_id, ts)` INDEX、`(fingerprint, ts)` INDEX                                                                           |
+| `incidents`                 | `(fingerprint, started_at)` INDEX、`status` INDEX、`service_id` INDEX                                                                  |
+| `incident_events`           | `incident_id` INDEX                                                                                                                    |
+| `incident_action_proposals` | `(incident_id, status)` INDEX、`(service_id, status)` INDEX、`approval_id` INDEX、`action_id` INDEX、`(incident_id, dedupe_key)` INDEX |
+| `approvals`                 | `status` INDEX、`incident_id` INDEX、`proposal_id` INDEX                                                                               |
+| `deploy_requests`           | `status` INDEX、`(service_id, requested_at)` INDEX                                                                                     |
+| `actions`                   | `(service_id, started_at)` INDEX、`proposal_id` / `approval_id` INDEX、running deploy partial UNIQUE                                   |
+| `audit_logs`                | `(ts)` INDEX、`actor_user_id` INDEX                                                                                                    |
+| `settings`                  | `key` PK                                                                                                                               |
 
 外部キーは SQLite の `PRAGMA foreign_keys = ON` を前提。削除は原則ソフトデリートではなく、`is_active` / `enabled` で無効化する（ログ・監査の参照整合性を保つ）。
 

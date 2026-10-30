@@ -7,7 +7,14 @@ import { serializedAnalysis, serializedReport } from "../ai/serialize.js";
 import { writeAudit } from "../audit.js";
 import { requireAuth, requireRole } from "../auth/guard.js";
 import { db } from "../db/index.js";
-import { approvals, hosts, incidents, services } from "../db/schema.js";
+import {
+  approvals,
+  hosts,
+  incidentActionProposals,
+  incidents,
+  services,
+} from "../db/schema.js";
+import { expireProposalsForIncident } from "../monitoring/action-proposals.js";
 import {
   ackIncident,
   getIncidentContext,
@@ -22,6 +29,7 @@ type IncidentRow = typeof incidents.$inferSelect;
 type ServiceRow = typeof services.$inferSelect;
 type HostRow = typeof hosts.$inferSelect;
 type ApprovalRow = typeof approvals.$inferSelect;
+type ActionProposalRow = typeof incidentActionProposals.$inferSelect;
 
 function iso(value: Date | null | undefined): string | null {
   return value ? value.toISOString() : null;
@@ -82,6 +90,8 @@ function approvalResponse(row: ApprovalRow) {
   return {
     id: row.id,
     incidentId: row.incidentId,
+    proposalId: row.proposalId,
+    source: row.source,
     requestedAction: row.requestedAction,
     requestedBy: row.requestedBy,
     status: row.status,
@@ -89,6 +99,31 @@ function approvalResponse(row: ApprovalRow) {
     decidedBy: row.decidedBy,
     decidedAt: iso(row.decidedAt),
     note: row.note,
+    expiresAt: iso(row.expiresAt),
+  };
+}
+
+function proposalResponse(row: ActionProposalRow) {
+  return {
+    id: row.id,
+    incidentId: row.incidentId,
+    analysisId: row.analysisId,
+    serviceId: row.serviceId,
+    actionType: row.actionType,
+    status: row.status,
+    risk: row.risk,
+    confidence: row.confidence,
+    rationale: row.rationale,
+    parameters: row.parameters,
+    snapshot: row.snapshot,
+    analysisRequestedBy: row.analysisRequestedBy,
+    approvalId: row.approvalId,
+    actionId: row.actionId,
+    createdAt: iso(row.createdAt),
+    expiresAt: iso(row.expiresAt),
+    decidedAt: iso(row.decidedAt),
+    executedAt: iso(row.executedAt),
+    error: row.error,
   };
 }
 
@@ -108,6 +143,7 @@ function contextResponse(context: IncidentContext) {
       payload: row.payload,
     })),
     approvals: context.approvals.map(approvalResponse),
+    proposals: context.proposals.map(proposalResponse),
     actions: context.actions.map((row) => ({
       id: row.id,
       serviceId: row.serviceId,
@@ -115,6 +151,9 @@ function contextResponse(context: IncidentContext) {
       status: row.status,
       requestedBy: row.requestedBy,
       approvedBy: row.approvedBy,
+      proposalId: row.proposalId,
+      approvalId: row.approvalId,
+      source: row.source,
       startedAt: iso(row.startedAt),
       finishedAt: iso(row.finishedAt),
       error: row.error,
@@ -150,6 +189,7 @@ function handleIncidentError(reply: FastifyReply, error: unknown) {
 }
 
 async function detailForId(id: string) {
+  await expireProposalsForIncident(id).catch(() => undefined);
   const context = await getIncidentContext(id);
   if (!context) return null;
   const latest = await getLatestAnalysisReport(id);

@@ -131,9 +131,13 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
       if (!incident) {
         return problem(reply, 404, "Not Found", "インシデントが見つかりません");
       }
-      const queued = enqueueIncidentAnalysis(id);
       const user = request.authUser;
       if (!user) return reply.code(401).send();
+      const queued = enqueueIncidentAnalysis(id, {
+        trigger: "manual",
+        actorUserId: user.id,
+        actorLabel: user.email,
+      });
       await writeAudit({
         actorUserId: user.id,
         actorLabel: user.email,

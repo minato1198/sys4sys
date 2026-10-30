@@ -32,12 +32,13 @@ test("role scopes match the documented capability model", () => {
     "incidents:write",
     "approvals:read",
     "approvals:decide",
+    "approvals:request",
     "hosts:read",
     "ports:read",
     "ports:operate",
     "reports:read",
   ]);
-  assert.equal(ROLE_SCOPES.admin.length, 20);
+  assert.equal(ROLE_SCOPES.admin.length, 21);
   assert.ok(ROLE_SCOPES.admin.includes("tokens:manage"));
 });
 
@@ -137,6 +138,7 @@ test("tokenScopeSchema accepts every declared scope", () => {
     "incidents:write",
     "approvals:read",
     "approvals:decide",
+    "approvals:request",
     "hosts:read",
     "hosts:write",
     "ports:read",

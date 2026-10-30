@@ -307,6 +307,44 @@ export const approvalDecisionSchema = z.object({
 });
 export type ApprovalDecisionInput = z.infer<typeof approvalDecisionSchema>;
 
+export const actionProposalTypeSchema = z.enum([
+  "restart",
+  "start",
+  "stop",
+  "deploy",
+]);
+export type ActionProposalType = z.infer<typeof actionProposalTypeSchema>;
+
+export const actionProposalStatusSchema = z.enum([
+  "proposed",
+  "pending_approval",
+  "approved",
+  "executing",
+  "succeeded",
+  "failed",
+  "rejected",
+  "expired",
+  "superseded",
+]);
+export type ActionProposalStatus = z.infer<typeof actionProposalStatusSchema>;
+
+export const actionProposalRiskSchema = z.enum(["low", "medium", "high"]);
+export type ActionProposalRisk = z.infer<typeof actionProposalRiskSchema>;
+
+export const actionProposalRequestApprovalSchema = z.object({
+  note: z.string().max(500).optional(),
+});
+export type ActionProposalRequestApprovalInput = z.infer<
+  typeof actionProposalRequestApprovalSchema
+>;
+
+export const actionProposalQuerySchema = z.object({
+  incidentId: z.string().min(1).optional(),
+  status: actionProposalStatusSchema.optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+});
+export type ActionProposalQuery = z.infer<typeof actionProposalQuerySchema>;
+
 export const incidentQuerySchema = z.object({
   status: incidentStatusSchema.optional(),
   severity: incidentSeveritySchema.optional(),

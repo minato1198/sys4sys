@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, gte, inArray, isNull, ne, or } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, ne, or } from "drizzle-orm";
 import { evaluateRestart, type RestartDecision } from "@sys4sys/policy";
-import type { IncidentSeverity, IncidentStatus } from "@sys4sys/shared";
+import type { IncidentSeverity, IncidentStatus, Role } from "@sys4sys/shared";
 import { enqueueIncidentAnalysis } from "../ai/queue.js";
 import { writeAudit } from "../audit.js";
 import { config } from "../config.js";
@@ -10,12 +10,23 @@ import {
   actions,
   approvals,
   hosts,
+  incidentActionProposals,
   incidentEvents,
   incidents,
   services,
 } from "../db/schema.js";
 import { hasRunningDeploy } from "../services/deploy-lock.js";
-import { checkServiceHealth, restartService } from "../services/manager.js";
+import {
+  checkServiceHealth,
+  restartService,
+  startService,
+  stopService,
+} from "../services/manager.js";
+import {
+  expireProposal,
+  isProposalActionAllowed,
+  supersedeOtherProposals,
+} from "./action-proposals.js";
 import { notifyApprovalRequest, notifyIncident } from "./notify.js";
 import {
   backoffMsForAttempt,
@@ -29,6 +40,7 @@ type IncidentRow = typeof incidents.$inferSelect;
 type IncidentEventRow = typeof incidentEvents.$inferSelect;
 type ApprovalRow = typeof approvals.$inferSelect;
 type ActionRow = typeof actions.$inferSelect;
+type ActionProposalRow = typeof incidentActionProposals.$inferSelect;
 type ServiceRow = typeof services.$inferSelect;
 type HostRow = typeof hosts.$inferSelect;
 
@@ -59,6 +71,7 @@ export interface IncidentContext {
   events: IncidentEventRow[];
   approvals: ApprovalRow[];
   actions: ActionRow[];
+  proposals: ActionProposalRow[];
 }
 
 const recentExits = new Map<string, number[]>();
@@ -122,6 +135,8 @@ async function notifyForIncident(
     | "rejected"
     | "recovered"
     | "restart_failed"
+    | "ai_action_succeeded"
+    | "ai_action_failed"
     | "escalated",
   extra?: string,
 ): Promise<void> {
@@ -222,23 +237,29 @@ export async function getIncidentContext(
   if (!incident) return null;
   const service = await getService(incident.serviceId);
   const host = service ? await getHost(service.hostId) : null;
-  const [events, pendingApprovals, recentActions] = await Promise.all([
-    db
-      .select()
-      .from(incidentEvents)
-      .where(eq(incidentEvents.incidentId, id))
-      .orderBy(incidentEvents.ts),
-    db
-      .select()
-      .from(approvals)
-      .where(eq(approvals.incidentId, id))
-      .orderBy(desc(approvals.requestedAt)),
-    db
-      .select()
-      .from(actions)
-      .where(eq(actions.incidentId, id))
-      .orderBy(desc(actions.startedAt)),
-  ]);
+  const [events, pendingApprovals, recentActions, proposals] =
+    await Promise.all([
+      db
+        .select()
+        .from(incidentEvents)
+        .where(eq(incidentEvents.incidentId, id))
+        .orderBy(incidentEvents.ts),
+      db
+        .select()
+        .from(approvals)
+        .where(eq(approvals.incidentId, id))
+        .orderBy(desc(approvals.requestedAt)),
+      db
+        .select()
+        .from(actions)
+        .where(eq(actions.incidentId, id))
+        .orderBy(desc(actions.startedAt)),
+      db
+        .select()
+        .from(incidentActionProposals)
+        .where(eq(incidentActionProposals.incidentId, id))
+        .orderBy(asc(incidentActionProposals.sortOrder)),
+    ]);
   return {
     incident,
     service,
@@ -246,6 +267,7 @@ export async function getIncidentContext(
     events,
     approvals: pendingApprovals,
     actions: recentActions,
+    proposals,
   };
 }
 
@@ -276,17 +298,34 @@ export async function ackIncident(
 }
 
 async function expirePendingApprovals(incidentId: string): Promise<void> {
+  const now = new Date();
   await db
     .update(approvals)
     .set({
       status: "expired",
-      decidedAt: new Date(),
+      decidedAt: now,
       note: "インシデントが解決されました",
     })
     .where(
       and(
         eq(approvals.incidentId, incidentId),
         eq(approvals.status, "pending"),
+      ),
+    );
+  await db
+    .update(incidentActionProposals)
+    .set({
+      status: "expired",
+      decidedAt: now,
+      error: "インシデントが解決されました",
+    })
+    .where(
+      and(
+        eq(incidentActionProposals.incidentId, incidentId),
+        inArray(incidentActionProposals.status, [
+          "proposed",
+          "pending_approval",
+        ]),
       ),
     );
 }
@@ -405,12 +444,23 @@ export interface ApprovalDecisionResult {
   approval: ApprovalRow;
   action: ActionRow | null;
   incident: IncidentRow;
+  proposal: ActionProposalRow | null;
+}
+
+function proposalSnapshotMatches(
+  snapshot: Record<string, unknown>,
+  service: ServiceRow,
+): boolean {
+  return (
+    snapshot.serviceStatus === service.status &&
+    snapshot.serviceName === service.name
+  );
 }
 
 export async function decideApproval(
   id: string,
   decision: "approved" | "rejected",
-  actor: { id: string; email: string },
+  actor: { id: string; email: string; role?: Role },
   note?: string,
 ): Promise<ApprovalDecisionResult> {
   const [approval] = await db
@@ -435,10 +485,67 @@ export async function decideApproval(
     throw new IncidentError(409, "解決済みのインシデントです");
   }
 
+  let proposal: ActionProposalRow | null = null;
+  if (approval.proposalId) {
+    const [row] = await db
+      .select()
+      .from(incidentActionProposals)
+      .where(eq(incidentActionProposals.id, approval.proposalId))
+      .limit(1);
+    if (!row) throw new IncidentError(404, "提案が見つかりません");
+    proposal = row;
+    if (proposal.status !== "pending_approval") {
+      throw new IncidentError(409, "この提案は既に処理されています");
+    }
+    const expiresAt = approval.expiresAt ?? proposal.expiresAt;
+    if (expiresAt.getTime() <= Date.now()) {
+      await expireProposal(proposal, "承認待ちの有効期限が切れました");
+      await db
+        .update(incidents)
+        .set({ status: "open" })
+        .where(
+          and(eq(incidents.id, incident.id), eq(incidents.status, "approval")),
+        );
+      throw new IncidentError(409, "承認待ちの有効期限が切れています");
+    }
+  }
+
   const service =
     decision === "approved" ? await getService(incident.serviceId) : null;
   if (decision === "approved" && !service) {
     throw new IncidentError(404, "サービスが見つかりません");
+  }
+
+  if (decision === "approved" && proposal && service) {
+    if (!isProposalActionAllowed(proposal.actionType)) {
+      throw new IncidentError(422, "このアクションは現在実行できません");
+    }
+    if (
+      proposal.risk === "high" &&
+      config.AI_ACTION_HIGH_RISK_REQUIRE_ADMIN &&
+      actor.role !== "admin"
+    ) {
+      throw new IncidentError(403, "高リスク提案は admin のみ承認できます");
+    }
+    if (proposal.actionType === "stop" && actor.role !== "admin") {
+      throw new IncidentError(403, "stop は admin のみ承認できます");
+    }
+    if (
+      proposal.serviceId !== service.id ||
+      !proposalSnapshotMatches(proposal.snapshot, service)
+    ) {
+      await expireProposal(proposal, "提案時のサービス状態から変化しています");
+      await db
+        .update(incidents)
+        .set({ status: "open" })
+        .where(
+          and(eq(incidents.id, incident.id), eq(incidents.status, "approval")),
+        );
+      throw new IncidentError(
+        409,
+        "提案時のサービス状態から変化しています。再分析してください",
+      );
+    }
   }
 
   const [updatedApproval] = await db
@@ -457,6 +564,20 @@ export async function decideApproval(
   const decided = updatedApproval;
 
   if (decision === "rejected") {
+    let updatedProposal = proposal;
+    if (proposal) {
+      const [row] = await db
+        .update(incidentActionProposals)
+        .set({ status: "rejected", decidedAt: new Date() })
+        .where(
+          and(
+            eq(incidentActionProposals.id, proposal.id),
+            eq(incidentActionProposals.status, "pending_approval"),
+          ),
+        )
+        .returning();
+      updatedProposal = row ?? proposal;
+    }
     const [updatedIncident] = await db
       .update(incidents)
       .set({ status: "open" })
@@ -467,6 +588,7 @@ export async function decideApproval(
     await appendIncidentEvent(incident.id, "approval_rejected", {
       by: actor.email,
       note: note ?? null,
+      proposalId: proposal?.id ?? null,
     });
     await writeAudit({
       actorUserId: actor.id,
@@ -476,6 +598,8 @@ export async function decideApproval(
       after: {
         serviceId: incident.serviceId,
         incidentId: incident.id,
+        proposalId: proposal?.id ?? null,
+        actionType: proposal?.actionType ?? null,
       },
       reason: note ?? null,
     }).catch(() => undefined);
@@ -488,21 +612,59 @@ export async function decideApproval(
       approval: decided,
       action: null,
       incident: updatedIncident ?? incident,
+      proposal: updatedProposal,
     };
+  }
+
+  let approvedProposal: ActionProposalRow | null = null;
+  if (proposal) {
+    const [row] = await db
+      .update(incidentActionProposals)
+      .set({ status: "approved", decidedAt: new Date() })
+      .where(
+        and(
+          eq(incidentActionProposals.id, proposal.id),
+          eq(incidentActionProposals.status, "pending_approval"),
+        ),
+      )
+      .returning();
+    if (!row) {
+      await db
+        .update(approvals)
+        .set({
+          status: "pending",
+          decidedBy: null,
+          decidedAt: null,
+          note: approval.note,
+        })
+        .where(eq(approvals.id, id));
+      throw new IncidentError(409, "この提案は既に処理されています");
+    }
+    approvedProposal = row;
   }
 
   await appendIncidentEvent(incident.id, "approval_approved", {
     by: actor.email,
     note: note ?? null,
+    proposalId: proposal?.id ?? null,
+    actionType: proposal?.actionType ?? "restart",
+    risk: proposal?.risk ?? null,
   });
-  const action = await startRestartAction({
-    incident,
-    service: service!,
-    requestedBy: actor.email,
-    approvedBy: actor.email,
-    reason: `承認された再起動 (${actor.email})`,
-    delayMs: 0,
-  });
+  const action = approvedProposal
+    ? await startProposalAction({
+        incident,
+        service: service!,
+        proposal: approvedProposal,
+        approvedBy: actor.email,
+      })
+    : await startRestartAction({
+        incident,
+        service: service!,
+        requestedBy: actor.email,
+        approvedBy: actor.email,
+        reason: `承認された再起動 (${actor.email})`,
+        delayMs: 0,
+      });
   await writeAudit({
     actorUserId: actor.id,
     actorLabel: actor.email,
@@ -512,13 +674,25 @@ export async function decideApproval(
       serviceId: incident.serviceId,
       incidentId: incident.id,
       actionId: action.id,
+      proposalId: proposal?.id ?? null,
+      actionType: proposal?.actionType ?? "restart",
+      risk: proposal?.risk ?? null,
     },
     reason: note ?? null,
   }).catch(() => undefined);
-  void notifyForIncident(incident, "approved", note ?? undefined).catch(
-    () => undefined,
-  );
-  return { approval: decided, action, incident };
+  void notifyForIncident(
+    incident,
+    "approved",
+    proposal
+      ? `${proposal.actionType} / risk=${proposal.risk}`
+      : (note ?? undefined),
+  ).catch(() => undefined);
+  return {
+    approval: decided,
+    action,
+    incident,
+    proposal: approvedProposal,
+  };
 }
 
 export interface StartRestartInput {
@@ -572,6 +746,448 @@ export async function startRestartAction(
     });
   }
   return action;
+}
+
+interface StartProposalInput {
+  incident: IncidentRow;
+  service: ServiceRow;
+  proposal: ActionProposalRow;
+  approvedBy: string;
+}
+
+async function startProposalAction(
+  input: StartProposalInput,
+): Promise<ActionRow> {
+  const [created] = await db
+    .insert(actions)
+    .values({
+      id: randomUUID(),
+      incidentId: input.incident.id,
+      serviceId: input.service.id,
+      type: input.proposal.actionType,
+      status: "pending",
+      requestedBy: "system:ai",
+      approvedBy: input.approvedBy,
+      policyId: null,
+      proposalId: input.proposal.id,
+      approvalId: input.proposal.approvalId,
+      source: "ai_approved",
+      startedAt: new Date(),
+      finishedAt: null,
+      error: null,
+    })
+    .returning();
+  if (!created) {
+    throw new IncidentError(500, "AI アクションを作成できませんでした");
+  }
+  await db
+    .update(incidentActionProposals)
+    .set({ actionId: created.id })
+    .where(eq(incidentActionProposals.id, input.proposal.id));
+  void executeProposalAction(created.id).catch((error: unknown) => {
+    console.warn(
+      `[monitor] proposal action failed: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  });
+  return created;
+}
+
+async function succeedProposalExecution(
+  action: ActionRow,
+  proposal: ActionProposalRow,
+  incident: IncidentRow,
+  service: ServiceRow,
+  detail: string,
+  resolveIncident: boolean,
+): Promise<void> {
+  const now = new Date();
+  await db
+    .update(actions)
+    .set({ status: "succeeded", finishedAt: now, error: null })
+    .where(eq(actions.id, action.id));
+  await db
+    .update(incidentActionProposals)
+    .set({
+      status: "succeeded",
+      executedAt: now,
+      error: null,
+    })
+    .where(eq(incidentActionProposals.id, proposal.id));
+
+  let current = incident;
+  if (resolveIncident) {
+    const [updatedIncident] = await db
+      .update(incidents)
+      .set({
+        status: "resolved",
+        resolvedAt: now,
+        summary:
+          `${proposal.actionType} 後に復旧を確認しました: ${detail}`.slice(
+            0,
+            2000,
+          ),
+      })
+      .where(eq(incidents.id, incident.id))
+      .returning();
+    current = updatedIncident ?? incident;
+    await supersedeOtherProposals(incident.id, proposal.id);
+    await expirePendingApprovals(incident.id);
+    await resolveOtherIncidents(
+      service.id,
+      incident.id,
+      "AI 承認アクションでサービスが復旧したため自動解決",
+    );
+  } else {
+    const [updatedIncident] = await db
+      .update(incidents)
+      .set({
+        status: "open",
+        summary: `${proposal.actionType} を実行しました: ${detail}`.slice(
+          0,
+          2000,
+        ),
+      })
+      .where(
+        and(eq(incidents.id, incident.id), ne(incidents.status, "resolved")),
+      )
+      .returning();
+    current = updatedIncident ?? incident;
+    await supersedeOtherProposals(incident.id, proposal.id);
+    await expirePendingApprovals(incident.id);
+  }
+
+  await appendIncidentEvent(incident.id, "ai_action_succeeded", {
+    actionId: action.id,
+    proposalId: proposal.id,
+    actionType: proposal.actionType,
+    resolved: resolveIncident,
+    detail,
+  });
+  await writeAudit({
+    actorLabel: "system:ai",
+    action: "ai.action.succeeded",
+    target: `service:${service.id}`,
+    after: {
+      incidentId: incident.id,
+      serviceId: service.id,
+      proposalId: proposal.id,
+      approvalId: proposal.approvalId,
+      actionId: action.id,
+      actionType: proposal.actionType,
+      risk: proposal.risk,
+      confidence: proposal.confidence,
+      resolved: resolveIncident,
+      detail,
+    },
+  }).catch(() => undefined);
+  void notifyForIncident(current, "ai_action_succeeded", detail).catch(
+    () => undefined,
+  );
+}
+
+async function failProposalExecution(
+  action: ActionRow,
+  proposal: ActionProposalRow,
+  incident: IncidentRow | null,
+  service: ServiceRow | null,
+  detail: string,
+  options: {
+    proposalStatus?: "failed" | "expired";
+    auditAction?: "ai.action.failed" | "ai.action.stale";
+    eventType?: "ai_action_failed" | "ai_action_stale";
+  } = {},
+): Promise<void> {
+  const now = new Date();
+  const message = detail.slice(0, 2000);
+  const proposalStatus = options.proposalStatus ?? "failed";
+  const auditAction = options.auditAction ?? "ai.action.failed";
+  const eventType = options.eventType ?? "ai_action_failed";
+  await db
+    .update(actions)
+    .set({ status: "failed", finishedAt: now, error: message })
+    .where(eq(actions.id, action.id));
+  await db
+    .update(incidentActionProposals)
+    .set({
+      status: proposalStatus,
+      executedAt: now,
+      error: message,
+    })
+    .where(
+      and(
+        eq(incidentActionProposals.id, proposal.id),
+        inArray(incidentActionProposals.status, ["approved", "executing"]),
+      ),
+    );
+
+  let current = incident;
+  if (incident) {
+    const attempts =
+      action.type === "restart"
+        ? incident.restartAttempts + 1
+        : incident.restartAttempts;
+    const [updatedIncident] = await db
+      .update(incidents)
+      .set({
+        status: "open",
+        restartAttempts: attempts,
+        summary: `AI 承認アクションに失敗しました: ${message}`.slice(0, 2000),
+      })
+      .where(eq(incidents.id, incident.id))
+      .returning();
+    current = updatedIncident ?? incident;
+    await appendIncidentEvent(incident.id, eventType, {
+      actionId: action.id,
+      proposalId: proposal.id,
+      actionType: proposal.actionType,
+      detail: message,
+    });
+  }
+
+  await writeAudit({
+    actorLabel: "system:ai",
+    action: auditAction,
+    target: service ? `service:${service.id}` : `proposal:${proposal.id}`,
+    after: {
+      incidentId: incident?.id ?? proposal.incidentId,
+      serviceId: service?.id ?? proposal.serviceId,
+      proposalId: proposal.id,
+      approvalId: proposal.approvalId,
+      actionId: action.id,
+      actionType: proposal.actionType,
+      risk: proposal.risk,
+      detail: message,
+    },
+  }).catch(() => undefined);
+  if (current) {
+    void notifyForIncident(current, "ai_action_failed", message).catch(
+      () => undefined,
+    );
+  }
+}
+
+async function executeProposalAction(actionId: string): Promise<void> {
+  const [action] = await db
+    .select()
+    .from(actions)
+    .where(eq(actions.id, actionId))
+    .limit(1);
+  if (!action) return;
+  if (action.status === "succeeded" || action.status === "failed") return;
+
+  const [proposal] = action.proposalId
+    ? await db
+        .select()
+        .from(incidentActionProposals)
+        .where(eq(incidentActionProposals.id, action.proposalId))
+        .limit(1)
+    : [];
+  if (!proposal) {
+    await db
+      .update(actions)
+      .set({
+        status: "failed",
+        finishedAt: new Date(),
+        error: "提案が見つかりません",
+      })
+      .where(eq(actions.id, actionId));
+    return;
+  }
+
+  const [incident] = await db
+    .select()
+    .from(incidents)
+    .where(eq(incidents.id, action.incidentId ?? ""))
+    .limit(1);
+  if (!incident) {
+    await failProposalExecution(
+      action,
+      proposal,
+      null,
+      null,
+      "インシデントが見つかりません",
+    );
+    return;
+  }
+  if (incident.status === "resolved") {
+    await failProposalExecution(
+      action,
+      proposal,
+      incident,
+      null,
+      "インシデントは既に解決されています",
+    );
+    return;
+  }
+  const service = await getService(action.serviceId);
+  if (!service) {
+    await failProposalExecution(
+      action,
+      proposal,
+      incident,
+      null,
+      "サービスが見つかりません",
+    );
+    return;
+  }
+  if (service.id !== proposal.serviceId) {
+    await failProposalExecution(
+      action,
+      proposal,
+      incident,
+      service,
+      "提案とサービスの対象が一致しません",
+      {
+        proposalStatus: "expired",
+        auditAction: "ai.action.stale",
+        eventType: "ai_action_stale",
+      },
+    );
+    return;
+  }
+  if (!isProposalActionAllowed(proposal.actionType)) {
+    await failProposalExecution(
+      action,
+      proposal,
+      incident,
+      service,
+      "このアクションは現在実行できません",
+    );
+    return;
+  }
+  if (await hasRunningDeploy(service.id)) {
+    await failProposalExecution(
+      action,
+      proposal,
+      incident,
+      service,
+      "デプロイ中のため実行できません",
+    );
+    return;
+  }
+  if (!proposalSnapshotMatches(proposal.snapshot, service)) {
+    await failProposalExecution(
+      action,
+      proposal,
+      incident,
+      service,
+      "提案時のサービス状態から変化しています。再分析してください",
+      {
+        proposalStatus: "expired",
+        auditAction: "ai.action.stale",
+        eventType: "ai_action_stale",
+      },
+    );
+    return;
+  }
+  if (proposal.status !== "approved") {
+    await failProposalExecution(
+      action,
+      proposal,
+      incident,
+      service,
+      "提案が実行可能な状態ではありません",
+    );
+    return;
+  }
+
+  const [claimed] = await db
+    .update(incidentActionProposals)
+    .set({ status: "executing" })
+    .where(
+      and(
+        eq(incidentActionProposals.id, proposal.id),
+        eq(incidentActionProposals.status, "approved"),
+      ),
+    )
+    .returning();
+  if (!claimed) {
+    await db
+      .update(actions)
+      .set({
+        status: "failed",
+        finishedAt: new Date(),
+        error: "提案は既に実行中または処理済みです",
+      })
+      .where(eq(actions.id, actionId));
+    return;
+  }
+
+  await db
+    .update(actions)
+    .set({ status: "running", startedAt: new Date() })
+    .where(eq(actions.id, actionId));
+  await writeAudit({
+    actorLabel: "system:ai",
+    action: "ai.action.started",
+    target: `service:${service.id}`,
+    after: {
+      incidentId: incident.id,
+      serviceId: service.id,
+      proposalId: proposal.id,
+      approvalId: proposal.approvalId,
+      actionId: action.id,
+      actionType: proposal.actionType,
+      risk: proposal.risk,
+    },
+  }).catch(() => undefined);
+
+  try {
+    if (proposal.actionType === "restart") {
+      await restartService(service.id);
+    } else if (proposal.actionType === "start") {
+      await startService(service.id);
+    } else if (proposal.actionType === "stop") {
+      await stopService(service.id);
+      await succeedProposalExecution(
+        action,
+        proposal,
+        incident,
+        service,
+        "サービスを停止しました",
+        false,
+      );
+      return;
+    } else {
+      await failProposalExecution(
+        action,
+        proposal,
+        incident,
+        service,
+        "deploy は Phase 2 以降でのみ実行できます",
+      );
+      return;
+    }
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    await failProposalExecution(action, proposal, incident, service, detail);
+    return;
+  }
+
+  const verification = await verifyRecovery(
+    service.id,
+    config.AUTO_RESTART_VERIFY_TIMEOUT_SEC,
+  );
+  if (!verification.ok) {
+    await failProposalExecution(
+      action,
+      proposal,
+      incident,
+      service,
+      verification.detail,
+    );
+    return;
+  }
+  await succeedProposalExecution(
+    action,
+    proposal,
+    incident,
+    service,
+    verification.detail,
+    true,
+  );
 }
 
 function sleep(ms: number): Promise<void> {

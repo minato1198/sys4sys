@@ -205,6 +205,7 @@ docs/
 - [シークレット ADR](./docs/adr/0004-secrets.md)
 - [デプロイ承認 ADR](./docs/adr/0005-deploy-approval.md)
 - [外部サービス制御 ADR](./docs/adr/0006-external-service-control.md)
+- [AI 提案アクション承認 ADR](./docs/adr/0007-ai-action-approval.md)
 - [デモ API](./apps/demo-api/README.md)
 - [NSSM デモ API](./apps/demo-nssm-api/README.md)
 - [セキュリティポリシー](./SECURITY.md)

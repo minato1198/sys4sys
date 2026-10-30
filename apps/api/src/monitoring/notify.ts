@@ -16,6 +16,8 @@ export type NotificationKind =
   | "rejected"
   | "recovered"
   | "restart_failed"
+  | "ai_action_succeeded"
+  | "ai_action_failed"
   | "escalated";
 
 const KIND_LABEL: Record<NotificationKind, string> = {
@@ -25,6 +27,8 @@ const KIND_LABEL: Record<NotificationKind, string> = {
   rejected: "却下",
   recovered: "復旧",
   restart_failed: "復旧失敗",
+  ai_action_succeeded: "AI 操作成功",
+  ai_action_failed: "AI 操作失敗",
   escalated: "エスカレーション",
 };
 
@@ -138,7 +142,15 @@ export async function notifyApprovalRequest(
   const effective = await getEffectiveMailSettings();
   if (!effective || effective.recipients.length === 0) return;
   const serviceName = service?.name ?? incident.serviceId;
-  const subject = `[sys4sys][承認待ち] ${serviceName}: 再起動の承認が必要です`;
+  const requested = approval.requestedAction as {
+    type?: unknown;
+    reason?: unknown;
+    risk?: unknown;
+  };
+  const actionType =
+    typeof requested.type === "string" ? requested.type : "restart";
+  const risk = typeof requested.risk === "string" ? requested.risk : null;
+  const subject = `[sys4sys][承認待ち] ${serviceName}: ${actionType} の承認が必要です`;
   const lines = [
     "sys4sys 承認待ち通知",
     "",
@@ -146,11 +158,15 @@ export async function notifyApprovalRequest(
     `ホスト: ${host?.name ?? "unknown"}`,
     `インシデント: ${incident.title}`,
     `重大度: ${incident.severity}`,
-    `理由: ${String((approval.requestedAction as { reason?: unknown }).reason ?? "")}`,
+    `アクション: ${actionType}`,
+    risk ? `リスク: ${risk}` : null,
+    `理由: ${String(requested.reason ?? "")}`,
+    approval.expiresAt ? `有効期限: ${approval.expiresAt.toISOString()}` : null,
+    approval.source === "ai" ? "種別: AI 提案" : null,
     "",
     `承認画面: ${approvalUrl()}`,
     `インシデント画面: ${incidentUrl(incident.id)}`,
-  ];
+  ].filter((line): line is string => line !== null);
   try {
     await sendMail(
       {

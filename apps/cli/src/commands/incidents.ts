@@ -57,9 +57,23 @@ interface ActionSummary {
   error: string | null;
 }
 
+interface ProposalSummary {
+  id: string;
+  actionType: string;
+  status: string;
+  risk: string;
+  confidence: number;
+  rationale: string | null;
+  approvalId: string | null;
+  actionId: string | null;
+  expiresAt: string | null;
+  error: string | null;
+}
+
 export interface IncidentDetail extends IncidentListItem {
   events: Array<{ id: string; ts: string | null; type: string }>;
   approvals: ApprovalSummary[];
+  proposals: ProposalSummary[];
   actions: ActionSummary[];
   analysis: {
     result?: {
@@ -254,6 +268,18 @@ export async function getIncident(
         `  ${shortId(approval.id)} ${approval.status} action=${bodyText(
           approval.requestedAction.type ?? approval.requestedAction,
         )}\n`,
+      );
+    }
+  }
+
+  out(options, "\nAI proposals:\n");
+  if ((detail.proposals ?? []).length === 0) {
+    out(options, "  none\n");
+  } else {
+    for (const proposal of detail.proposals ?? []) {
+      out(
+        options,
+        `  ${shortId(proposal.id)} ${proposal.actionType} ${proposal.status} risk=${proposal.risk} confidence=${(proposal.confidence * 100).toFixed(0)}% expires=${proposal.expiresAt ?? "-"}${proposal.rationale ? ` reason=${proposal.rationale}` : ""}${proposal.error ? ` error=${proposal.error}` : ""}\n`,
       );
     }
   }

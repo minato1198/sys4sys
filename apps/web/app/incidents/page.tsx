@@ -61,12 +61,48 @@ interface IncidentEvent {
 interface Approval {
   id: string;
   incidentId: string;
+  proposalId: string | null;
+  source: "policy" | "ai" | "manual";
   requestedAction: Record<string, unknown>;
   status: "pending" | "approved" | "rejected" | "expired";
   requestedAt: string;
   decidedBy: string | null;
   decidedAt: string | null;
   note: string | null;
+  expiresAt: string | null;
+}
+
+type ActionProposalStatus =
+  | "proposed"
+  | "pending_approval"
+  | "approved"
+  | "executing"
+  | "succeeded"
+  | "failed"
+  | "rejected"
+  | "expired"
+  | "superseded";
+
+type ActionProposalRisk = "low" | "medium" | "high";
+
+interface ActionProposal {
+  id: string;
+  incidentId: string;
+  analysisId: string | null;
+  serviceId: string;
+  actionType: "restart" | "start" | "stop" | "deploy";
+  status: ActionProposalStatus;
+  risk: ActionProposalRisk;
+  confidence: number;
+  rationale: string | null;
+  analysisRequestedBy: string | null;
+  approvalId: string | null;
+  actionId: string | null;
+  createdAt: string;
+  expiresAt: string;
+  decidedAt: string | null;
+  executedAt: string | null;
+  error: string | null;
 }
 
 interface IncidentAction {
@@ -120,6 +156,7 @@ interface ReportView {
 interface IncidentDetail extends Incident {
   events: IncidentEvent[];
   approvals: Approval[];
+  proposals: ActionProposal[];
   actions: IncidentAction[];
   analysis: AiAnalysis | null;
   report: ReportView | null;
@@ -187,6 +224,24 @@ function actionStatusTone(status: string): string {
   return "text-fg-muted";
 }
 
+function riskBadge(risk: ActionProposalRisk): string {
+  if (risk === "high") return "border-danger/40 bg-danger/10 text-danger";
+  if (risk === "medium") return "border-warning/40 bg-warning/10 text-warning";
+  return "border-info/40 bg-info/10 text-info";
+}
+
+function proposalStatusBadge(status: ActionProposalStatus): string {
+  if (status === "pending_approval")
+    return "border-warning/40 bg-warning/10 text-warning";
+  if (status === "approved" || status === "executing")
+    return "border-info/40 bg-info/10 text-info";
+  if (status === "succeeded")
+    return "border-success/40 bg-success/10 text-success";
+  if (status === "failed" || status === "rejected")
+    return "border-danger/40 bg-danger/10 text-danger";
+  return "border-border bg-surface text-fg-muted";
+}
+
 const EVENT_LABELS: Record<string, string> = {
   detected: "検知",
   recurred: "再発",
@@ -197,6 +252,12 @@ const EVENT_LABELS: Record<string, string> = {
   resolved: "解決",
   recovered: "復旧",
   restart_failed: "再起動失敗",
+  ai_action_proposed: "AI 提案",
+  ai_action_succeeded: "AI 操作成功",
+  ai_action_failed: "AI 操作失敗",
+  ai_action_stale: "AI 提案 陳腐化",
+  ai_action_expired: "AI 提案 期限切れ",
+  ai_action_superseded: "AI 提案 置換",
   escalated: "エスカレーション",
 };
 
@@ -218,6 +279,7 @@ export default function IncidentsPage() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
+  const [proposalBusyId, setProposalBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [note, setNote] = useState("");
@@ -367,6 +429,37 @@ export default function IncidentsPage() {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setAnalyzing(false);
+    }
+  }
+
+  async function requestApproval(proposal: ActionProposal) {
+    setProposalBusyId(proposal.id);
+    setMessage(null);
+    setError(null);
+    try {
+      const response = await fetch(
+        `/api/action-proposals/${encodeURIComponent(proposal.id)}/request-approval`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ note: note.trim() || undefined }),
+        },
+      );
+      if (!response.ok) {
+        const problem = (await response
+          .json()
+          .catch(() => null)) as Problem | null;
+        throw new Error(
+          problem?.detail ?? `承認依頼に失敗しました (${response.status})`,
+        );
+      }
+      setMessage("AI 提案を承認待ちにしました。承認画面で確認してください。");
+      if (selectedId) await loadDetail(selectedId);
+      await loadList();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setProposalBusyId(null);
     }
   }
 
@@ -834,6 +927,111 @@ export default function IncidentsPage() {
                       分析はまだありません。インシデント作成時に自動実行され、
                       未設定時はルールベースのレポートを生成します。
                     </p>
+                  )}
+                </div>
+
+                <div className="rounded-lg border border-border bg-surface-muted p-3">
+                  <h3 className="text-xs font-semibold text-fg-muted">
+                    AI 提案
+                  </h3>
+                  {detail.proposals.length === 0 ? (
+                    <p className="mt-2 text-xs text-fg-muted">
+                      実行可能な AI 提案はありません。機能が無効な場合や
+                      フォールバック分析では生成されません。
+                    </p>
+                  ) : (
+                    <ul className="mt-2 space-y-2">
+                      {detail.proposals.map((proposal) => {
+                        const selfRequested =
+                          Boolean(proposal.analysisRequestedBy) &&
+                          proposal.analysisRequestedBy === user?.id;
+                        const canRequest =
+                          canOperate &&
+                          proposal.status === "proposed" &&
+                          !detail.pendingApprovalId &&
+                          detail.status !== "resolved";
+                        return (
+                          <li
+                            key={proposal.id}
+                            className="rounded border border-border bg-surface px-2.5 py-2 text-xs"
+                          >
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className="font-mono font-medium text-fg">
+                                {proposal.actionType}
+                              </span>
+                              <span
+                                className={`rounded border px-1.5 py-0.5 text-xs font-medium ${proposalStatusBadge(
+                                  proposal.status,
+                                )}`}
+                              >
+                                {proposal.status}
+                              </span>
+                              <span
+                                className={`rounded border px-1.5 py-0.5 text-xs font-medium ${riskBadge(
+                                  proposal.risk,
+                                )}`}
+                              >
+                                risk {proposal.risk}
+                              </span>
+                              <span className="text-fg-muted">
+                                confidence{" "}
+                                {(proposal.confidence * 100).toFixed(0)}%
+                              </span>
+                            </div>
+                            {proposal.rationale ? (
+                              <p className="mt-1 whitespace-pre-wrap text-xs text-fg">
+                                {proposal.rationale}
+                              </p>
+                            ) : null}
+                            <div className="mt-1 text-xs text-fg-muted">
+                              期限: {formatDate(proposal.expiresAt)}
+                              {proposal.actionId
+                                ? ` / action: ${proposal.actionId}`
+                                : ""}
+                            </div>
+                            {proposal.error ? (
+                              <div className="mt-1 break-words text-xs text-danger">
+                                {proposal.error}
+                              </div>
+                            ) : null}
+                            {selfRequested ? (
+                              <p className="mt-1 text-xs text-warning">
+                                あなたが実行した分析の提案です。承認は別の
+                                operator / admin が行ってください。
+                              </p>
+                            ) : null}
+                            <div className="mt-2 flex flex-wrap gap-1.5">
+                              {proposal.status === "pending_approval" ? (
+                                <Link
+                                  href="/approvals"
+                                  className="rounded border border-warning/40 bg-warning/10 px-2 py-1 text-xs font-medium text-warning transition hover:bg-warning/20"
+                                >
+                                  承認画面へ
+                                </Link>
+                              ) : null}
+                              {canRequest ? (
+                                <button
+                                  type="button"
+                                  disabled={proposalBusyId === proposal.id}
+                                  onClick={() => void requestApproval(proposal)}
+                                  className="rounded border border-success/40 bg-success/10 px-2 py-1 text-xs font-medium text-success transition hover:bg-success/20 disabled:opacity-50"
+                                >
+                                  {proposalBusyId === proposal.id
+                                    ? "依頼中…"
+                                    : "この提案で承認依頼"}
+                                </button>
+                              ) : null}
+                              {proposal.status === "proposed" &&
+                              detail.pendingApprovalId ? (
+                                <span className="text-xs text-fg-muted">
+                                  別の承認待ちがあります
+                                </span>
+                              ) : null}
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
                   )}
                 </div>
 

@@ -288,11 +288,80 @@ export const incidentEvents = sqliteTable(
   ],
 );
 
+export const incidentActionProposals = sqliteTable(
+  "incident_action_proposals",
+  {
+    id: text("id").primaryKey(),
+    incidentId: text("incident_id").notNull(),
+    analysisId: text("analysis_id"),
+    serviceId: text("service_id").notNull(),
+    actionType: text("action_type", {
+      enum: ["restart", "start", "stop", "deploy"],
+    }).notNull(),
+    status: text("status", {
+      enum: [
+        "proposed",
+        "pending_approval",
+        "approved",
+        "executing",
+        "succeeded",
+        "failed",
+        "rejected",
+        "expired",
+        "superseded",
+      ],
+    })
+      .notNull()
+      .default("proposed"),
+    risk: text("risk", { enum: ["low", "medium", "high"] })
+      .notNull()
+      .default("medium"),
+    confidence: real("confidence").notNull().default(0),
+    rationale: text("rationale"),
+    parameters: text("parameters", { mode: "json" }).$type<
+      Record<string, unknown>
+    >(),
+    snapshot: text("snapshot", { mode: "json" })
+      .$type<Record<string, unknown>>()
+      .notNull(),
+    dedupeKey: text("dedupe_key").notNull(),
+    sortOrder: integer("sort_order").notNull().default(0),
+    analysisRequestedBy: text("analysis_requested_by"),
+    approvalId: text("approval_id"),
+    actionId: text("action_id"),
+    createdAt: timestamp("created_at").notNull(),
+    expiresAt: timestamp("expires_at").notNull(),
+    decidedAt: timestamp("decided_at"),
+    executedAt: timestamp("executed_at"),
+    error: text("error"),
+  },
+  (table) => [
+    index("incident_action_proposals_incident_status_idx").on(
+      table.incidentId,
+      table.status,
+    ),
+    index("incident_action_proposals_service_status_idx").on(
+      table.serviceId,
+      table.status,
+    ),
+    index("incident_action_proposals_approval_idx").on(table.approvalId),
+    index("incident_action_proposals_action_idx").on(table.actionId),
+    index("incident_action_proposals_incident_dedupe_idx").on(
+      table.incidentId,
+      table.dedupeKey,
+    ),
+  ],
+);
+
 export const approvals = sqliteTable(
   "approvals",
   {
     id: text("id").primaryKey(),
     incidentId: text("incident_id").notNull(),
+    proposalId: text("proposal_id"),
+    source: text("source", { enum: ["policy", "ai", "manual"] })
+      .notNull()
+      .default("policy"),
     requestedAction: text("requested_action", { mode: "json" })
       .$type<Record<string, unknown>>()
       .notNull(),
@@ -306,10 +375,12 @@ export const approvals = sqliteTable(
     decidedBy: text("decided_by"),
     decidedAt: timestamp("decided_at"),
     note: text("note"),
+    expiresAt: timestamp("expires_at"),
   },
   (table) => [
     index("approvals_status_idx").on(table.status),
     index("approvals_incident_id_idx").on(table.incidentId),
+    index("approvals_proposal_id_idx").on(table.proposalId),
   ],
 );
 
@@ -376,12 +447,21 @@ export const actions = sqliteTable(
     requestedBy: text("requested_by"),
     approvedBy: text("approved_by"),
     policyId: text("policy_id"),
+    proposalId: text("proposal_id"),
+    approvalId: text("approval_id"),
+    source: text("source", {
+      enum: ["manual", "policy", "ai_approved"],
+    })
+      .notNull()
+      .default("manual"),
     startedAt: timestamp("started_at").notNull(),
     finishedAt: timestamp("finished_at"),
     error: text("error"),
   },
   (table) => [
     index("actions_service_started_idx").on(table.serviceId, table.startedAt),
+    index("actions_proposal_id_idx").on(table.proposalId),
+    index("actions_approval_id_idx").on(table.approvalId),
     uniqueIndex("actions_one_running_deploy")
       .on(table.serviceId)
       .where(

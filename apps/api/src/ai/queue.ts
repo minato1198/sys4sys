@@ -1,6 +1,13 @@
 import { analyzeIncident } from "./analysis.js";
 
-const queue: string[] = [];
+interface AnalysisQueueItem {
+  incidentId: string;
+  trigger: "auto" | "manual";
+  actorUserId: string | null;
+  actorLabel: string;
+}
+
+const queue: AnalysisQueueItem[] = [];
 const queued = new Set<string>();
 let running = false;
 let stopped = false;
@@ -10,14 +17,18 @@ function drain(): void {
   running = true;
   void (async () => {
     while (queue.length > 0 && !stopped) {
-      const incidentId = queue.shift();
-      if (!incidentId) continue;
-      queued.delete(incidentId);
+      const item = queue.shift();
+      if (!item) continue;
+      queued.delete(item.incidentId);
       try {
-        await analyzeIncident(incidentId, { trigger: "auto" });
+        await analyzeIncident(item.incidentId, {
+          trigger: item.trigger,
+          actorUserId: item.actorUserId,
+          actorLabel: item.actorLabel,
+        });
       } catch (error) {
         console.warn(
-          `[ai] analysis failed for incident ${incidentId}: ${
+          `[ai] analysis failed for incident ${item.incidentId}: ${
             error instanceof Error ? error.message : String(error)
           }`,
         );
@@ -29,13 +40,28 @@ function drain(): void {
   });
 }
 
+export interface EnqueueAnalysisOptions {
+  trigger?: "auto" | "manual";
+  actorUserId?: string | null;
+  actorLabel?: string;
+}
+
 /**
  * インシデント作成時に非同期で分析を投入する。同じ ID はキュー内で重複させない。
+ * 手動分析の場合は実行者 metadata を保持し、four-eyes 判定に使う。
  */
-export function enqueueIncidentAnalysis(incidentId: string): boolean {
+export function enqueueIncidentAnalysis(
+  incidentId: string,
+  options: EnqueueAnalysisOptions = {},
+): boolean {
   if (stopped || queued.has(incidentId)) return false;
   queued.add(incidentId);
-  queue.push(incidentId);
+  queue.push({
+    incidentId,
+    trigger: options.trigger ?? "auto",
+    actorUserId: options.actorUserId ?? null,
+    actorLabel: options.actorLabel ?? "system:ai",
+  });
   drain();
   return true;
 }

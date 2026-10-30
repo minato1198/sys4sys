@@ -12,6 +12,7 @@ import { cleanupLogs, startLogRetention } from "./logs/retention.js";
 import { startAllLogTailers, stopAllLogTailers } from "./logs/tailers.js";
 import { startMonitor, stopMonitor } from "./monitoring/engine.js";
 import { aiRoutes } from "./routes/ai.js";
+import { actionProposalRoutes } from "./routes/action-proposals.js";
 import { approvalRoutes } from "./routes/approvals.js";
 import { auditRoutes } from "./routes/audit.js";
 import { authRoutes } from "./routes/auth.js";
@@ -210,6 +211,7 @@ export async function buildApp() {
   await app.register(deployRequestRoutes, { prefix: "/api" });
   await app.register(logRoutes, { prefix: "/api" });
   await app.register(incidentRoutes, { prefix: "/api" });
+  await app.register(actionProposalRoutes, { prefix: "/api" });
   await app.register(approvalRoutes, { prefix: "/api" });
   await app.register(aiRoutes, { prefix: "/api" });
   await app.register(reportRoutes, { prefix: "/api" });

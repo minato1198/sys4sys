@@ -943,6 +943,69 @@ paths:
                     nullable: true
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /action-proposals:
+    get:
+      tags: [approvals]
+      summary: AI 提案一覧（読み取り権限）
+      parameters:
+        - name: incidentId
+          in: query
+          schema: { type: string }
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum:
+              [
+                proposed,
+                pending_approval,
+                approved,
+                executing,
+                succeeded,
+                failed,
+                rejected,
+                expired,
+                superseded,
+              ]
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ActionProposalList" }
+
+  /action-proposals/{id}/request-approval:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      tags: [approvals]
+      summary: AI 提案の承認を依頼（operator / admin）
+      description: |
+        実行可能な `proposed` の提案から、保留中の承認を 1 件作成する。
+        同一インシデントに pending 承認がある場合は 409。期限切れ・陳腐化・無効な種別は拒否する。
+        作成された承認は自動実行されない。
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                note: { type: string, maxLength: 500 }
+      responses:
+        "201":
+          description: 承認依頼を作成
+          content:
+            application/json:
+              schema:
+                { $ref: "#/components/schemas/ActionProposalApprovalResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422":
+          description: 現在許可されていないアクション種別
+
   /approvals:
     get:
       tags: [approvals]
@@ -967,30 +1030,34 @@ paths:
       - $ref: "#/components/parameters/Id"
     post:
       tags: [approvals]
-      summary: 再起動を承認（operator / admin）
+      summary: 承認してアクションを実行（operator / admin）
       description: |
         監視エンジンが作成した `requestedBy=null` の承認は operator / admin どちらも承認できる。
         `requestedBy` が操作ユーザーと一致する自己承認は 403。二重決定は 409。
+        AI 提案の承認は `restart` / `start` を既存の決定的な実行経路で非同期実行する。
+        `risk=high` または `stop` は admin のみ承認できる。期限切れ・提案時スナップショット不一致は 409。
       requestBody:
         content:
           application/json:
             schema: { $ref: "#/components/schemas/ApprovalDecision" }
       responses:
         "202":
-          description: 承認し、再起動アクションを非同期で開始
+          description: 承認し、アクションを非同期で開始
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ApprovalDecisionResult" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
+        "422":
+          description: 現在許可されていないアクション種別
 
   /approvals/{id}/reject:
     parameters:
       - $ref: "#/components/parameters/Id"
     post:
       tags: [approvals]
-      summary: 再起動を却下（operator / admin）
+      summary: 承認を却下（operator / admin）
       requestBody:
         content:
           application/json:
@@ -1469,6 +1536,7 @@ components:
         - incidents:write
         - approvals:read
         - approvals:decide
+        - approvals:request
         - hosts:read
         - hosts:write
         - ports:read
@@ -2154,6 +2222,9 @@ components:
             approvals:
               type: array
               items: { $ref: "#/components/schemas/Approval" }
+            proposals:
+              type: array
+              items: { $ref: "#/components/schemas/ActionProposal" }
             actions:
               type: array
               items: { $ref: "#/components/schemas/Action" }
@@ -2214,12 +2285,78 @@ components:
         name: { type: string }
         distro: { type: string, nullable: true }
 
+    ActionProposal:
+      type: object
+      required:
+        [
+          id,
+          incidentId,
+          serviceId,
+          actionType,
+          status,
+          risk,
+          confidence,
+          createdAt,
+          expiresAt,
+        ]
+      properties:
+        id: { type: string }
+        incidentId: { type: string }
+        analysisId: { type: string, nullable: true }
+        serviceId: { type: string }
+        actionType: { type: string, enum: [restart, start, stop, deploy] }
+        status:
+          type: string
+          enum:
+            [
+              proposed,
+              pending_approval,
+              approved,
+              executing,
+              succeeded,
+              failed,
+              rejected,
+              expired,
+              superseded,
+            ]
+        risk: { type: string, enum: [low, medium, high] }
+        confidence: { type: number, minimum: 0, maximum: 1 }
+        rationale: { type: string, nullable: true }
+        parameters: { type: object, additionalProperties: true, nullable: true }
+        snapshot: { type: object, additionalProperties: true }
+        analysisRequestedBy: { type: string, nullable: true }
+        approvalId: { type: string, nullable: true }
+        actionId: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+        decidedAt: { type: string, format: date-time, nullable: true }
+        executedAt: { type: string, format: date-time, nullable: true }
+        error: { type: string, nullable: true }
+
+    ActionProposalList:
+      type: object
+      required: [items, total]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/ActionProposal" }
+        total: { type: integer }
+
+    ActionProposalApprovalResponse:
+      type: object
+      required: [proposal, approval]
+      properties:
+        proposal: { $ref: "#/components/schemas/ActionProposal" }
+        approval: { $ref: "#/components/schemas/Approval" }
+
     Approval:
       type: object
       required: [id, incidentId, status, requestedAt]
       properties:
         id: { type: string }
         incidentId: { type: string }
+        proposalId: { type: string, nullable: true }
+        source: { type: string, enum: [policy, ai, manual] }
         requestedAction: { type: object, additionalProperties: true }
         requestedBy:
           {
@@ -2232,6 +2369,17 @@ components:
         decidedBy: { type: string, nullable: true }
         decidedAt: { type: string, format: date-time, nullable: true }
         note: { type: string, nullable: true }
+        expiresAt: { type: string, format: date-time, nullable: true }
+        executionStatus:
+          {
+            type: string,
+            nullable: true,
+            enum: [approved, executing, succeeded, failed],
+          }
+        proposal:
+          allOf:
+            - $ref: "#/components/schemas/ActionProposal"
+          nullable: true
         incident: { $ref: "#/components/schemas/ApprovalIncident" }
         service: { $ref: "#/components/schemas/ApprovalService" }
         host: { $ref: "#/components/schemas/ApprovalHost" }
@@ -2254,6 +2402,10 @@ components:
       type: object
       properties:
         approval: { $ref: "#/components/schemas/Approval" }
+        proposal:
+          allOf:
+            - $ref: "#/components/schemas/ActionProposal"
+          nullable: true
         action:
           allOf:
             - $ref: "#/components/schemas/Action"
@@ -2373,6 +2525,9 @@ components:
         requestedBy: { type: string, nullable: true }
         approvedBy: { type: string, nullable: true }
         policyId: { type: string, nullable: true }
+        proposalId: { type: string, nullable: true }
+        approvalId: { type: string, nullable: true }
+        source: { type: string, enum: [manual, policy, ai_approved] }
         startedAt: { type: string, format: date-time }
         finishedAt: { type: string, format: date-time, nullable: true }
         error: { type: string, nullable: true }

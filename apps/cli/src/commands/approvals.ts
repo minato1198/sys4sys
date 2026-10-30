@@ -18,6 +18,8 @@ import {
 interface ApprovalItem {
   id: string;
   incidentId: string;
+  proposalId: string | null;
+  source: "policy" | "ai" | "manual";
   requestedAction: Record<string, unknown>;
   status: string;
   requestedAt: string | null;
@@ -25,6 +27,16 @@ interface ApprovalItem {
   decidedBy: string | null;
   decidedAt: string | null;
   note: string | null;
+  expiresAt: string | null;
+  executionStatus: string | null;
+  proposal: {
+    id: string;
+    actionType: string;
+    risk: string;
+    confidence: number;
+    rationale: string | null;
+    status: string;
+  } | null;
   incident: {
     id: string;
     title: string;
@@ -49,6 +61,15 @@ function actionLabel(value: Record<string, unknown>): string {
   const type = typeof value.type === "string" ? value.type : "action";
   const reason = typeof value.reason === "string" ? value.reason : "";
   return reason ? `${type} (${reason})` : type;
+}
+
+function actionRisk(value: Record<string, unknown>): string {
+  return typeof value.risk === "string" ? value.risk : "-";
+}
+
+function sourceLabel(value: ApprovalItem["source"] | undefined): string {
+  if (value === "ai") return "AI";
+  return value ?? "policy";
 }
 
 function parseApprovalQuery(options: CommandOptions): URLSearchParams {
@@ -107,6 +128,9 @@ function printApprovalTarget(
   write(`Incident:  ${approval.incident?.title ?? approval.incidentId}\n`);
   write(`Service:   ${approval.service?.name ?? "-"}\n`);
   write(`Action:    ${actionLabel(approval.requestedAction)}\n`);
+  write(`Source:    ${sourceLabel(approval.source)}\n`);
+  write(`Risk:      ${actionRisk(approval.requestedAction)}\n`);
+  write(`Expires:   ${approval.expiresAt ?? "-"}\n`);
   write(
     `Requested: ${approval.requestedBy ?? "system"} (${approval.requestedAt ?? "-"})\n`,
   );
@@ -129,14 +153,25 @@ export async function listApprovals(
   }
 
   printTable(
-    ["ID", "INCIDENT", "SERVICE", "ACTION", "REQUESTED BY", "REQUESTED"],
+    [
+      "ID",
+      "INCIDENT",
+      "SERVICE",
+      "ACTION",
+      "SOURCE",
+      "RISK",
+      "REQUESTED BY",
+      "EXPIRES",
+    ],
     response.items.map((item) => [
       shortId(item.id),
       item.incident?.title ?? item.incidentId,
       item.service?.name ?? "-",
       actionLabel(item.requestedAction),
+      sourceLabel(item.source),
+      actionRisk(item.requestedAction),
       item.requestedBy ?? "system",
-      item.requestedAt ?? "-",
+      item.expiresAt ?? "-",
     ]),
     options.output,
   );

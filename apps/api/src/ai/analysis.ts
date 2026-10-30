@@ -22,6 +22,7 @@ import {
   externalLogsAllowed,
   getEffectiveAiSettings,
 } from "../settings/ai.js";
+import { materializeActionProposals } from "../monitoring/action-proposals.js";
 import { maskText, truncateLine } from "./mask.js";
 
 type IncidentRow = typeof incidents.$inferSelect;
@@ -409,6 +410,23 @@ export async function analyzeIncident(
       trigger: options.trigger ?? "auto",
     },
   }).catch(() => undefined);
+
+  try {
+    await materializeActionProposals({
+      incident: context.incident,
+      service: context.service,
+      analysis,
+      result,
+      analysisRequestedBy:
+        options.trigger === "manual" ? (options.actorUserId ?? null) : null,
+    });
+  } catch (error) {
+    console.warn(
+      `[ai] action proposal materialization failed for incident ${context.incident.id}: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
 
   return {
     analysis,
