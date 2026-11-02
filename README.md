@@ -1,5 +1,9 @@
 # sys4sys
 
+<p align="center">
+  <img src="./docs/asset/sys4sys.png" alt="sys4sys logo" width="760">
+</p>
+
 [![CI](https://github.com/minato1198/sys4sys/actions/workflows/ci.yml/badge.svg)](https://github.com/minato1198/sys4sys/actions/workflows/ci.yml)
 
 Windows / WSL 上のバックエンドサービスを、ポート・プロセス・ログ・インシデント・承認・AI レポートの観点から一元管理するセルフホスト型の運用管理システムです。
