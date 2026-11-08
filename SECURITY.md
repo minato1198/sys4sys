@@ -29,7 +29,7 @@ We aim to acknowledge reports within 7 days.
 - Use a strong `ADMIN_PASSWORD` and change it after the first login.
 - Do not expose `apps/demo-api` to untrusted networks; it is a test fixture.
 - Keep dependencies updated and run `pnpm audit --prod` before releases.
-- Treat service command allowlists and deploy commands as privileged operations.
+- Treat service command allowlists and deploy commands as privileged operations. The current allowlist is basename-based, so absolute paths are checked by executable name only unless stricter path controls are added.
 - API tokens are opaque Bearer tokens stored only as SHA-256 hashes. Prefer `SYS4SYS_TOKEN` or `SYS4SYS_TOKEN_FILE` over command-line token arguments.
 - CLI `credentials.json` is a local secret. Keep it outside Git, backups, logs, and shared artifacts.
 - Service `env` and `deploy.env` values are encrypted with AES-256-GCM before storage and masked in normal API responses. Use `--show-env` only when an admin with `services:secrets` scope needs plaintext values for a short time.

@@ -3,18 +3,19 @@ import { incidentActionSchema, incidentQuerySchema } from "@sys4sys/shared";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { getLatestAnalysisReport } from "../ai/analysis.js";
-import { serializedAnalysis, serializedReport } from "../ai/serialize.js";
+import {
+  serializedAnalysis,
+  serializedProposal,
+  serializedReport,
+} from "../ai/serialize.js";
 import { writeAudit } from "../audit.js";
 import { requireAuth, requireRole } from "../auth/guard.js";
 import { db } from "../db/index.js";
+import { approvals, hosts, incidents, services } from "../db/schema.js";
 import {
-  approvals,
-  hosts,
-  incidentActionProposals,
-  incidents,
-  services,
-} from "../db/schema.js";
-import { expireProposalsForIncident } from "../monitoring/action-proposals.js";
+  expireExpiredApprovalsAndProposals,
+  expireProposalsForIncident,
+} from "../monitoring/action-proposals.js";
 import {
   ackIncident,
   getIncidentContext,
@@ -29,7 +30,6 @@ type IncidentRow = typeof incidents.$inferSelect;
 type ServiceRow = typeof services.$inferSelect;
 type HostRow = typeof hosts.$inferSelect;
 type ApprovalRow = typeof approvals.$inferSelect;
-type ActionProposalRow = typeof incidentActionProposals.$inferSelect;
 
 function iso(value: Date | null | undefined): string | null {
   return value ? value.toISOString() : null;
@@ -103,30 +103,6 @@ function approvalResponse(row: ApprovalRow) {
   };
 }
 
-function proposalResponse(row: ActionProposalRow) {
-  return {
-    id: row.id,
-    incidentId: row.incidentId,
-    analysisId: row.analysisId,
-    serviceId: row.serviceId,
-    actionType: row.actionType,
-    status: row.status,
-    risk: row.risk,
-    confidence: row.confidence,
-    rationale: row.rationale,
-    parameters: row.parameters,
-    snapshot: row.snapshot,
-    analysisRequestedBy: row.analysisRequestedBy,
-    approvalId: row.approvalId,
-    actionId: row.actionId,
-    createdAt: iso(row.createdAt),
-    expiresAt: iso(row.expiresAt),
-    decidedAt: iso(row.decidedAt),
-    executedAt: iso(row.executedAt),
-    error: row.error,
-  };
-}
-
 function contextResponse(context: IncidentContext) {
   const pending = context.approvals.find((row) => row.status === "pending");
   return {
@@ -143,7 +119,7 @@ function contextResponse(context: IncidentContext) {
       payload: row.payload,
     })),
     approvals: context.approvals.map(approvalResponse),
-    proposals: context.proposals.map(proposalResponse),
+    proposals: context.proposals.map(serializedProposal),
     actions: context.actions.map((row) => ({
       id: row.id,
       serviceId: row.serviceId,
@@ -206,6 +182,7 @@ export async function incidentRoutes(app: FastifyInstance): Promise<void> {
     { preHandler: requireAuth, config: { scopes: ["incidents:read"] } },
     async (request) => {
       const query = incidentQuerySchema.parse(request.query);
+      await expireExpiredApprovalsAndProposals().catch(() => undefined);
       const where = and(
         query.status ? eq(incidents.status, query.status) : undefined,
         query.severity ? eq(incidents.severity, query.severity) : undefined,

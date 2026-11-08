@@ -16,6 +16,7 @@ import {
   IncidentError,
   type ApprovalDecisionResult,
 } from "../monitoring/incidents.js";
+import { expireExpiredApprovalsAndProposals } from "../monitoring/action-proposals.js";
 
 const idParamsSchema = z.object({ id: z.string().min(1) });
 
@@ -175,6 +176,7 @@ export async function approvalRoutes(app: FastifyInstance): Promise<void> {
     { preHandler: requireAuth, config: { scopes: ["approvals:read"] } },
     async (request) => {
       const query = approvalQuerySchema.parse(request.query);
+      await expireExpiredApprovalsAndProposals().catch(() => undefined);
       const [rows, all] = await Promise.all([
         db
           .select()

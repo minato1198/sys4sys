@@ -20,6 +20,9 @@ export function allowedCommands(): string[] {
     .filter(Boolean);
 }
 
+// 現状の allowlist は basename と拡張子除去で判定する。`node.exe` が allowlist に
+// ある場合、絶対パス指定でも許可されるため、厳格なパス制限は threat model の都合上
+// Phase 1 では要求しない。必要なら許可ルート付きの absolute path 検証を足す。
 export function isCommandAllowed(command: string[]): AllowlistResult {
   const executable = command[0]?.trim();
   if (!executable) {

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, desc, eq, gte, lte, ne } from "drizzle-orm";
+import { and, asc, desc, eq, gte, lte, ne, sql } from "drizzle-orm";
 import {
   analysisResultSchema,
   OpenAiCompatibleClient,
@@ -176,8 +176,8 @@ async function loadContext(incidentId: string): Promise<AnalysisContext> {
 }
 
 async function countRequestsToday(): Promise<number> {
-  const rows = await db
-    .select({ id: aiAnalyses.id })
+  const [row] = await db
+    .select({ count: sql<number>`cast(count(*) as integer)` })
     .from(aiAnalyses)
     .where(
       and(
@@ -185,7 +185,7 @@ async function countRequestsToday(): Promise<number> {
         eq(aiAnalyses.provider, AI_PROVIDER),
       ),
     );
-  return rows.length;
+  return row?.count ?? 0;
 }
 
 async function findCachedAnalysis(

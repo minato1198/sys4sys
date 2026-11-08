@@ -4,7 +4,7 @@
 - 作成日: 2026-10-30
 - 基準: `main` / `85bcc9c`
 - 対象: `apps/api`, `apps/web`, `apps/cli`, `packages/ai`, `packages/shared`, `docs`
-- ステータス: 計画（主要決定済み / 未実装）
+- ステータス: Phase 1 主要部実装済み（Web report 提案表示と `action-executor.ts` 分離は実装済み、CLI 拡張は未完了）
 
 ---
 
@@ -352,7 +352,7 @@ proposed
 
 `high` risk の提案も自動で承認待ちにできるが、承認できるのは admin のみとする。他の提案は `proposed` のまま残す。
 
-既存の監視再起動承認など、同一インシデントに pending 承認が既にある場合は自動生成しない。`POST /api/action-proposals/:id/request-approval` は、却下・期限切れ後の再依頼や、代替提案を明示的に承認依頼する場合に使う。
+既存の監視再起動承認など、同一インシデントに pending 承認が既にある場合は自動生成しない。`POST /api/action-proposals/:id/request-approval` は、有効期限前の代替提案を明示的に承認依頼する場合に使う。却下された提案は再依頼できず、再分析で新しい提案を作る。
 
 ---
 
@@ -390,7 +390,7 @@ proposed
 
 `POST /api/action-proposals/:id/request-approval` は、以下の場合に使う。
 
-- 却下・期限切れ後に再依頼する
+- 有効期限が残っている別の提案を明示的に承認依頼する
 - 自動選定されなかった別の提案を明示的に承認依頼する
 
 - 権限: `operator` / `admin`
@@ -560,7 +560,7 @@ AI 分析セクションの下に「AI 提案」を追加する。
 
 - 自動選定された提案は、分析完了時点で「承認待ち」になり「承認画面へ」を表示
 - 自動選定されなかった実行可能提案は「この提案で承認依頼」を表示（pending 承認がない場合のみ）
-- 却下・期限切れ後は再依頼ボタンを表示
+- 期限切れ後は再依頼ボタンを表示しない。再分析で新しい提案を作る
 - 実行済みならアクション結果へのリンク
 - 非実行提案は「助言」として表示し、承認ボタンを出さない
 - 手動分析者本人には「あなたはこの提案を承認できません」と表示
@@ -753,24 +753,24 @@ pnpm test:e2e
 
 ## 16. タスク分解
 
-| #   | タスク                       | 主なファイル                                              | 完了条件                                                           |
-| --- | ---------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------ |
-| 1   | schema / migration / ER 更新 | `apps/api/src/db/schema.ts`, `docs/ER.md`, drizzle        | 提案・承認・アクションの関連が保存できる                           |
-| 2   | shared schema / scope 追加   | `packages/shared/src/api.ts`, `tokens.ts`                 | 提案・承認依頼の型と `approvals:request` が定義される              |
-| 3   | AI プロンプト / queue 更新   | `packages/ai/src/prompt.ts`, `apps/api/src/ai/queue.ts`   | 許可アクション、安全指示、手動分析者 metadata が入る               |
-| 4   | 提案マテリアライザ           | `apps/api/src/monitoring/action-proposals.ts`             | AI 結果から安全な提案だけ生成される                                |
-| 5   | 自動承認依頼 + 再依頼        | 同上                                                      | 主要提案の自動 pending 作成、期限・重複・既存 pending を制御できる |
-| 6   | 実行エンジン                 | `apps/api/src/monitoring/action-executor.ts`              | restart/start が承認後に実行される                                 |
-| 7   | 承認 API dispatch            | `apps/api/src/routes/approvals.ts`                        | 既存 restart と AI 提案を分岐できる                                |
-| 8   | 提案 API / serialization     | `apps/api/src/routes/action-proposals.ts`, `incidents.ts` | 提案が API で取得・再依頼できる                                    |
-| 9   | 監査・イベント・通知         | `audit.ts`, `monitoring/incidents.ts`, `notify.ts`        | 自動承認依頼から実行まで追跡できる                                 |
-| 10  | Web インシデント画面         | `apps/web/app/incidents/page.tsx`                         | 提案一覧と承認待ち状態が表示できる                                 |
-| 11  | Web 承認画面                 | `apps/web/app/approvals/page.tsx`                         | AI 提案の内容を確認して承認できる                                  |
-| 12  | Web レポート画面             | `apps/web/app/reports/page.tsx`                           | 推奨対応と提案状態が表示できる                                     |
-| 13  | CLI                          | `apps/cli/src/commands/incidents.ts`, `approvals.ts`      | 提案確認・承認が CLI でできる                                      |
-| 14  | MCP read-only                | `apps/cli/src/mcp/tools/read.ts`                          | 提案が読み取り取得できる。承認ツールは追加しない                   |
-| 15  | テスト                       | `apps/api/src/routes/*.test.ts`, unit                     | 主要な安全条件がテストされる                                       |
-| 16  | ドキュメント                 | OpenAPI, ADR 0007, docs                                   | API・運用・制約が文書化される                                      |
+| #   | タスク                       | 主なファイル                                                          | 完了条件                                                           |
+| --- | ---------------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| 1   | schema / migration / ER 更新 | `apps/api/src/db/schema.ts`, `docs/ER.md`, drizzle                    | 提案・承認・アクションの関連が保存できる                           |
+| 2   | shared schema / scope 追加   | `packages/shared/src/api.ts`, `tokens.ts`                             | 提案・承認依頼の型と `approvals:request` が定義される              |
+| 3   | AI プロンプト / queue 更新   | `packages/ai/src/prompt.ts`, `apps/api/src/ai/queue.ts`               | 許可アクション、安全指示、手動分析者 metadata が入る               |
+| 4   | 提案マテリアライザ           | `apps/api/src/monitoring/action-proposals.ts`                         | AI 結果から安全な提案だけ生成される                                |
+| 5   | 自動承認依頼 + 再依頼        | 同上                                                                  | 主要提案の自動 pending 作成、期限・重複・既存 pending を制御できる |
+| 6   | 実行エンジン                 | `apps/api/src/monitoring/action-executor.ts`, `incident-lifecycle.ts` | restart/start が承認後に実行される                                 |
+| 7   | 承認 API dispatch            | `apps/api/src/routes/approvals.ts`                                    | 既存 restart と AI 提案を分岐できる                                |
+| 8   | 提案 API / serialization     | `apps/api/src/routes/action-proposals.ts`, `incidents.ts`             | 提案が API で取得・再依頼できる                                    |
+| 9   | 監査・イベント・通知         | `audit.ts`, `monitoring/incidents.ts`, `notify.ts`                    | 自動承認依頼から実行まで追跡できる                                 |
+| 10  | Web インシデント画面         | `apps/web/app/incidents/page.tsx`                                     | 提案一覧と承認待ち状態が表示できる                                 |
+| 11  | Web 承認画面                 | `apps/web/app/approvals/page.tsx`                                     | AI 提案の内容を確認して承認できる                                  |
+| 12  | Web レポート画面             | `apps/web/app/reports/page.tsx`                                       | 推奨対応と提案状態が表示できる                                     |
+| 13  | CLI                          | `apps/cli/src/commands/incidents.ts`, `approvals.ts`                  | 提案確認・承認が CLI でできる                                      |
+| 14  | MCP read-only                | `apps/cli/src/mcp/tools/read.ts`                                      | 提案が読み取り取得できる。承認ツールは追加しない                   |
+| 15  | テスト                       | `apps/api/src/routes/*.test.ts`, unit                                 | 主要な安全条件がテストされる                                       |
+| 16  | ドキュメント                 | OpenAPI, ADR 0007, docs                                               | API・運用・制約が文書化される                                      |
 
 ---
 

@@ -369,8 +369,17 @@ export default function ApprovalsPage() {
                   return (
                     <tr
                       key={approval.id}
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`承認 ${approval.service?.name ?? approval.incident?.title ?? approval.id} を選択`}
+                      aria-selected={selectedId === approval.id}
                       onClick={() => setSelectedId(approval.id)}
-                      className={`cursor-pointer align-top transition ${
+                      onKeyDown={(event) => {
+                        if (event.key !== "Enter" && event.key !== " ") return;
+                        event.preventDefault();
+                        setSelectedId(approval.id);
+                      }}
+                      className={`cursor-pointer align-top transition focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-success ${
                         selectedId === approval.id
                           ? "bg-surface-muted"
                           : "hover:bg-surface-muted"

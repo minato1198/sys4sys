@@ -3,10 +3,15 @@ import { reportExportQuerySchema, reportQuerySchema } from "@sys4sys/shared";
 import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { getReportWithContext, type ReportRow } from "../ai/analysis.js";
-import { serializedAnalysis, serializedReport } from "../ai/serialize.js";
+import {
+  serializedAnalysis,
+  serializedProposal,
+  serializedReport,
+} from "../ai/serialize.js";
 import { requireAuth } from "../auth/guard.js";
 import { db } from "../db/index.js";
 import { incidents, reports, services } from "../db/schema.js";
+import { getProposalsForIncident } from "../monitoring/action-proposals.js";
 
 const idParamsSchema = z.object({ id: z.string().min(1) });
 
@@ -102,6 +107,11 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
         analysis: context.analysis
           ? serializedAnalysis(context.analysis)
           : null,
+        proposals: context.incident
+          ? (await getProposalsForIncident(context.incident.id)).map(
+              serializedProposal,
+            )
+          : [],
       };
     },
   );
@@ -129,6 +139,11 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
           analysis: context.analysis
             ? serializedAnalysis(context.analysis)
             : null,
+          proposals: context.incident
+            ? (await getProposalsForIncident(context.incident.id)).map(
+                serializedProposal,
+              )
+            : [],
         };
       }
       return reply

@@ -529,6 +529,7 @@ export default function IncidentsPage() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <select
+              aria-label="インシデントステータスで絞り込み"
               value={statusFilter}
               onChange={(event) =>
                 setStatusFilter(event.target.value as "" | IncidentStatus)
@@ -542,6 +543,7 @@ export default function IncidentsPage() {
               ))}
             </select>
             <select
+              aria-label="深刻度で絞り込み"
               value={severityFilter}
               onChange={(event) =>
                 setSeverityFilter(event.target.value as "" | IncidentSeverity)
@@ -610,8 +612,17 @@ export default function IncidentsPage() {
                 items.map((incident) => (
                   <tr
                     key={incident.id}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`インシデント ${incident.title ?? incident.id} を選択`}
+                    aria-selected={selectedId === incident.id}
                     onClick={() => setSelectedId(incident.id)}
-                    className={`cursor-pointer align-top transition ${
+                    onKeyDown={(event) => {
+                      if (event.key !== "Enter" && event.key !== " ") return;
+                      event.preventDefault();
+                      setSelectedId(incident.id);
+                    }}
+                    className={`cursor-pointer align-top transition focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-success ${
                       selectedId === incident.id
                         ? "bg-surface-muted"
                         : "hover:bg-surface-muted"

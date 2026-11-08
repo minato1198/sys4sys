@@ -381,6 +381,9 @@ export const approvals = sqliteTable(
     index("approvals_status_idx").on(table.status),
     index("approvals_incident_id_idx").on(table.incidentId),
     index("approvals_proposal_id_idx").on(table.proposalId),
+    uniqueIndex("approvals_pending_incident_uq")
+      .on(table.incidentId)
+      .where(sql`${table.status} = 'pending'`),
   ],
 );
 

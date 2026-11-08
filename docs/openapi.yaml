@@ -2637,6 +2637,9 @@ components:
               allOf:
                 - $ref: "#/components/schemas/AiAnalysis"
               nullable: true
+            proposals:
+              type: array
+              items: { $ref: "#/components/schemas/ActionProposal" }
 
     Policy:
       type: object

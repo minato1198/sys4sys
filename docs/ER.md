@@ -404,13 +404,14 @@ WSL 3.x では distro 間でネットワーク名前空間が共有されるた�
 - フォールバック分析（`provider=template`）、信頼度不足、期限切れ、重複提案は保存しない
 - 実行可能な提案が 1 つ以上ある場合、分析完了時に主提案を選び、`approvals(source=ai, proposal_id=...)` を 1 件だけ自動作成する。自動承認は行わない
 - 主提案はサービス状態が `stopped` / `failed` なら `start`、それ以外は `restart` を優先し、次にリスク、信頼度、AI の出力順で選ぶ
-- 同一インシデントの pending 承認は 1 件まで。他の提案は `proposed` のまま残り、却下・期限切れ後に明示的に再依頼できる
+- 同一インシデントの pending 承認は DB の partial unique index で 1 件まで強制する。他の提案は `proposed` のまま残り、有効期限内なら明示的に承認依頼を追加できる。却下された提案自体は再依頼できず、再分析で新しい提案を作る
 - 手動分析の実行者は `analysis_requested_by` に保存し、そのユーザーによる自己承認を禁止する。自動分析は `NULL`
-- 承認期限は既定 30 分（`AI_ACTION_TTL_MIN`）。期限切れは `approvals` と提案を `expired` にし、インシデントを `open` に戻す
+- 承認期限は既定 30 分（`AI_ACTION_TTL_MIN`）。API 起動時と 30 秒間隔の sweep で期限切れ pending 承認と `proposed` / `pending_approval` 提案を `expired` にし、pending 承認が残らないインシデントを `open` に戻す
 - 高リスク提案は admin のみ承認できる。`stop` は `AI_ACTION_STOP_ENABLED=true` かつ admin のみ
 - 承認後は `actions(source=ai_approved, proposal_id, approval_id)` を作成し、既存の deterministic な start / restart / stop 経路だけを実行する。任意コマンドや shell は実行しない
 - 実行前・実行開始時にインシデント、提案、承認、サービス、デプロイロック、提案時スナップショットを再検証する。不一致は `expired` / stale とし、再分析を促す
 - 失敗時の自動再試行は行わない。成功時は他提案を `superseded`、インシデントを `resolved` にする（`stop` は意図的停止として解決しない）
+- API 起動時に `deploy` 以外の pending / running action、および `approved` / `executing` の AI 提案を stale として `failed` に確定する。API 再起動で in-memory timer や async executor は引き継がれないため、成功扱いにはしない
 
 ### 2.11 デプロイ
 
@@ -444,7 +445,7 @@ WSL 3.x では distro 間でネットワーク名前空間が共有されるた�
 | `incidents`                 | `(fingerprint, started_at)` INDEX、`status` INDEX、`service_id` INDEX                                                                  |
 | `incident_events`           | `incident_id` INDEX                                                                                                                    |
 | `incident_action_proposals` | `(incident_id, status)` INDEX、`(service_id, status)` INDEX、`approval_id` INDEX、`action_id` INDEX、`(incident_id, dedupe_key)` INDEX |
-| `approvals`                 | `status` INDEX、`incident_id` INDEX、`proposal_id` INDEX                                                                               |
+| `approvals`                 | `status` INDEX、`incident_id` INDEX、`proposal_id` INDEX、`(incident_id)` partial UNIQUE WHERE `status='pending'`                      |
 | `deploy_requests`           | `status` INDEX、`(service_id, requested_at)` INDEX                                                                                     |
 | `actions`                   | `(service_id, started_at)` INDEX、`proposal_id` / `approval_id` INDEX、running deploy partial UNIQUE                                   |
 | `audit_logs`                | `(ts)` INDEX、`actor_user_id` INDEX                                                                                                    |

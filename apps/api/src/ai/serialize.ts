@@ -1,4 +1,5 @@
 import { analysisResultSchema, type AnalysisResult } from "@sys4sys/ai";
+import { incidentActionProposals } from "../db/schema.js";
 import type { AiAnalysisRow, ReportRow } from "./analysis.js";
 
 function fallbackResult(): AnalysisResult {
@@ -50,6 +51,38 @@ export function serializedAnalysis(row: AiAnalysisRow) {
 }
 
 export type SerializedAnalysis = ReturnType<typeof serializedAnalysis>;
+
+function iso(value: Date | null | undefined): string | null {
+  return value ? value.toISOString() : null;
+}
+
+export function serializedProposal(
+  row: typeof incidentActionProposals.$inferSelect,
+) {
+  return {
+    id: row.id,
+    incidentId: row.incidentId,
+    analysisId: row.analysisId,
+    serviceId: row.serviceId,
+    actionType: row.actionType,
+    status: row.status,
+    risk: row.risk,
+    confidence: row.confidence,
+    rationale: row.rationale,
+    parameters: row.parameters,
+    snapshot: row.snapshot,
+    analysisRequestedBy: row.analysisRequestedBy,
+    approvalId: row.approvalId,
+    actionId: row.actionId,
+    createdAt: iso(row.createdAt),
+    expiresAt: iso(row.expiresAt),
+    decidedAt: iso(row.decidedAt),
+    executedAt: iso(row.executedAt),
+    error: row.error,
+  };
+}
+
+export type SerializedProposal = ReturnType<typeof serializedProposal>;
 
 export function serializedReport(row: ReportRow) {
   return {

@@ -57,8 +57,22 @@ interface AiAnalysis {
   };
 }
 
+interface ReportProposal {
+  id: string;
+  actionType: string;
+  status: string;
+  risk: string;
+  confidence: number;
+  rationale: string | null;
+  approvalId: string | null;
+  actionId: string | null;
+  expiresAt: string;
+  error: string | null;
+}
+
 interface ReportDetail extends ReportListItem {
   analysis: AiAnalysis | null;
+  proposals: ReportProposal[];
 }
 
 interface ReportList {
@@ -80,6 +94,25 @@ function severityBadge(severity: IncidentSeverity): string {
   if (severity === "warning")
     return "border-warning/30 bg-warning/10 text-warning";
   return "border-border bg-surface-muted text-fg";
+}
+
+function proposalStatusBadge(status: string): string {
+  if (status === "succeeded")
+    return "border-success/30 bg-success/10 text-success";
+  if (status === "failed") return "border-danger/30 bg-danger/10 text-danger";
+  if (
+    status === "pending_approval" ||
+    status === "approved" ||
+    status === "executing"
+  )
+    return "border-warning/30 bg-warning/10 text-warning";
+  return "border-border bg-surface-muted text-fg-muted";
+}
+
+function proposalRiskBadge(risk: string): string {
+  if (risk === "high") return "border-danger/30 bg-danger/10 text-danger";
+  if (risk === "medium") return "border-warning/30 bg-warning/10 text-warning";
+  return "border-border bg-surface-muted text-fg-muted";
 }
 
 export default function ReportsPage() {
@@ -377,6 +410,68 @@ export default function ReportsPage() {
                     <p className="mt-2 text-xs leading-relaxed text-fg-muted">
                       {detail.analysis.result.rootCauseHypothesis}
                     </p>
+                  </div>
+                ) : null}
+
+                {detail.proposals.length > 0 ? (
+                  <div className="rounded-lg border border-border bg-surface p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="text-xs font-medium text-fg-muted">
+                        AI 提案
+                      </div>
+                      <div className="font-mono text-xs text-fg-muted">
+                        {detail.proposals.length} 件
+                      </div>
+                    </div>
+                    <ul className="mt-2 space-y-2">
+                      {detail.proposals.map((proposal) => (
+                        <li
+                          key={proposal.id}
+                          className="rounded-md border border-border bg-surface-muted px-3 py-2"
+                        >
+                          <div className="flex flex-wrap items-center gap-2 text-xs">
+                            <span className="font-medium text-fg">
+                              {proposal.actionType}
+                            </span>
+                            <span
+                              className={`rounded border px-1.5 py-0.5 font-medium ${proposalStatusBadge(
+                                proposal.status,
+                              )}`}
+                            >
+                              {proposal.status}
+                            </span>
+                            <span
+                              className={`rounded border px-1.5 py-0.5 font-medium ${proposalRiskBadge(
+                                proposal.risk,
+                              )}`}
+                            >
+                              {proposal.risk}
+                            </span>
+                            <span className="text-fg-muted">
+                              confidence{" "}
+                              {(proposal.confidence * 100).toFixed(0)}%
+                            </span>
+                            <span className="text-fg-muted">
+                              期限 {formatDate(proposal.expiresAt)}
+                            </span>
+                          </div>
+                          {proposal.rationale ? (
+                            <p className="mt-1 text-xs leading-relaxed text-fg">
+                              {proposal.rationale}
+                            </p>
+                          ) : null}
+                          {proposal.error ? (
+                            <p className="mt-1 text-xs text-danger">
+                              {proposal.error}
+                            </p>
+                          ) : null}
+                          <div className="mt-1 font-mono text-xs text-fg-muted">
+                            {proposal.approvalId ?? "no approval"} ·{" "}
+                            {proposal.actionId ?? "no action"}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
                 ) : null}
 

@@ -11,6 +11,8 @@ import { ensureDefaultHosts } from "./hosts/bootstrap.js";
 import { cleanupLogs, startLogRetention } from "./logs/retention.js";
 import { startAllLogTailers, stopAllLogTailers } from "./logs/tailers.js";
 import { startMonitor, stopMonitor } from "./monitoring/engine.js";
+import { expireExpiredApprovalsAndProposals } from "./monitoring/action-proposals.js";
+import { reconcileInterruptedActions } from "./monitoring/action-reconciliation.js";
 import { aiRoutes } from "./routes/ai.js";
 import { actionProposalRoutes } from "./routes/action-proposals.js";
 import { approvalRoutes } from "./routes/approvals.js";
@@ -138,14 +140,32 @@ export async function buildApp() {
   await cleanupExpiredSessions();
   await cleanupExpiredTokens();
   await reconcileDeployments();
+  await reconcileInterruptedActions();
+  await expireExpiredApprovalsAndProposals();
   await reconcileServices();
   await startAllLogTailers();
   await cleanupLogs();
   const retentionTimer = startLogRetention();
   startMonitor();
 
+  const approvalExpiryIntervalMs = config.APPROVAL_EXPIRY_SWEEP_INTERVAL_MS;
+  const approvalExpiryTimer =
+    approvalExpiryIntervalMs > 0
+      ? setInterval(() => {
+          void expireExpiredApprovalsAndProposals().catch((error: unknown) => {
+            console.warn(
+              `[monitor] approval expiry sweep failed: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+            );
+          });
+        }, approvalExpiryIntervalMs)
+      : null;
+  approvalExpiryTimer?.unref();
+
   app.addHook("onClose", async () => {
     clearInterval(retentionTimer);
+    if (approvalExpiryTimer) clearInterval(approvalExpiryTimer);
     stopAnalysisQueue();
     stopMonitor();
     stopAllLogTailers();

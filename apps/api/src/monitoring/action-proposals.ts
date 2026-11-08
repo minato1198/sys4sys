@@ -41,6 +41,19 @@ export class ActionProposalError extends Error {
   }
 }
 
+export function isPendingApprovalConflict(error: unknown): boolean {
+  const code =
+    error instanceof Error && "code" in error
+      ? (error as { code?: unknown }).code
+      : undefined;
+  if (typeof code === "string" && !code.startsWith("SQLITE_CONSTRAINT")) {
+    return false;
+  }
+  return (
+    error instanceof Error && error.message.includes("approvals.incident_id")
+  );
+}
+
 function normalizeType(value: string): ActionProposalType | null {
   const type = value.trim().toLowerCase();
   if (type === "restart" || type === "start" || type === "stop") {
@@ -405,29 +418,42 @@ async function claimProposalApproval(
   }
 
   const approvalId = randomUUID();
-  const [approval] = await db
-    .insert(approvals)
-    .values({
-      id: approvalId,
-      incidentId: input.incident.id,
-      proposalId: input.proposal.id,
-      source: "ai",
-      requestedAction: {
-        type: input.proposal.actionType,
-        serviceId: input.service.id,
+  let approval: ApprovalRow | undefined;
+  try {
+    [approval] = await db
+      .insert(approvals)
+      .values({
+        id: approvalId,
+        incidentId: input.incident.id,
         proposalId: input.proposal.id,
-        reason: input.proposal.rationale ?? "",
-        risk: input.proposal.risk,
-      },
-      requestedBy: input.requestedBy,
-      status: "pending",
-      requestedAt: new Date(),
-      decidedBy: null,
-      decidedAt: null,
-      note: input.note,
-      expiresAt: input.proposal.expiresAt,
-    })
-    .returning();
+        source: "ai",
+        requestedAction: {
+          type: input.proposal.actionType,
+          serviceId: input.service.id,
+          proposalId: input.proposal.id,
+          reason: input.proposal.rationale ?? "",
+          risk: input.proposal.risk,
+        },
+        requestedBy: input.requestedBy,
+        status: "pending",
+        requestedAt: new Date(),
+        decidedBy: null,
+        decidedAt: null,
+        note: input.note,
+        expiresAt: input.proposal.expiresAt,
+      })
+      .returning();
+  } catch (error) {
+    if (isPendingApprovalConflict(error)) {
+      const existing = await pendingApprovalForIncident(input.incident.id);
+      throw new ActionProposalError(
+        409,
+        "同一インシデントに承認待ちのリクエストがあります",
+        { approvalId: existing?.id },
+      );
+    }
+    throw error;
+  }
   if (!approval) {
     throw new ActionProposalError(500, "承認リクエストを作成できませんでした");
   }
@@ -711,6 +737,134 @@ export async function supersedeOtherProposals(
     after: {
       keepProposalId,
       proposalIds: rows.map((row) => row.id),
+    },
+  }).catch(() => undefined);
+}
+
+export async function expireExpiredApprovalsAndProposals(): Promise<void> {
+  const now = new Date();
+  const [expiredApprovalRows, expiredProposalRows] = await Promise.all([
+    db
+      .select({
+        id: approvals.id,
+        incidentId: approvals.incidentId,
+      })
+      .from(approvals)
+      .where(
+        and(eq(approvals.status, "pending"), lt(approvals.expiresAt, now)),
+      ),
+    db
+      .select({
+        id: incidentActionProposals.id,
+        incidentId: incidentActionProposals.incidentId,
+      })
+      .from(incidentActionProposals)
+      .where(
+        and(
+          inArray(incidentActionProposals.status, [
+            "proposed",
+            "pending_approval",
+          ]),
+          lt(incidentActionProposals.expiresAt, now),
+        ),
+      ),
+  ]);
+
+  if (expiredApprovalRows.length === 0 && expiredProposalRows.length === 0) {
+    return;
+  }
+
+  if (expiredApprovalRows.length > 0) {
+    await db
+      .update(approvals)
+      .set({
+        status: "expired",
+        decidedAt: now,
+        note: "承認待ちの有効期限が切れました",
+      })
+      .where(
+        and(
+          inArray(
+            approvals.id,
+            expiredApprovalRows.map((row) => row.id),
+          ),
+          eq(approvals.status, "pending"),
+        ),
+      );
+  }
+
+  if (expiredProposalRows.length > 0) {
+    await db
+      .update(incidentActionProposals)
+      .set({
+        status: "expired",
+        decidedAt: now,
+        error: "提案の有効期限が切れました",
+      })
+      .where(
+        and(
+          inArray(
+            incidentActionProposals.id,
+            expiredProposalRows.map((row) => row.id),
+          ),
+          inArray(incidentActionProposals.status, [
+            "proposed",
+            "pending_approval",
+          ]),
+        ),
+      );
+  }
+
+  const incidentIds = [
+    ...new Set([
+      ...expiredApprovalRows.map((row) => row.incidentId),
+      ...expiredProposalRows.map((row) => row.incidentId),
+    ]),
+  ];
+
+  for (const incidentId of incidentIds) {
+    const [pendingApproval] = await db
+      .select({ id: approvals.id })
+      .from(approvals)
+      .where(
+        and(
+          eq(approvals.incidentId, incidentId),
+          eq(approvals.status, "pending"),
+        ),
+      )
+      .limit(1);
+    if (!pendingApproval) {
+      await db
+        .update(incidents)
+        .set({ status: "open" })
+        .where(
+          and(eq(incidents.id, incidentId), eq(incidents.status, "approval")),
+        );
+    }
+    await db.insert(incidentEvents).values({
+      id: randomUUID(),
+      incidentId,
+      ts: now,
+      type: "ai_action_expired",
+      payload: {
+        approvalIds: expiredApprovalRows
+          .filter((row) => row.incidentId === incidentId)
+          .map((row) => row.id),
+        proposalIds: expiredProposalRows
+          .filter((row) => row.incidentId === incidentId)
+          .map((row) => row.id),
+      },
+    });
+  }
+
+  await writeAudit({
+    actorLabel: "system:ai",
+    action: "ai.action.expired",
+    target: "incident:expiry-sweep",
+    after: {
+      incidentIds,
+      approvalIds: expiredApprovalRows.map((row) => row.id),
+      proposalIds: expiredProposalRows.map((row) => row.id),
     },
   }).catch(() => undefined);
 }

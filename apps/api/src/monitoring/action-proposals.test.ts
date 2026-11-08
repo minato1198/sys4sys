@@ -525,4 +525,119 @@ describe("AI action proposal safety", () => {
       .where(eq(schema.incidents.id, incident.id));
     expect(storedIncident!.status).toBe("open");
   });
+
+  it("enforces one pending approval per incident at the DB level", async () => {
+    const service = await seedService("running");
+    const incident = await seedIncident(service.id, "approval");
+    const proposal = await seedProposal({ incident, service });
+    const approval = await seedApproval({ incident, proposal });
+
+    await expect(
+      proposals.requestProposalApproval(
+        (
+          await seedProposal({
+            incident,
+            service,
+            actionType: "start",
+          })
+        ).id,
+        operator,
+        "duplicate request",
+      ),
+    ).rejects.toMatchObject({ statusCode: 409 });
+
+    await expect(
+      db
+        .insert(schema.approvals)
+        .values({
+          id: randomUUID(),
+          incidentId: incident.id,
+          proposalId: randomUUID(),
+          source: "manual",
+          requestedAction: {
+            type: "restart",
+            serviceId: service.id,
+            reason: "x",
+          },
+          status: "pending",
+          requestedAt: new Date(),
+          expiresAt: new Date(Date.now() + 60_000),
+        })
+        .returning(),
+    ).rejects.toThrow(/approvals\.incident_id/);
+
+    const pendingApprovals = await db
+      .select({ id: schema.approvals.id })
+      .from(schema.approvals)
+      .where(
+        and(
+          eq(schema.approvals.incidentId, incident.id),
+          eq(schema.approvals.status, "pending"),
+        ),
+      );
+    expect(pendingApprovals.map((row) => row.id)).toEqual([approval.id]);
+  });
+
+  it("sweeps expired approvals and proposals across incidents", async () => {
+    const serviceA = await seedService("running");
+    const incidentA = await seedIncident(serviceA.id, "approval");
+    const expiredA = await seedProposal({
+      incident: incidentA,
+      service: serviceA,
+      expiresAt: new Date(Date.now() - 60_000),
+    });
+    const approval = await seedApproval({
+      incident: incidentA,
+      proposal: expiredA,
+      expiresAt: new Date(Date.now() - 60_000),
+    });
+
+    const serviceB = await seedService("running");
+    const incidentB = await seedIncident(serviceB.id, "open");
+    const expiredProposal = await seedProposal({
+      incident: incidentB,
+      service: serviceB,
+      expiresAt: new Date(Date.now() - 60_000),
+    });
+
+    const serviceC = await seedService("running");
+    const incidentC = await seedIncident(serviceC.id, "open");
+    const activeProposal = await seedProposal({
+      incident: incidentC,
+      service: serviceC,
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+
+    await proposals.expireExpiredApprovalsAndProposals();
+
+    const [storedApproval] = await db
+      .select()
+      .from(schema.approvals)
+      .where(eq(schema.approvals.id, approval.id));
+    expect(storedApproval!.status).toBe("expired");
+
+    const [storedIncidentA] = await db
+      .select()
+      .from(schema.incidents)
+      .where(eq(schema.incidents.id, incidentA.id));
+    expect(storedIncidentA!.status).toBe("open");
+
+    const [storedExpiredAProposal] = await db
+      .select()
+      .from(schema.incidentActionProposals)
+      .where(eq(schema.incidentActionProposals.id, expiredA.id));
+    expect(storedExpiredAProposal!.status).toBe("expired");
+
+    const [storedExpiredProposal] = await db
+      .select()
+      .from(schema.incidentActionProposals)
+      .where(eq(schema.incidentActionProposals.id, expiredProposal.id));
+    expect(storedExpiredProposal!.status).toBe("expired");
+
+    const [storedActiveProposal] = await db
+      .select()
+      .from(schema.incidentActionProposals)
+      .where(eq(schema.incidentActionProposals.id, activeProposal.id));
+    expect(storedActiveProposal!.status).toBe("proposed");
+  });
 });

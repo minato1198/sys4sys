@@ -73,6 +73,11 @@ const envSchema = z.object({
     .string()
     .default("false")
     .transform((value) => value === "true"),
+  AI_LOCAL_HOSTS: z
+    .string()
+    .default(
+      "localhost,127.0.0.1,::1,host.docker.internal,host.containers.internal,ollama,lmstudio",
+    ),
   AI_ACTION_EXECUTION_ENABLED: z
     .string()
     .default("false")
@@ -93,6 +98,12 @@ const envSchema = z.object({
     .string()
     .default("false")
     .transform((value) => value === "true"),
+  APPROVAL_EXPIRY_SWEEP_INTERVAL_MS: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(3_600_000)
+    .default(30_000),
 
   LOG_RETENTION_DAYS: z.coerce.number().int().min(1).default(14),
   LOG_TAIL_POLL_MS: z.coerce.number().int().min(200).max(60_000).default(1000),

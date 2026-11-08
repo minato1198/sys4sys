@@ -1,4 +1,4 @@
-import { and, eq, gte } from "drizzle-orm";
+import { and, eq, gte, sql } from "drizzle-orm";
 import { OpenAiCompatibleClient } from "@sys4sys/ai";
 import type { AiSettingsInput } from "@sys4sys/shared";
 import { config } from "../config.js";
@@ -64,8 +64,8 @@ function todayStart(): Date {
 }
 
 async function usedToday(): Promise<number> {
-  const rows = await db
-    .select({ id: aiAnalyses.id })
+  const [row] = await db
+    .select({ count: sql<number>`cast(count(*) as integer)` })
     .from(aiAnalyses)
     .where(
       and(
@@ -73,12 +73,26 @@ async function usedToday(): Promise<number> {
         eq(aiAnalyses.provider, AI_PROVIDER),
       ),
     );
-  return rows.filter((row) => row.id).length;
+  return row?.count ?? 0;
+}
+
+function localHostnameAllowlist(): Set<string> {
+  return new Set(
+    config.AI_LOCAL_HOSTS.split(",")
+      .map((value) =>
+        value
+          .trim()
+          .toLowerCase()
+          .replace(/^\[|\]$/g, ""),
+      )
+      .filter(Boolean),
+  );
 }
 
 /**
  * ローカル / プライベートネットワーク上の OpenAI 互換 API か。
  * 外部送信の既定禁止を「どの宛先なら安全か」で判定するために使う。
+ * 既定では明示 allowlist と RFC1918 / ULA のみに限定する。
  */
 export function isLocalEndpoint(baseUrl: string): boolean {
   let hostname: string;
@@ -91,45 +105,31 @@ export function isLocalEndpoint(baseUrl: string): boolean {
   // Node は IPv6 を [::1] の形で返す。ブラケットを外してから判定する。
   hostname = hostname.replace(/^\[|\]$/g, "");
 
-  if (
-    hostname === "localhost" ||
-    hostname === "127.0.0.1" ||
-    hostname === "::1" ||
-    hostname === "0:0:0:0:0:0:0:1" ||
-    hostname === "::ffff:127.0.0.1" ||
-    hostname === "0.0.0.0" ||
-    hostname === "host.docker.internal" ||
-    hostname.endsWith(".localhost") ||
-    hostname.endsWith(".local")
-  ) {
-    return true;
-  }
+  if (localHostnameAllowlist().has(hostname)) return true;
+  if (hostname.endsWith(".localhost")) return true;
+
+  // Loopback is always local; AI_LOCAL_HOSTS は LAN / Docker 向けの追加 allowlist。
+  if (hostname === "::1" || hostname === "0:0:0:0:0:0:0:1") return true;
+  if (hostname.startsWith("::ffff:127.")) return true;
 
   if (/^\d{1,3}(\.\d{1,3}){3}$/.test(hostname)) {
     const [first = 0, second = 0] = hostname.split(".").map(Number);
     return (
+      first === 127 ||
       first === 10 ||
       (first === 172 && second >= 16 && second <= 31) ||
-      (first === 192 && second === 168) ||
-      (first === 169 && second === 254)
+      (first === 192 && second === 168)
     );
   }
 
-  // ULA (fc00::/7) とリンクローカル (fe80::/10)。
+  // ULA (fc00::/7). Link-local (fe80::/10) は既定では許可しない。
   if (
     hostname.includes(":") &&
-    (hostname.startsWith("fc") ||
-      hostname.startsWith("fd") ||
-      hostname.startsWith("fe8") ||
-      hostname.startsWith("fe9") ||
-      hostname.startsWith("fea") ||
-      hostname.startsWith("feb"))
+    (hostname.startsWith("fc") || hostname.startsWith("fd"))
   ) {
     return true;
   }
 
-  // Docker Compose / LAN の短いホスト名（例: ollama, lmstudio）。
-  if (!hostname.includes(".") && !hostname.includes(":")) return true;
   return false;
 }
 
